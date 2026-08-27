@@ -25,3 +25,11 @@ export function loadLlmProvider(): LlmProvider {
   }
   return DEFAULT_PROVIDER;
 }
+
+// True once the user (or auto-detection) has actually picked a provider —
+// distinct from loadLlmProvider() always resolving to DEFAULT_PROVIDER when
+// nothing is stored yet. Lets App.tsx tell "never chosen" apart from
+// "explicitly chose the default", so auto-detection only runs once.
+export function hasStoredLlmProvider(): boolean {
+  return window.localStorage.getItem(STORAGE_KEY) !== null;
+}

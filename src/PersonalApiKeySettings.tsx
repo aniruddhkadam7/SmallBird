@@ -19,7 +19,7 @@ const PROVIDERS: { key: PersonalLlmProvider; label: string }[] = [
 /// Account.tsx's Rust counterpart. Which provider is actually *used* for a
 /// request stays governed by the existing header dropdown / llmProviderSetting.ts
 /// — this panel only manages the keys, not the selection.
-export function PersonalApiKeySettings() {
+export function PersonalApiKeySettings({ onKeySaved }: { onKeySaved?: (provider: PersonalLlmProvider) => void }) {
   const [keys, setKeys] = useState<Record<PersonalLlmProvider, string>>({ openai: "", anthropic: "", gemini: "" });
   const [saved, setSaved] = useState<Record<PersonalLlmProvider, boolean>>({ openai: false, anthropic: false, gemini: false });
   const [busy, setBusy] = useState<PersonalLlmProvider | null>(null);
@@ -43,6 +43,7 @@ export function PersonalApiKeySettings() {
       await setPersonalApiKey(provider, keys[provider]);
       setSaved((prev) => ({ ...prev, [provider]: true }));
       setStatus(`${provider} key saved.`);
+      onKeySaved?.(provider);
     } catch (err) {
       setStatus(`Failed to save ${provider} key: ${String(err)}`);
     } finally {

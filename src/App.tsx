@@ -28,7 +28,8 @@ import {
 } from "./Icons";
 import { IconAnthropic, IconDeepSeek, IconGemini, IconOpenAI } from "./ProviderIcons";
 import { INTERVIEW_CONTEXT_SECTIONS, MEETING_CONTEXT_SECTIONS } from "./headerPopups";
-import { loadLlmProvider, saveLlmProvider, type LlmProvider } from "./llmProviderSetting";
+import { hasStoredLlmProvider, loadLlmProvider, saveLlmProvider, type LlmProvider } from "./llmProviderSetting";
+import { getPersonalApiKey } from "./personalApiKeys";
 
 export type Mode = "INTERVIEW" | "MEETING";
 type SessionState = "IDLE" | "STARTING" | "LISTENING";
@@ -53,6 +54,30 @@ const LLM_PROVIDERS: { value: LlmProvider; label: string; icon: typeof IconOpenA
 function App() {
   const [mode, setMode] = useState<Mode>("INTERVIEW");
   const [llmProvider, setLlmProvider] = useState<LlmProvider>(() => loadLlmProvider());
+
+  // First launch (no provider explicitly chosen yet): auto-select whichever
+  // provider actually has an API key saved, instead of silently defaulting
+  // to Anthropic and leaving the user to guess why requests fail. Checked in
+  // LLM_PROVIDERS order so the first configured, available provider wins.
+  useEffect(() => {
+    if (hasStoredLlmProvider()) return;
+    let cancelled = false;
+    (async () => {
+      for (const { value, available } of LLM_PROVIDERS) {
+        if (!available || value === "deepseek") continue;
+        const key = await getPersonalApiKey(value).catch(() => null);
+        if (cancelled) return;
+        if (key) {
+          setLlmProvider(value);
+          saveLlmProvider(value);
+          return;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [sessionState, setSessionState] = useState<SessionState>("IDLE");
   const [openPopover, setOpenPopover] = useState<Popover>(null);
   const [error, setError] = useState<string | null>(null);
@@ -435,7 +460,15 @@ function App() {
             </button>
             {openPopover === "SETTINGS" && (
               <HeaderDropdown onClose={closePopover} className="header-dropdown-panel header-dropdown-settings">
-                <SettingsPopover onClose={closePopover} mode={mode} historyRefreshKey={historyRefreshKey} />
+                <SettingsPopover
+                  onClose={closePopover}
+                  mode={mode}
+                  historyRefreshKey={historyRefreshKey}
+                  onApiKeySaved={(provider) => {
+                    setLlmProvider(provider);
+                    saveLlmProvider(provider);
+                  }}
+                />
               </HeaderDropdown>
             )}
           </div>

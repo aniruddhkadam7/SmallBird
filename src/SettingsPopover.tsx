@@ -5,6 +5,7 @@ import { AttachedDocumentsPanel } from "./AttachedDocumentsPanel";
 import { InterviewHistory } from "./InterviewHistory";
 import { MeetingHistory } from "./MeetingHistory";
 import { PersonalApiKeySettings } from "./PersonalApiKeySettings";
+import type { PersonalLlmProvider } from "./personalApiKeys";
 import type { Mode } from "./App";
 
 type SettingsSection = "SESSIONS" | "PERSONALIZATION" | "PERFORMANCE" | "CONTEXT" | "API_KEYS" | "PRIVACY" | "ABOUT";
@@ -23,6 +24,7 @@ interface Props {
   onClose: () => void;
   mode: Mode;
   historyRefreshKey: number;
+  onApiKeySaved?: (provider: PersonalLlmProvider) => void;
 }
 
 /// Settings popover reached from the header's gear icon. Every section
@@ -35,7 +37,7 @@ interface Props {
 /// Meeting history) and Personalization (answer tone/length/style) live
 /// here rather than as separate header buttons, alongside the app's other
 /// settings.
-export function SettingsPopover({ onClose, mode, historyRefreshKey }: Props) {
+export function SettingsPopover({ onClose, mode, historyRefreshKey, onApiKeySaved }: Props) {
   const [section, setSection] = useState<SettingsSection>("SESSIONS");
 
   return (
@@ -71,7 +73,7 @@ export function SettingsPopover({ onClose, mode, historyRefreshKey }: Props) {
             {section === "PERSONALIZATION" && <PersonalizationPanel />}
             {section === "PERFORMANCE" && <PerformancePanel />}
             {section === "CONTEXT" && <AttachedDocumentsPanel />}
-            {section === "API_KEYS" && <PersonalApiKeySettings />}
+            {section === "API_KEYS" && <PersonalApiKeySettings onKeySaved={onApiKeySaved} />}
             {section === "PRIVACY" && (
               <p className="setup-hint">
                 Smallbird runs speech-to-text and document search locally on this device, and this
