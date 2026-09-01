@@ -20,7 +20,7 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/// Lists documents actually uploaded to the RAG service. Settings'
+/// Lists documents actually uploaded to the document extraction service. Settings'
 /// Context/Documents section used to be a static paragraph pointing back at
 /// the header's Context (📎) picker with no way to see what had actually
 /// been attached. A file picked in that popover only uploads once a session
@@ -63,8 +63,8 @@ export function AttachedDocumentsPanel() {
   return (
     <div className="attached-documents-panel">
       <p className="setup-hint">
-        Documents attached to Interview and Meeting sessions. Use the Context (📎) button in the header to add
-        more.
+        Your resume/CV and job description, attached to Interview sessions. Use the Context (📎) button in the
+        header to add or replace them.
       </p>
 
       {error && <p className="error">{error}</p>}

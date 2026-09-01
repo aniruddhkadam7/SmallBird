@@ -9,19 +9,12 @@
 
 use tauri::{AppHandle, Emitter, State};
 
-use crate::backend::{
-    MeetingAskRequest, MeetingConversationTurn, MeetingRetrievedChunk,
-    MeetingSummaryRequest, MeetingTurnIn,
-};
+use crate::backend::{MeetingAskRequest, MeetingConversationTurn, MeetingSummaryRequest, MeetingTurnIn};
 use crate::overlay_window;
-use crate::rag::RetrievalPlanner;
 use crate::state::{AppState, TrackedItem};
 
 use super::MEETING_OVERLAY_LABEL;
 
-// Retrieval's top_k/similarity_threshold/max_context_chars/timeout are all
-// hardware-tier-driven (hardware::PerformanceManager::effective_config) —
-// see hardware::manager for the tier table.
 const MAX_HISTORY_TURNS: usize = 6;
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -138,9 +131,8 @@ pub async fn resize_meeting_overlay(app: AppHandle, fraction: f64) -> Result<(),
     .await
 }
 
-/// Runs the live "quick answer" flow for the user's question (optional
-/// retrieval -> one LLM call -> stream). Streams `meeting-mode:answer-delta`
-/// / `answer-complete`.
+/// Runs the live "quick answer" flow for the user's question (one LLM call
+/// -> stream). Streams `meeting-mode:answer-delta` / `answer-complete`.
 #[tauri::command]
 pub async fn ask_meeting_question(
     app: AppHandle,
@@ -160,27 +152,9 @@ pub async fn ask_meeting_question(
     let options = options.unwrap_or_default();
     let history = trim_history(history.unwrap_or_default());
 
-    // `_checked`: natural per-question memory-pressure checkpoint.
-    let cfg = crate::hardware::effective_config_checked(&app);
-    let planner = RetrievalPlanner::new()
-        .with_config(cfg.rag_top_k, cfg.rag_similarity_threshold, cfg.rag_max_context_chars)
-        .with_timeout(std::time::Duration::from_millis(cfg.rag_retrieval_timeout_ms));
-    let retrieval_timer = Stopwatch::start();
-    let retrieved = planner.plan_for_question(trimmed).await;
-    finish(retrieval_timer, PipelineStage::RagRetrieval, &crate::hardware::perf_context(&app));
-
     let request = MeetingAskRequest {
         question: trimmed.to_string(),
         conversation_history: history,
-        retrieved_context: retrieved
-            .into_iter()
-            .map(|r| MeetingRetrievedChunk {
-                text: r.text,
-                source_filename: r.metadata.filename,
-                document_type: r.metadata.document_type,
-                score: r.score,
-            })
-            .collect(),
         meeting_title: options.meeting_title,
         participants: options.participants,
         answer_length: options.answer_length,

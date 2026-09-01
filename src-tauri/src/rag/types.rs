@@ -24,30 +24,3 @@ pub struct DocumentTextResponse {
     pub document_id: String,
     pub text: String,
 }
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct KnowledgeBaseStatus {
-    pub document_count: u32,
-    pub chunk_count: u32,
-    pub status: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SearchResultMetadata {
-    pub filename: String,
-    pub document_type: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SearchResultItem {
-    pub chunk_id: String,
-    pub score: f64,
-    pub text: String,
-    pub metadata: SearchResultMetadata,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SearchResponse {
-    pub results: Vec<SearchResultItem>,
-    pub latency_ms: f64,
-}

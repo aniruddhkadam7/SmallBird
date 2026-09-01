@@ -29,7 +29,6 @@ pub struct CaptureSession {
     pub stop_signal: Option<StopSignal>,
     pub pause_signal: Option<PauseSignal>,
     pub system_audio_thread: Option<JoinHandle<()>>,
-    pub mic_thread: Option<JoinHandle<()>>,
     pub pipeline_thread: Option<JoinHandle<()>>,
     pub recording_state: RecordingState,
 }
@@ -40,7 +39,6 @@ impl Default for CaptureSession {
             stop_signal: None,
             pause_signal: None,
             system_audio_thread: None,
-            mic_thread: None,
             pipeline_thread: None,
             recording_state: RecordingState::Idle,
         }
@@ -59,9 +57,4 @@ pub struct AppState {
     /// Live-tracked key points/decisions/action items for the currently open
     /// Meeting session. See `meeting_mode::commands`.
     pub meeting_session: Mutex<MeetingSessionState>,
-    /// Mic-only capture session for Notes' voice dictation — reuses
-    /// `CaptureSession` (system-audio fields simply stay `None`) so dictation
-    /// gets the same start/pause/resume/stop lifecycle without a second
-    /// struct. See `notes_mode::commands`.
-    pub notes_dictation: Mutex<CaptureSession>,
 }

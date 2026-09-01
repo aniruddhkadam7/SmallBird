@@ -6,16 +6,11 @@
 //! CPU-saturated system from becoming unresponsive — NOT continuously
 //! re-tune settings. This is deliberately narrow in scope:
 //!
-//! - Only ever *reduces* local workload (STT thread count for the next
-//!   recording session, RAG retrieval top_k/context budget/timeout for the
-//!   next question) below what the detected tier/user mode would otherwise
-//!   select. It never increases beyond the tier/mode's own config.
-//! - Never touches RAG's embedding batch size / torch thread count — those
-//!   are fixed at RAG-sidecar-process-spawn time (see `manager.rs`'s module
-//!   doc and `rag::process::RagServiceHandle::spawn`'s doc comment), and
-//!   restarting that process is a deliberate, user-initiated action
-//!   (`set_performance_mode`), never an automatic side effect of a memory
-//!   reading. This module holds no reference to `RagServiceHandle` at all.
+//! - Only ever *reduces* the reported `stt_num_threads` value below what the
+//!   detected tier/user mode would otherwise select. It never increases
+//!   beyond the tier/mode's own config. (Historically this also clamped RAG
+//!   retrieval top_k/context budget/timeout — removed along with RAG
+//!   search; see `manager.rs`'s module doc.)
 //! - Never changes STT model choice, VAD, endpointing, or anything on the
 //!   cloud LLM/backend path — those are out of scope for hardware-adaptive
 //!   tuning entirely (see `manager.rs`'s module doc).
@@ -24,8 +19,7 @@
 //!   both require the signal to hold for a while — see `PressureTracker`'s
 //!   doc comment for the exact rule.
 //!
-//! This is checkpoint-driven (sampled when a caller asks, e.g. before
-//! spawning an STT sidecar or planning a RAG retrieval), not a continuous
+//! This is checkpoint-driven (sampled when a caller asks), not a continuous
 //! background poll — no timer thread, no periodic wakeups. A checkpoint
 //! that never fires (the app sits idle) simply never re-evaluates, which is
 //! correct: there is nothing to protect if nothing is about to consume
@@ -37,16 +31,15 @@ use super::manager::PerformanceConfig;
 use super::tier::HardwareTier;
 
 /// Available RAM below this is treated as a candidate pressure signal.
-/// Anchored to STT's own measured footprint (228MB, see
+/// Anchored to the old local STT engine's measured footprint (228MB, see
 /// docs/stt-benchmark.md) — 1024MB is roughly 4x that, leaving headroom for
-/// RAG's embedding model (~90MB weights + torch/transformers overhead) and
 /// the OS/webview on top, without being so tight that ordinary memory
 /// fluctuation from an unrelated application falsely triggers it.
 const LOW_MEMORY_THRESHOLD_MB: u64 = 1024;
 
 /// System-wide CPU utilization at/above this is treated as a candidate
 /// pressure signal. 90%, not 100%, because the failure mode being protected
-/// against is the OS scheduler starving Smallbird's own STT/RAG threads of
+/// against is the OS scheduler starving Smallbird's own threads of
 /// timeslices — that starts to bite before every last percent is claimed,
 /// and waiting for a literal 100% reading (which real hardware rarely
 /// reports with perfect precision even when saturated) would react too late
@@ -240,28 +233,15 @@ impl PressureTracker {
 
     /// Applies this tracker's current state to a tier-selected config,
     /// producing the config that should actually be used. `Normal` is a
-    /// pure passthrough. `UnderPressure` clamps STT threads and RAG
-    /// retrieval budget down to the ENTRY tier's values (never below what
-    /// ENTRY already uses — pressure adaptation is a ceiling, not its own
-    /// separate scale) while leaving `rag_embed_batch_size`/
-    /// `rag_torch_threads` completely untouched, since those cannot be
-    /// changed without restarting the RAG process, which this module never
-    /// does (see module doc).
+    /// pure passthrough. `UnderPressure` clamps `stt_num_threads` down to
+    /// the ENTRY tier's value (never below what ENTRY already uses —
+    /// pressure adaptation is a ceiling, not its own separate scale).
     pub fn apply(&self, base: PerformanceConfig) -> PerformanceConfig {
         match self.state {
             PressureState::Normal => base,
             PressureState::UnderPressure => {
                 let entry = super::manager::config_for_tier(HardwareTier::Entry, 1);
-                PerformanceConfig {
-                    stt_num_threads: base.stt_num_threads.min(entry.stt_num_threads),
-                    rag_top_k: base.rag_top_k.min(entry.rag_top_k),
-                    rag_max_context_chars: base.rag_max_context_chars.min(entry.rag_max_context_chars),
-                    rag_similarity_threshold: base.rag_similarity_threshold.max(entry.rag_similarity_threshold),
-                    rag_retrieval_timeout_ms: base.rag_retrieval_timeout_ms.min(entry.rag_retrieval_timeout_ms),
-                    // Untouched — see doc comment above.
-                    rag_embed_batch_size: base.rag_embed_batch_size,
-                    rag_torch_threads: base.rag_torch_threads,
-                }
+                PerformanceConfig { stt_num_threads: base.stt_num_threads.min(entry.stt_num_threads) }
             }
         }
     }
@@ -508,7 +488,7 @@ mod tests {
         assert_eq!(tracker.state(), PressureState::UnderPressure);
     }
 
-    // -- applying pressure to config: STT/RAG-retrieval only, never embed ---
+    // -- applying pressure to config: stt_num_threads only -------------------
 
     fn sample_high_performance_config() -> PerformanceConfig {
         super::super::manager::config_for_tier(HardwareTier::HighPerformance, 16)
@@ -520,47 +500,28 @@ mod tests {
         let base = sample_high_performance_config();
         let applied = tracker.apply(base.clone());
         assert_eq!(applied.stt_num_threads, base.stt_num_threads);
-        assert_eq!(applied.rag_embed_batch_size, base.rag_embed_batch_size);
-        assert_eq!(applied.rag_torch_threads, base.rag_torch_threads);
     }
 
     #[test]
-    fn under_pressure_clamps_stt_threads_and_retrieval_budget_to_entry_tier() {
+    fn under_pressure_clamps_stt_threads_to_entry_tier() {
         let mut tracker = PressureTracker::default();
         tracker.observe(500, None, t(0));
         tracker.observe(500, None, t(10));
         assert_eq!(tracker.state(), PressureState::UnderPressure);
 
-        let base = sample_high_performance_config(); // stt_num_threads=4, rag_top_k=5, etc.
+        let base = sample_high_performance_config(); // stt_num_threads=4
         let applied = tracker.apply(base);
         let entry = super::super::manager::config_for_tier(HardwareTier::Entry, 1);
 
         assert_eq!(applied.stt_num_threads, entry.stt_num_threads);
-        assert_eq!(applied.rag_top_k, entry.rag_top_k);
-        assert_eq!(applied.rag_max_context_chars, entry.rag_max_context_chars);
-        assert_eq!(applied.rag_retrieval_timeout_ms, entry.rag_retrieval_timeout_ms);
-    }
-
-    #[test]
-    fn under_pressure_never_touches_rag_embed_batch_size_or_torch_threads() {
-        // Regression guard for the explicit product decision: pressure
-        // adaptation must never imply a RAG process restart.
-        let mut tracker = PressureTracker::default();
-        tracker.observe(500, None, t(0));
-        tracker.observe(500, None, t(10));
-
-        let base = sample_high_performance_config();
-        let applied = tracker.apply(base.clone());
-        assert_eq!(applied.rag_embed_batch_size, base.rag_embed_batch_size);
-        assert_eq!(applied.rag_torch_threads, base.rag_torch_threads);
     }
 
     #[test]
     fn under_pressure_never_increases_a_config_that_was_already_more_conservative_than_entry() {
         // If the base config (e.g. the user is already on Battery Saver /
         // Entry tier) is already at or below Entry's values, applying
-        // pressure must not raise it back up — `.min`/`.max` as used in
-        // `apply` are a ceiling/floor, not a forced overwrite.
+        // pressure must not raise it back up — `.min` as used in `apply` is
+        // a ceiling, not a forced overwrite.
         let mut tracker = PressureTracker::default();
         tracker.observe(500, None, t(0));
         tracker.observe(500, None, t(10));
@@ -568,6 +529,5 @@ mod tests {
         let already_minimal = super::super::manager::config_for_tier(HardwareTier::Entry, 1);
         let applied = tracker.apply(already_minimal.clone());
         assert_eq!(applied.stt_num_threads, already_minimal.stt_num_threads);
-        assert_eq!(applied.rag_top_k, already_minimal.rag_top_k);
     }
 }

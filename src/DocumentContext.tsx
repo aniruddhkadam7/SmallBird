@@ -24,9 +24,9 @@ export function emptyDocumentContextState(sections: DocumentContextSection[]): D
 }
 
 /// Fires `upload_document` for every section that has a file or pasted text.
-/// Non-blocking by design (callers don't await the RAG pipeline finishing); errors are
+/// Non-blocking by design (callers don't await extraction finishing); errors are
 /// logged, not surfaced, since a failed upload just means that document
-/// won't be searchable — the session still starts.
+/// won't be available to the LLM — the session still starts.
 export function uploadDocumentContext(sections: DocumentContextSection[], state: DocumentContextState) {
   for (const section of sections) {
     const value = state[section.key];

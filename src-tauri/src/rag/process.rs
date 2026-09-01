@@ -37,10 +37,10 @@ fn rag_package_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
-/// Locates the RAG service's own virtualenv interpreter. It has much heavier
-/// dependencies (torch, sentence-transformers) than the STT sidecar, so it
-/// gets its own venv (`packages/rag/.venv`) rather than sharing one — this
-/// mirrors how `apps/backend` has its own venv too.
+/// Locates the document-extraction service's own virtualenv interpreter
+/// (`packages/rag/.venv`, e.g. `fastapi`/`uvicorn`/`pypdf`/`python-docx`) —
+/// its own venv rather than sharing one, mirroring how `apps/backend` has
+/// its own venv too.
 ///
 /// Dev/test only, same caveat as `stt::sidecar`'s `stt_venv_python`: a venv
 /// is not relocatable (its `python.exe` hardcodes the absolute path of the
@@ -57,15 +57,11 @@ fn rag_venv_python() -> Option<PathBuf> {
 
 /// The PyInstaller-frozen "rag-lite" service bundled as a resource for
 /// release builds (see `bundle.resources` in `tauri.conf.json`, built via
-/// `packages/rag/scripts/freeze_rag_lite.py`) — text extraction
-/// (pypdf/python-docx) with no `torch`/`sentence-transformers`, so document
-/// upload and the setup screen's CV/JD text analysis work with nothing
-/// installed on the target machine. Semantic search over uploaded documents
-/// during an interview is the one thing this build can't do — already a
-/// best-effort/non-fatal path everywhere it's used (see
-/// `RetrievalPlanner`), never a hard requirement. `None` when there's no
-/// `AppHandle` or the resource isn't there (plain `cargo build`/`tauri dev`,
-/// where the full venv above is used instead).
+/// `packages/rag/scripts/freeze_rag_lite.py`) — plain text extraction
+/// (pypdf/python-docx), so CV/job-description upload works with nothing
+/// installed on the target machine. `None` when there's no `AppHandle` or
+/// the resource isn't there (plain `cargo build`/`tauri dev`, where the dev
+/// venv above is used instead).
 fn frozen_rag_lite_path(app: Option<&AppHandle>) -> Option<PathBuf> {
     let app = app?;
     let candidate = app.path().resolve("rag-lite/rag-lite.exe", BaseDirectory::Resource).ok()?;
@@ -88,25 +84,16 @@ impl RagServiceHandle {
         internal_token()
     }
 
-    /// Spawns the RAG service as a child process. Returns `Ok(None)` (not an
-    /// error) if neither the frozen `rag-lite` resource nor the dev venv are
-    /// available — the caller can still run the rest of the app without
-    /// document upload/RAG features available, rather than failing the whole
-    /// app to launch.
-    ///
-    /// `embed_config`: hardware-tier-driven (`RAG_EMBED_BATCH_SIZE`,
-    /// `RAG_TORCH_THREADS`), read once at spawn time — Python's `Settings`
-    /// class (packages/rag/app/core/config.py) reads these at process
-    /// startup and caches them, so applying a new value requires restarting
-    /// this process (see `restart`), the same way `packages/rag`'s own
-    /// embedding model is loaded once and reused for the process lifetime.
-    /// Ignored (but harmless) by the frozen `rag-lite` build, which never
-    /// loads an embedding model to begin with.
+    /// Spawns the document-extraction service as a child process. Returns
+    /// `Ok(None)` (not an error) if neither the frozen `rag-lite` resource
+    /// nor the dev venv are available — the caller can still run the rest
+    /// of the app without document upload available, rather than failing
+    /// the whole app to launch.
     ///
     /// `app`: threaded through so a release build can find and run the
     /// frozen `rag-lite` resource — see `frozen_rag_lite_path`. `None` keeps
     /// today's dev-tree venv behavior unchanged.
-    pub fn spawn(embed_config: EmbedProcessConfig, app: Option<&AppHandle>) -> Result<Option<Self>, String> {
+    pub fn spawn(app: Option<&AppHandle>) -> Result<Option<Self>, String> {
         let mut command = if let Some(frozen) = frozen_rag_lite_path(app) {
             let mut command = hidden_command(&frozen);
             command.env("RAG_PORT", RAG_PORT.to_string());
@@ -122,7 +109,7 @@ impl RagServiceHandle {
         } else {
             let Some(python) = rag_venv_python() else {
                 log::warn!(
-                    "RAG service venv not found at packages/rag/.venv — document upload/RAG search will be unavailable"
+                    "document extraction service venv not found at packages/rag/.venv — document upload will be unavailable"
                 );
                 return Ok(None);
             };
@@ -142,8 +129,6 @@ impl RagServiceHandle {
         };
 
         let mut child = command
-            .env("RAG_EMBED_BATCH_SIZE", embed_config.embed_batch_size.to_string())
-            .env("RAG_TORCH_THREADS", embed_config.torch_threads.to_string())
             .env("RAG_INTERNAL_TOKEN", internal_token())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -164,18 +149,14 @@ impl RagServiceHandle {
         }
     }
 
-    /// Kills the current process and spawns a fresh one with new
-    /// embedding-config env vars. Used when the user changes performance
-    /// mode — RAG's Python settings are fixed at process startup (see
-    /// `spawn`'s doc comment), so a live in-process reconfiguration isn't
-    /// possible without a deeper change to how `packages/rag` caches
-    /// settings. Callers should treat the brief gap between shutdown and
-    /// the new process becoming healthy the same way initial startup is
-    /// treated (poll `/health`), not as an error.
-    pub fn restart(&mut self, embed_config: EmbedProcessConfig, app: Option<&AppHandle>) -> Result<(), String> {
+    /// Kills the current process and spawns a fresh one. Callers should
+    /// treat the brief gap between shutdown and the new process becoming
+    /// healthy the same way initial startup is treated (poll `/health`),
+    /// not as an error.
+    pub fn restart(&mut self, app: Option<&AppHandle>) -> Result<(), String> {
         self.shutdown();
-        let Some(mut spawned) = Self::spawn(embed_config, app)? else {
-            return Err("RAG service venv not found — cannot restart".to_string());
+        let Some(mut spawned) = Self::spawn(app)? else {
+            return Err("document extraction service venv not found — cannot restart".to_string());
         };
         // `.take()`, not a whole-struct move — `spawned` still runs its
         // `Drop` impl at the end of this scope, which is a no-op once its
@@ -185,20 +166,12 @@ impl RagServiceHandle {
     }
 }
 
-/// The subset of `hardware::PerformanceConfig` relevant to spawning the RAG
-/// child process — kept as its own small struct (rather than passing the
-/// full `PerformanceConfig` here) so `rag::process` does not need to depend
-/// on the `hardware` module's other STT/retrieval fields it has no use for.
-#[derive(Debug, Clone, Copy)]
-pub struct EmbedProcessConfig {
-    pub embed_batch_size: u32,
-    pub torch_threads: u32,
-}
-
 impl Drop for RagServiceHandle {
-    /// Same reasoning as `SttSidecar`'s Drop impl: without this, an unclean
-    /// Rust-side exit would leave the RAG service (and the memory-heavy
-    /// embedding model it has loaded) running as an orphaned process.
+    /// Without this, an unclean Rust-side exit would leave the RAG service
+    /// (and the memory-heavy embedding model it has loaded) running as an
+    /// orphaned process — the same class of problem the old local STT
+    /// sidecar's Drop impl guarded against before STT became a cloud
+    /// connection with no child process to orphan.
     fn drop(&mut self) {
         self.shutdown();
     }

@@ -1,15 +1,11 @@
 //! Tauri commands for Interview Mode: overlay window lifecycle + the
-//! ASK AI flow (optional local RAG -> backend -> LLM -> streamed answer).
-//!
-//! Retrieval's top_k/similarity_threshold/max_context_chars/timeout are all
-//! hardware-tier-driven (`hardware::PerformanceManager::effective_config`)
-//! rather than hardcoded here — see `hardware::manager` for the tier table
-//! and docs/performance-tuning.md for the benchmark evidence behind it.
+//! ASK AI flow (uploaded CV/job-description full text -> LLM -> streamed
+//! answer).
 
 use tauri::{AppHandle, Emitter, State};
 
-use crate::backend::{AskRequest, AskRetrievedChunk, ConversationTurn};
-use crate::rag::{RagClient, RetrievalPlanner};
+use crate::backend::{AskRequest, ConversationTurn};
+use crate::rag::RagClient;
 use crate::state::AppState;
 
 use super::window::{self, OverlayCaptureStatus};
@@ -144,16 +140,23 @@ where
 }
 
 /// Fetches the full extracted text of the most recently uploaded document of
-/// `document_type` (RESUME or JOB_DESCRIPTION), bypassing RAG chunk search
-/// entirely. CV and job description are short enough to just read in full —
-/// unlike the "Upload documents" catch-all, there is no size reason to chunk
-/// and similarity-search them, and doing so only adds a race (the document
-/// may not have finished indexing yet) and a chance of missing/skipping
-/// content that full-text inclusion can't have. Returns `None` on any
-/// failure (RAG unavailable, no matching document, still extracting) —
-/// exactly like `retrieval_could_help`'s failures, this must never fail the
-/// ask itself, only mean the answer proceeds without that document.
-async fn fetch_document_full_text(document_type: &str) -> Option<String> {
+/// `document_type` (RESUME or JOB_DESCRIPTION). CV and job description are
+/// short enough to just read in full — sent directly to the LLM as context.
+/// Returns `None` on any failure (extraction service unavailable, no
+/// matching document, still extracting) — this must never fail the ask
+/// itself, only mean the answer proceeds without that document.
+///
+/// `service_available` short-circuits before touching the network at all
+/// when the extraction service is known not to be running (see
+/// `AppState.rag_service`) — a connect attempt to a port nothing is
+/// listening on doesn't fail instantly on Windows (observed: it sits in
+/// `SYN_SENT` until the request's own timeout elapses), so without this
+/// check every single question would pay a multi-second real-network delay
+/// for a call that could never succeed.
+async fn fetch_document_full_text(document_type: &str, service_available: bool) -> Option<String> {
+    if !service_available {
+        return None;
+    }
     let client = RagClient::new();
     let documents = client.list_documents(None).await.ok()?;
     let latest = documents
@@ -163,22 +166,16 @@ async fn fetch_document_full_text(document_type: &str) -> Option<String> {
     client.get_document_text(&latest.document_id).await.ok().flatten()
 }
 
-/// Runs the ASK AI flow for a single question:
-///
-///     question -> (retrieval, only when it could help) -> ONE LLM call -> stream
-///
-/// Retrieval is skipped entirely for questions that are plainly about a
-/// concept rather than the candidate ("What is Kubernetes?"), since searching
-/// a personal CV for those can only ever return noise while costing latency
-/// the user feels. When retrieval does run and returns nothing useful, the
-/// request proceeds with an empty `retrieved_context` — the backend answers
-/// from general knowledge. Retrieval failure is never an error here.
+/// Runs the ASK AI flow for a single question: question -> ONE LLM call ->
+/// stream.
 ///
 /// The uploaded CV and job description, if any, are fetched as full text
-/// (see `fetch_document_full_text`) and sent unconditionally on every
-/// question — not gated behind `retrieval_could_help`, since reading a
-/// one-page document costs nothing worth gating. `retrieved_context` (RAG)
-/// still covers the general "Upload documents" catch-all category only.
+/// (see `fetch_document_full_text`) and sent on every question. The two
+/// fetches run truly concurrently via `tokio::join!` — creating a future
+/// (`fetch_document_full_text(...)` bound to a variable) does not start it
+/// running; only polling/awaiting it does, so awaiting them one after
+/// another would needlessly double the latency of two independent
+/// round-trips.
 ///
 /// Streams back as `interview-mode:answer-delta` events, finishing with
 /// `interview-mode:answer-complete`. Only ever invoked by the frontend in
@@ -186,7 +183,7 @@ async fn fetch_document_full_text(document_type: &str) -> Option<String> {
 #[tauri::command]
 pub async fn ask_interview_question(
     app: AppHandle,
-    _state: State<'_, AppState>,
+    state: State<'_, AppState>,
     question: String,
     options: Option<AskOptions>,
     history: Option<Vec<PriorTurn>>,
@@ -203,55 +200,15 @@ pub async fn ask_interview_question(
 
     let history = trim_history(history.unwrap_or_default());
 
-    // CV and job description are fetched as full text unconditionally (see
-    // `fetch_document_full_text`), regardless of `retrieval_could_help` —
-    // unlike chunk search, reading a one-page document has no latency cost
-    // worth gating. Deferred to just before use below, after retrieval, so
-    // the (optional, possibly slower) RAG search isn't held up behind them.
-    let resume_fetch = fetch_document_full_text("RESUME");
-    let job_description_fetch = fetch_document_full_text("JOB_DESCRIPTION");
-
-    let retrieved = if retrieval_could_help(trimmed) {
-        // `_checked`: retrieval is asked once per question, so this is the
-        // natural per-question checkpoint for the memory-pressure tracker.
-        // The tracker's own hysteresis (2 consecutive low samples to enter
-        // pressure, 90s sustained recovery to exit) means being checked
-        // this often does not translate into frequent config changes.
-        let cfg = crate::hardware::effective_config_checked(&app);
-        let planner = RetrievalPlanner::new()
-            .with_config(cfg.rag_top_k, cfg.rag_similarity_threshold, cfg.rag_max_context_chars)
-            .with_timeout(std::time::Duration::from_millis(cfg.rag_retrieval_timeout_ms));
-        let retrieval_timer = Stopwatch::start();
-        let results = planner.plan_for_question(trimmed).await;
-        finish(retrieval_timer, PipelineStage::RagRetrieval, &crate::hardware::perf_context(&app));
-        results
-    } else {
-        log::debug!("Interview Mode: skipping retrieval for conceptual question");
-        Vec::new()
-    };
-
-    let resume_text = resume_fetch.await;
-    let uploaded_job_description = job_description_fetch.await;
+    let service_available = state.rag_service.lock().map(|slot| slot.is_some()).unwrap_or(false);
+    let (resume_text, uploaded_job_description) = tokio::join!(
+        fetch_document_full_text("RESUME", service_available),
+        fetch_document_full_text("JOB_DESCRIPTION", service_available)
+    );
 
     let request = AskRequest {
         question: trimmed.to_string(),
         conversation_history: history,
-        // RESUME/JOB_DESCRIPTION are excluded here — they're already sent in
-        // full via candidate_context/job_description below, so including
-        // RAG chunks of the same documents too would just duplicate content
-        // and risk the model treating a partial chunk as the whole picture.
-        // "Upload documents" (the general catch-all) still comes through
-        // here, since it's the case retrieval actually exists for.
-        retrieved_context: retrieved
-            .into_iter()
-            .filter(|r| r.metadata.document_type != "RESUME" && r.metadata.document_type != "JOB_DESCRIPTION")
-            .map(|r| AskRetrievedChunk {
-                text: r.text,
-                source_filename: r.metadata.filename,
-                document_type: r.metadata.document_type,
-                score: r.score,
-            })
-            .collect(),
         candidate_context: resume_text,
         role: options.role,
         // The uploaded document's full text (when present) is more complete
@@ -311,62 +268,6 @@ fn trim_history(turns: Vec<PriorTurn>) -> Vec<ConversationTurn> {
     history
 }
 
-/// Whether searching the candidate's own documents could plausibly improve
-/// this answer.
-///
-/// Biased towards retrieving: a false positive costs one fast local search
-/// whose empty/irrelevant result is harmless, while a false negative loses
-/// real personalization. Only questions that are unambiguously about a
-/// concept — a definitional opener with no second-person reference anywhere —
-/// skip it.
-fn retrieval_could_help(question: &str) -> bool {
-    let lowered = question.to_lowercase();
-
-    // Any reference to the candidate makes this potentially personal,
-    // whatever else the question looks like ("What is your experience with
-    // Kubernetes?" opens definitionally but is entirely about them).
-    const PERSONAL_MARKERS: [&str; 12] = [
-        "your ",
-        "you ",
-        "you'",
-        "yourself",
-        "have you",
-        "did you",
-        "tell me about a time",
-        "walk me through",
-        "worked on",
-        "experience with",
-        "your experience",
-        "a project where",
-    ];
-    if PERSONAL_MARKERS.iter().any(|m| lowered.contains(m)) {
-        return true;
-    }
-
-    // Purely definitional openers with no personal reference: general
-    // knowledge answers these completely, and the CV cannot contribute.
-    const CONCEPTUAL_OPENERS: [&str; 12] = [
-        "what is",
-        "what are",
-        "what's",
-        "explain",
-        "define",
-        "how does",
-        "how do",
-        "how would",
-        "why is",
-        "why do",
-        "difference between",
-        "when should",
-    ];
-    let opener = lowered.trim_start_matches(|c: char| !c.is_alphanumeric());
-    if CONCEPTUAL_OPENERS.iter().any(|o| opener.starts_with(o)) {
-        return false;
-    }
-
-    true
-}
-
 /// Result of `start_backend_session`, distinguishing "the backend explicitly
 /// said no" (`rejection` set — Start should stop) from every other outcome
 /// (not signed in, credential store unavailable, network unreachable,
@@ -415,40 +316,6 @@ pub async fn end_backend_session(_state: State<'_, AppState>) -> Result<Option<(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn conceptual_questions_skip_retrieval() {
-        assert!(!retrieval_could_help("What is RAG?"));
-        assert!(!retrieval_could_help("What is Kubernetes?"));
-        assert!(!retrieval_could_help("Explain how TCP handles congestion."));
-        assert!(!retrieval_could_help("What's the difference between a process and a thread?"));
-        assert!(!retrieval_could_help("How does garbage collection work?"));
-    }
-
-    #[test]
-    fn questions_about_the_candidate_retrieve() {
-        assert!(retrieval_could_help("Tell me about your experience with Python."));
-        assert!(retrieval_could_help("Have you worked with RAG?"));
-        assert!(retrieval_could_help("Walk me through a project you're proud of."));
-        assert!(retrieval_could_help("Tell me about a time you disagreed with a teammate."));
-    }
-
-    #[test]
-    fn a_personal_reference_beats_a_definitional_opener() {
-        // Opens like a concept question but is entirely about them — the
-        // personal check must win, or "What is your experience with X?" would
-        // lose its personalization.
-        assert!(retrieval_could_help("What is your experience with Kubernetes?"));
-        assert!(retrieval_could_help("How would you describe your testing approach?"));
-    }
-
-    #[test]
-    fn unclassifiable_questions_default_to_retrieving() {
-        // Biased towards retrieval: an irrelevant result is dropped by the
-        // similarity threshold anyway, a missed one loses personalization.
-        assert!(retrieval_could_help("Tell me about yourself."));
-        assert!(retrieval_could_help("Kubernetes."));
-    }
 
     fn turn(q: &str, a: &str) -> PriorTurn {
         PriorTurn {

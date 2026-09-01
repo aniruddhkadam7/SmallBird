@@ -19,12 +19,6 @@ type PerformanceMode = "adaptive" | "maximumPerformance" | "batterySaver";
 
 interface PerformanceConfig {
   sttNumThreads: number;
-  ragTopK: number;
-  ragMaxContextChars: number;
-  ragSimilarityThreshold: number;
-  ragRetrievalTimeoutMs: number;
-  ragEmbedBatchSize: number;
-  ragTorchThreads: number;
 }
 
 interface PerformanceModeInfo {
@@ -158,11 +152,7 @@ export function PerformancePanel() {
           </button>
         ))}
       </div>
-      {busy && (
-        <p className="setup-hint">
-          Applying — this restarts the local document search service and can take up to a minute...
-        </p>
-      )}
+      {busy && <p className="setup-hint">Applying…</p>}
       {!busy && modeInfo && (
         <p className="setup-hint">{MODE_OPTIONS.find((o) => o.value === modeInfo.mode)?.description}</p>
       )}
@@ -179,9 +169,6 @@ export function PerformancePanel() {
           {showAdvanced && (
             <ul className="setup-hint">
               <li>STT threads: {modeInfo.effectiveConfig.sttNumThreads}</li>
-              <li>RAG top-K: {modeInfo.effectiveConfig.ragTopK}</li>
-              <li>RAG context budget: {modeInfo.effectiveConfig.ragMaxContextChars} chars</li>
-              <li>RAG retrieval timeout: {modeInfo.effectiveConfig.ragRetrievalTimeoutMs}ms</li>
             </ul>
           )}
         </>

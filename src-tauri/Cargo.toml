@@ -53,7 +53,14 @@ keyring = { version = "3", features = ["windows-native"] }
 # by every HTTPS reqwest::Client in this crate, including the direct AI
 # provider calls in src/personal/providers/.
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
-tokio = { version = "1", features = ["time"] }
+# "sync"/"macros" added for stt::client's Deepgram WebSocket task (tokio::sync
+# mpsc/oneshot channels bridging the sync pipeline thread to the async
+# connection task, and tokio::select! in its read/write pump).
+tokio = { version = "1", features = ["time", "sync", "macros"] }
+# Deepgram Flux streaming client (see src/stt/client.rs). Reuses the rustls
+# "ring" crypto provider already installed process-wide at startup (see
+# tls_init.rs) rather than pulling in a second TLS stack.
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 # Already pulled in transitively by rustls's "ring" feature above — declared
 # directly only so its CSPRNG (SystemRandom) can be used to generate the RAG
 # service's per-launch internal auth token (see src/rag/process.rs). Adds no

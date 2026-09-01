@@ -34,19 +34,7 @@ pub struct WireCandidateContext {
     pub projects: Vec<String>,
 }
 
-/// The minimum retrieved text needed for one question — never the source
-/// document, never an embedding vector. Matches
-/// `app/schemas/interview.py::RetrievedChunk`.
-#[derive(Debug, Clone, Serialize)]
-pub struct WireRetrievedChunk {
-    pub text: String,
-    pub source_filename: String,
-    pub document_type: String,
-    pub score: f64,
-}
-
-/// One interviewer question + candidate answer + the RAG context retrieved
-/// specifically for that question. Matches
+/// One interviewer question + candidate answer. Matches
 /// `app/schemas/interview.py::QuestionAnswer`.
 #[derive(Debug, Clone, Serialize)]
 pub struct WireQuestionAnswer {
@@ -54,7 +42,6 @@ pub struct WireQuestionAnswer {
     pub question: String,
     pub candidate_answer: String,
     pub timestamp: String,
-    pub retrieved_context: Vec<WireRetrievedChunk>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -73,14 +60,6 @@ pub struct InterviewAnalysisRequest {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct RetrievedSourceRef {
-    pub filename: String,
-    pub document_type: String,
-    pub score: f64,
-    pub text: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct QuestionAnalysis {
     pub question_id: String,
     pub question: String,
@@ -90,7 +69,6 @@ pub struct QuestionAnalysis {
     pub strengths: Vec<String>,
     pub issues: Vec<String>,
     pub improved_answer: String,
-    pub retrieved_sources: Vec<RetrievedSourceRef>,
     pub failed: bool,
     pub error_message: Option<String>,
 }
@@ -139,16 +117,9 @@ pub struct ErrorResponse {
 /// Wire types for the lightweight `POST /api/v1/ask` (and `/ask/stream`)
 /// endpoint used by Interview Mode — matches `apps/backend/app/schemas/ask.py`.
 /// Deliberately much smaller than the full analysis request: one question,
-/// its already-locally-retrieved RAG context, and optional free-text
-/// candidate context (no transcript, no question history, no rubric).
-#[derive(Debug, Clone, Serialize)]
-pub struct AskRetrievedChunk {
-    pub text: String,
-    pub source_filename: String,
-    pub document_type: String,
-    pub score: f64,
-}
-
+/// optional free-text candidate context (no transcript, no question
+/// history, no rubric).
+///
 /// One completed exchange earlier in the current Interview Mode session.
 /// Replayed to the model so follow-ups ("why did you choose that?") resolve
 /// against what was already discussed.
@@ -160,15 +131,13 @@ pub struct ConversationTurn {
 
 /// Every context field here is optional and purely additive — the backend
 /// answers the question with or without any of them (see
-/// `apps/backend/app/services/ask_service.py`). `retrieved_context` being
-/// empty is a completely normal case, not a degraded one.
+/// `apps/backend/app/services/ask_service.py`).
 #[derive(Debug, Clone, Serialize)]
 pub struct AskRequest {
     pub question: String,
     /// Prior turns of the current Interview Mode session, oldest first,
     /// excluding the question being asked now. Empty for the first question.
     pub conversation_history: Vec<ConversationTurn>,
-    pub retrieved_context: Vec<AskRetrievedChunk>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub candidate_context: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -237,18 +206,9 @@ pub struct MeetingConversationTurn {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct MeetingRetrievedChunk {
-    pub text: String,
-    pub source_filename: String,
-    pub document_type: String,
-    pub score: f64,
-}
-
-#[derive(Debug, Clone, Serialize)]
 pub struct MeetingAskRequest {
     pub question: String,
     pub conversation_history: Vec<MeetingConversationTurn>,
-    pub retrieved_context: Vec<MeetingRetrievedChunk>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meeting_title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

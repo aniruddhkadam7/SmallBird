@@ -39,10 +39,4 @@ fn main() {
     println!();
     println!("=== effective config (Adaptive mode) ===");
     println!("stt_num_threads         : {}", cfg.stt_num_threads);
-    println!("rag_top_k               : {}", cfg.rag_top_k);
-    println!("rag_max_context_chars   : {}", cfg.rag_max_context_chars);
-    println!("rag_similarity_threshold: {}", cfg.rag_similarity_threshold);
-    println!("rag_retrieval_timeout_ms: {}", cfg.rag_retrieval_timeout_ms);
-    println!("rag_embed_batch_size    : {}", cfg.rag_embed_batch_size);
-    println!("rag_torch_threads       : {}", cfg.rag_torch_threads);
 }

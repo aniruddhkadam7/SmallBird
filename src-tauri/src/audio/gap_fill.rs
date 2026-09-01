@@ -13,11 +13,11 @@
 //!
 //! Downstream this is corrosive in a way that is easy to miss, because the
 //! audio that *does* arrive is perfectly intact. The damage is to the timeline:
-//! every speech-endpointing algorithm — PocketSphinx's `Endpointer`,
-//! sherpa-onnx's `is_endpoint`, any VAD — decides an utterance has ended by
-//! observing *trailing silence*. If silence is never delivered, that trigger
-//! never fires. The last utterance stays open until the speaker happens to say
-//! something else, at which point the two run together.
+//! every speech-endpointing algorithm — Deepgram Flux's end-of-turn detection
+//! included — decides an utterance has ended by observing *trailing
+//! silence*. If silence is never delivered, that trigger never fires. The
+//! last utterance stays open until the speaker happens to say something
+//! else, at which point the two run together.
 //!
 //! That single fact accounts for a family of symptoms usually blamed on the
 //! recognizer: finals arriving seconds late or not at all, the last words of a

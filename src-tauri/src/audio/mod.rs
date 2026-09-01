@@ -1,15 +1,14 @@
 //! AudioCapture
 //! ├── SystemAudioCapture  (WASAPI loopback capture of the default render/output device)
-//! ├── MicrophoneCapture   (WASAPI capture of a default/selected input device)
 //! └── AudioDeviceManager  (device enumeration)
 //!
-//! Captured audio never leaves this process as raw audio — see `stt` for the local
-//! PocketSphinx pipeline that consumes it and produces text only.
+//! Raw captured audio only ever leaves this process over one path: `stt`'s
+//! Deepgram Flux WebSocket client, which sends it encrypted directly to
+//! Deepgram and turns the response into text.
 
 mod device_manager;
 mod gap_fill;
 mod metrics;
-mod mic_capture;
 mod pipeline;
 mod resample;
 mod system_capture;
@@ -18,7 +17,6 @@ pub use device_manager::{AudioDeviceInfo, AudioDeviceManager};
 pub use gap_fill::SilenceGapFiller;
 pub use metrics::{CaptureMetrics, MetricsSnapshot};
 pub use pipeline::run_stt_pipeline;
-pub use mic_capture::MicrophoneCapture;
 pub use system_capture::SystemAudioCapture;
 
 use std::sync::atomic::{AtomicBool, Ordering};

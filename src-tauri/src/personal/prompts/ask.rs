@@ -321,10 +321,6 @@ fn context_blocks(request: &AskRequest) -> Vec<String> {
     if let Some(ctx) = &request.candidate_context {
         blocks.push(format!("About the candidate:\n{ctx}"));
     }
-    if !request.retrieved_context.is_empty() {
-        let chunks = request.retrieved_context.iter().map(|c| c.text.as_str()).collect::<Vec<_>>().join("\n\n");
-        blocks.push(format!("The candidate's own background notes:\n{chunks}"));
-    }
 
     blocks
 }
@@ -389,13 +385,12 @@ pub fn max_tokens_for_question(request: &AskRequest) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::{AskRetrievedChunk, ConversationTurn};
+    use crate::backend::ConversationTurn;
 
     fn base_request(question: &str) -> AskRequest {
         AskRequest {
             question: question.to_string(),
             conversation_history: vec![],
-            retrieved_context: vec![],
             candidate_context: None,
             role: None,
             job_description: None,
@@ -468,21 +463,6 @@ mod tests {
     fn context_blocks_omit_empty_sections_entirely() {
         let req = base_request("What is RAG?");
         assert!(context_blocks(&req).is_empty());
-    }
-
-    #[test]
-    fn context_blocks_drop_source_filenames_and_scores() {
-        let mut req = base_request("Tell me about your project");
-        req.retrieved_context = vec![AskRetrievedChunk {
-            text: "Built a RAG pipeline".to_string(),
-            source_filename: "resume.pdf".to_string(),
-            document_type: "resume".to_string(),
-            score: 0.9,
-        }];
-        let blocks = context_blocks(&req);
-        assert_eq!(blocks.len(), 1);
-        assert!(blocks[0].contains("Built a RAG pipeline"));
-        assert!(!blocks[0].contains("resume.pdf"));
     }
 
     #[test]

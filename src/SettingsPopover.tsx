@@ -5,6 +5,7 @@ import { AttachedDocumentsPanel } from "./AttachedDocumentsPanel";
 import { InterviewHistory } from "./InterviewHistory";
 import { MeetingHistory } from "./MeetingHistory";
 import { PersonalApiKeySettings } from "./PersonalApiKeySettings";
+import { DeepgramApiKeySettings } from "./DeepgramApiKeySettings";
 import type { PersonalLlmProvider } from "./personalApiKeys";
 import type { Mode } from "./App";
 
@@ -73,12 +74,21 @@ export function SettingsPopover({ onClose, mode, historyRefreshKey, onApiKeySave
             {section === "PERSONALIZATION" && <PersonalizationPanel />}
             {section === "PERFORMANCE" && <PerformancePanel />}
             {section === "CONTEXT" && <AttachedDocumentsPanel />}
-            {section === "API_KEYS" && <PersonalApiKeySettings onKeySaved={onApiKeySaved} />}
+            {section === "API_KEYS" && (
+              <>
+                <PersonalApiKeySettings onKeySaved={onApiKeySaved} />
+                <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid var(--border-color, #333)" }}>
+                  <DeepgramApiKeySettings />
+                </div>
+              </>
+            )}
             {section === "PRIVACY" && (
               <p className="setup-hint">
-                Smallbird runs speech-to-text and document search locally on this device, and this
-                personal build talks directly to your own configured AI provider. Nothing is sent to
-                Smallbird Cloud or any other backend.
+                Smallbird extracts text from your uploaded resume/CV and job description locally on this device.
+                Speech-to-text audio is sent,
+                encrypted, directly to Deepgram (using your own Deepgram API key) for transcription —
+                nowhere else. This personal build talks directly to your own configured AI provider for
+                everything else. Nothing is sent to Smallbird Cloud or any other backend.
               </p>
             )}
             {section === "ABOUT" && (

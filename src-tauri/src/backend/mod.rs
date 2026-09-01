@@ -7,11 +7,11 @@
 mod types;
 
 pub use types::{
-    AnalysisProgressEvent, AskRequest, AskResponse, AskRetrievedChunk, ConversationTurn,
+    AnalysisProgressEvent, AskRequest, AskResponse, ConversationTurn,
     InterviewAnalysisRequest, MeetingAskRequest, MeetingAskResponse, MeetingConversationTurn,
-    MeetingRetrievedChunk, MeetingSummary, MeetingSummaryRequest, MeetingTurnIn, NoteContext,
+    MeetingSummary, MeetingSummaryRequest, MeetingTurnIn, NoteContext,
     NoteSummary, NotesAskRequest, NotesAskResponse, NotesSummaryRequest, OverallInterviewAnalysis,
-    QuestionAnalysis, RetrievedSourceRef, SetupAnalysisRequest, SetupAnalysisResponse,
-    WireAudioSource, WireCandidateContext, WireQuestionAnswer, WireRetrievedChunk, WireTranscript,
+    QuestionAnalysis, SetupAnalysisRequest, SetupAnalysisResponse,
+    WireAudioSource, WireCandidateContext, WireQuestionAnswer, WireTranscript,
     WireTranscriptSegment,
 };

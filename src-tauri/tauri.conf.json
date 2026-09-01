@@ -40,8 +40,6 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../sidecars/stt-sidecar": "stt-sidecar",
-      "../models/stt/nemo-fastconformer-80ms-int8": "stt-model",
       "../sidecars/rag-lite": "rag-lite"
     },
     "windows": {

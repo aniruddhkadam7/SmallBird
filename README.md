@@ -11,9 +11,12 @@ can be built and modified on its own.
 - A Tauri (Rust + React/TypeScript) desktop app for Windows.
 - Interview Mode, Meeting Mode, Notes, resume/JD setup analysis, and full
   interview scoring — all calling your configured AI provider directly.
-- Local speech-to-text (bundled, offline, no cloud dependency).
-- Local document search/RAG (bundled, offline, no cloud dependency).
-- Your API key is stored in Windows Credential Manager via the `keyring`
+- Speech-to-text via Deepgram Flux (cloud, streaming, low-latency) — audio
+  goes only to Deepgram, encrypted, and nowhere else.
+- Local resume/CV and job-description text extraction (bundled, offline, no
+  cloud dependency) — the extracted text is sent directly to your LLM as
+  context, no search/retrieval involved.
+- Your API keys are stored in Windows Credential Manager via the `keyring`
   crate — never in a file, never logged, never sent anywhere except
   directly to the provider you configure.
 
@@ -23,8 +26,8 @@ can be built and modified on its own.
 Smallbird Local (this repo)
         |
         +-- Tauri Desktop App (src/, src-tauri/)
-        +-- Local STT (sidecars/stt-sidecar/, models/stt/)
-        +-- Local RAG / document search (sidecars/rag-lite/)
+        +-- Deepgram Flux STT client (src-tauri/src/stt/)
+        +-- Local document text extraction (sidecars/rag-lite/)
         +-- Direct AI provider client (src-tauri/src/personal/)
         +-- Your API keys (Windows Credential Manager)
         |
@@ -48,28 +51,22 @@ entitlement system anywhere in this repository.
 npm install
 ```
 
-### Getting the model and sidecar binaries
+### Getting the RAG sidecar binary
 
-`models/` and `sidecars/` are **not tracked in this git repository** — the
-STT model alone is 126MB, over GitHub's 100MB per-file limit, and none of
-these are source files anyway (they're prebuilt binary build inputs, not
-something you'd normally edit). You need to place them yourself before
+`sidecars/` is **not tracked in this git repository** — it's a prebuilt
+binary build input, not a source file. You need to place it yourself before
 `npm run tauri build` will produce a working EXE:
 
 ```
-models/stt/nemo-fastconformer-80ms-int8/     <- encoder.int8.onnx, decoder.int8.onnx,
-                                                  joiner.int8.onnx, tokens.txt, test_wavs/
-sidecars/stt-sidecar/                        <- stt-sidecar.exe + _internal/
 sidecars/rag-lite/                           <- rag-lite.exe + _internal/
 ```
 
-Copy these three directories in from wherever you have a working Smallbird
-desktop build (e.g. `apps/desktop/src-tauri/target/release/bundle`'s
-resource inputs in the original monorepo: `models/stt/`, `packages/stt/
-dist/stt-sidecar/`, and `packages/rag/dist/rag-lite/` — copy each folder's
-*contents* directly into the paths above, no extra nesting). Once copied,
-these never need to change again unless you intentionally rebuild the STT
-model or the sidecar executables from source.
+Copy this directory in from wherever you have a working Smallbird desktop
+build (e.g. `apps/desktop/src-tauri/target/release/bundle`'s resource
+inputs in the original monorepo: `packages/rag/dist/rag-lite/` — copy the
+folder's *contents* directly into the path above, no extra nesting). Once
+copied, this never needs to change again unless you intentionally rebuild
+the sidecar executable from source.
 
 ## Development
 
@@ -95,11 +92,14 @@ Output:
 2. Open Settings (gear icon) -> API Keys.
 3. Paste in your OpenAI, Anthropic, and/or Gemini API key. Each is stored
    independently in Windows Credential Manager.
-4. Pick which provider to use from the header's model picker (this is
+4. Also paste in a [Deepgram](https://deepgram.com) API key — required for
+   speech-to-text in Interview Mode and Meeting Mode (get a free-tier key at
+   console.deepgram.com). Stored the same way, in Windows Credential Manager.
+5. Pick which LLM provider to use from the header's model picker (this is
    separate from the API Keys panel — the API Keys panel only manages your
    keys, the header picker decides which one is actually used for a
    request).
-5. Use Interview Mode, Meeting Mode, or Notes as normal.
+6. Use Interview Mode, Meeting Mode, or Notes as normal.
 
 ## Customizing
 

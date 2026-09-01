@@ -8,17 +8,21 @@
 //!    captures the meeting/call output — the other participant) is treated as a
 //!    candidate "question" if its text ends with `?`, OR starts with a common
 //!    interrogative/question-request word (see `looks_like_question`) — this
-//!    catches interviewer prompts that PocketSphinx-transcribed without a
-//!    trailing question mark, which is common since PocketSphinx does not
-//!    reliably produce punctuation.
+//!    catches interviewer prompts transcribed without a trailing question
+//!    mark. These heuristics were originally tuned against the old local
+//!    PocketSphinx/NeMo engine's output style (frequently no punctuation at
+//!    all); STT is now Deepgram Flux (see `crate::stt`), whose transcripts
+//!    are generally punctuated, so this fallback matters less than it used
+//!    to but is left in place as a harmless safety net — worth revisiting
+//!    once there's a corpus of real Deepgram transcripts to tune against.
 //! 3. Everything from a `MICROPHONE` segment up to (but not including) the next
 //!    question-like `SYSTEM_AUDIO` segment is concatenated as that question's
 //!    answer.
 //! 4. Consecutive `SYSTEM_AUDIO` segments that don't individually look like a
 //!    question are merged into the *next* question-like segment's text, so a
 //!    question split across multiple STT finalization boundaries (a very
-//!    common PocketSphinx behavior — see docs/progress.md Step 4) is treated as
-//!    one question rather than several fragments.
+//!    common behavior with the old local engine — see docs/progress.md Step
+//!    4) is treated as one question rather than several fragments.
 //!
 //! This is intentionally conservative: it is fine for it to miss some
 //! implicit/unmarked questions (they simply won't be analyzed), but it should
@@ -109,8 +113,8 @@ pub fn extract_question_answers(session: &InterviewSession) -> Vec<QuestionAnswe
             AudioSource::SystemAudio => {
                 // A pending question with no answer started yet, arriving
                 // within a short gap, is very likely the same spoken question
-                // split across two STT finalization boundaries (common
-                // PocketSphinx behavior) — merge it in regardless of whether
+                // split across two STT finalization boundaries (common with
+                // the old local engine) — merge it in regardless of whether
                 // this fragment alone also looks like a question, rather than
                 // starting a second question. Only treat it as a genuinely
                 // new question once an answer has begun, or after a longer
@@ -236,7 +240,7 @@ mod tests {
 
     #[test]
     fn detects_question_without_trailing_question_mark() {
-        // PocketSphinx frequently produces no punctuation at all.
+        // The old local engine frequently produced no punctuation at all.
         let session = session_with(vec![
             segment(AudioSource::SystemAudio, "how did you handle false positives", 1000),
             segment(AudioSource::Microphone, "we tuned the threshold", 2000),
@@ -260,8 +264,8 @@ mod tests {
 
     #[test]
     fn merges_split_question_fragments_before_answer_starts() {
-        // Common PocketSphinx behavior: one spoken question becomes two
-        // finalized STT segments because of an endpointing gap.
+        // A behavior any STT engine can produce: one spoken question becomes
+        // two finalized segments because of an endpointing gap.
         let session = session_with(vec![
             segment(AudioSource::SystemAudio, "Can you explain the", 1000),
             segment(AudioSource::SystemAudio, "architecture you used?", 1500),

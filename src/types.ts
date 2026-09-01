@@ -33,13 +33,6 @@ export type BackendStatus = "UNKNOWN" | "CONNECTING" | "CONNECTED" | "OFFLINE";
 
 export type AnalysisPhase = "IDLE" | "ANALYZING" | "COMPLETED" | "FAILED";
 
-export interface RetrievedSourceRef {
-  filename: string;
-  document_type: string;
-  score: number;
-  text: string;
-}
-
 export interface QuestionAnalysis {
   question_id: string;
   question: string;
@@ -49,7 +42,6 @@ export interface QuestionAnalysis {
   strengths: string[];
   issues: string[];
   improved_answer: string;
-  retrieved_sources: RetrievedSourceRef[];
   failed: boolean;
   error_message: string | null;
 }
@@ -78,14 +70,7 @@ export interface AnalysisProgressEvent {
   result: OverallInterviewAnalysis | null;
 }
 
-export type DocumentType =
-  | "RESUME"
-  | "JOB_DESCRIPTION"
-  | "PROJECT"
-  | "COMPANY"
-  | "INTERVIEW_PREPARATION"
-  | "TECHNICAL_NOTES"
-  | "OTHER";
+export type DocumentType = "RESUME" | "JOB_DESCRIPTION";
 
 export type DocumentStatus =
   | "UPLOADING"
@@ -108,25 +93,4 @@ export interface DocumentMetadata {
   status: string;
   chunk_count: number;
   error_message: string | null;
-}
-
-export interface KnowledgeBaseStatus {
-  document_count: number;
-  chunk_count: number;
-  status: string;
-}
-
-export interface SearchResultItem {
-  chunk_id: string;
-  score: number;
-  text: string;
-  metadata: {
-    filename: string;
-    document_type: string;
-  };
-}
-
-export interface SearchResponse {
-  results: SearchResultItem[];
-  latency_ms: number;
 }

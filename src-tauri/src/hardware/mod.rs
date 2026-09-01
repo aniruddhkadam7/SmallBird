@@ -1,11 +1,10 @@
-//! Adaptive hardware-based performance tuning for Smallbird's local STT and RAG
-//! pipelines. See docs/performance-tuning.md (once Milestone 7 lands) for
-//! the benchmark evidence behind the tier→config table in `manager.rs`.
-//!
-//! Scope: STT (sherpa-onnx sidecar thread count) and RAG (embedding
-//! batch/thread count, retrieval top_k/context/timeout) only. Smallbird's LLM
-//! is a cloud API call via `apps/backend` — not touched here, and never
-//! hardware-tiered (see `manager.rs`'s module doc on LLM context).
+//! Hardware detection and performance-mode preference tracking. See
+//! docs/performance-tuning.md (once Milestone 7 lands) for the historical
+//! benchmark evidence behind `manager.rs`'s tier table (largely
+//! superseded now that STT is a Deepgram cloud connection rather than a
+//! locally-sized thread pool, and RAG search has been removed entirely —
+//! see `manager.rs`'s module doc). Smallbird's LLM is a cloud API call —
+//! not touched here, and never hardware-tiered.
 
 pub mod commands;
 pub mod fingerprint;
@@ -15,8 +14,6 @@ pub mod pressure;
 pub mod profile;
 pub mod storage;
 pub mod store;
-pub mod stt_mode;
-pub mod stt_rag_coordination;
 pub mod telemetry;
 pub mod tier;
 
@@ -115,17 +112,6 @@ pub fn perf_context(app: &AppHandle) -> telemetry::PerfContext {
     let state = app.state::<PerformanceState>();
     let manager = state.0.lock().unwrap();
     manager.perf_context()
-}
-
-/// STT/RAG scheduling coordination (Phase B): whether active STT should
-/// currently throttle RAG background indexing on this machine/mode. See
-/// `manager::PerformanceManager::should_throttle_background_work` for the
-/// exact per-mode rule and `stt_rag_coordination` for how this gets acted
-/// on.
-pub fn should_throttle_background_work(app: &AppHandle) -> bool {
-    let state = app.state::<PerformanceState>();
-    let manager = state.0.lock().unwrap();
-    manager.should_throttle_background_work()
 }
 
 // Re-exported for the Milestone 6 runtime-adaptation checkpoint, which

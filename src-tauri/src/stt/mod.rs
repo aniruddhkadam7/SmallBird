@@ -1,16 +1,19 @@
-//! Local speech-to-text pipeline.
+//! Speech-to-text via Deepgram Flux.
 //!
-//! `SttEngine` wraps the CMU PocketSphinx sidecar (see
-//! `packages/stt/pocketsphinx_sidecar/sidecar.py`) as a child process: audio in over
-//! stdin, transcript events out over stdout. No audio or transcript data leaves this
-//! machine here — this module has no network client.
+//! `SttClient` streams 16kHz mono PCM16 audio to
+//! `wss://api.deepgram.com/v2/listen` over a WebSocket and turns Deepgram's
+//! turn-based transcript events into partial/final `SttEvent`s. Unlike the
+//! local model this replaced, this module does make a network call — audio
+//! leaves this machine, encrypted, directly to Deepgram, and nowhere else.
 //!
 //! No component in this module (or anywhere else in the app) tries to detect
-//! whether a piece of text is a "question" or decide when to call an LLM. It only
-//! turns audio into partial/final text events.
+//! whether a piece of text is a "question" or decide when to call an LLM. It
+//! only turns audio into partial/final text events.
 
+mod client;
+pub mod commands;
 mod events;
-mod sidecar;
+pub mod key_store;
 
+pub use client::SttClient;
 pub use events::{SttEvent, SttEventKind};
-pub use sidecar::SttSidecar;

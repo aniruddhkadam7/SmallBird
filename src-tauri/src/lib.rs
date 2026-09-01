@@ -5,9 +5,8 @@ mod analyzer;
 pub mod audio;
 mod backend;
 mod commands;
-// Public so the RAG/STT spawn call sites and the `rag-bench`/`stt-bench`
-// verification steps (Milestone 4a) can reference `PerformanceConfig`
-// without a re-export chain.
+// Public so `src/bin/hw_probe.rs` can reference `PerformanceConfig` without
+// a re-export chain.
 pub mod hardware;
 mod history;
 mod interview_mode;
@@ -72,20 +71,11 @@ pub fn run() {
         .manage(AppState::default())
         .manage(history::HistoryStore::default())
         .manage(meeting_mode::history::MeetingHistoryStore::default())
-        .manage(hardware::stt_rag_coordination::SttRagCoordination::default())
         .setup(|app| {
             // Hardware detection + performance mode load first, synchronously
             // — cheap (a few sysinfo/DXGI/IOCTL calls, no network/process
-            // spawn), and the RAG service spawn below reads the resulting
-            // tier config for its embedding batch size / torch thread count.
+            // spawn).
             let performance_state = hardware::init(&app.handle().clone());
-            let initial_embed_config = {
-                let cfg = performance_state.0.lock().unwrap().effective_config();
-                rag::EmbedProcessConfig {
-                    embed_batch_size: cfg.rag_embed_batch_size,
-                    torch_threads: cfg.rag_torch_threads,
-                }
-            };
             app.manage(performance_state);
 
             main_window::apply_light_titlebar(&app.handle().clone());
@@ -99,13 +89,13 @@ pub fn run() {
             if let Err(err) = app.global_shortcut().register("Ctrl+Shift+Space") {
                 log::warn!("failed to register Ctrl+Shift+Space global hotkey: {err}");
             }
-            // Spawn the local RAG service in the background; the app remains
-            // usable for recording/transcription immediately even while this
-            // is still starting up or if it's unavailable entirely (see
-            // rag::process::RagServiceHandle::spawn).
+            // Spawn the local document-extraction service in the background;
+            // the app remains usable for recording/transcription immediately
+            // even while this is still starting up or if it's unavailable
+            // entirely (see rag::process::RagServiceHandle::spawn).
             let handle = app.handle().clone();
             let handle_for_spawn = handle.clone();
-            std::thread::spawn(move || match rag::RagServiceHandle::spawn(initial_embed_config, Some(&handle_for_spawn)) {
+            std::thread::spawn(move || match rag::RagServiceHandle::spawn(Some(&handle_for_spawn)) {
                 Ok(service) => {
                     if service.is_some() {
                         rag::wait_until_healthy_default();
@@ -117,7 +107,7 @@ pub fn run() {
                     }
                 }
                 Err(err) => {
-                    log::error!("failed to start RAG service: {err}");
+                    log::error!("failed to start document extraction service: {err}");
                 }
             });
 
@@ -144,9 +134,6 @@ pub fn run() {
             commands::get_document_text,
             commands::list_documents,
             commands::delete_document,
-            commands::clear_knowledge_base,
-            commands::knowledge_base_status,
-            commands::search_knowledge_base,
             interview_mode::commands::show_interview_overlay,
             interview_mode::commands::hide_interview_overlay,
             interview_mode::commands::toggle_interview_overlay,
@@ -155,7 +142,6 @@ pub fn run() {
             interview_mode::commands::resize_interview_overlay,
             interview_mode::commands::start_backend_session,
             interview_mode::commands::end_backend_session,
-            hardware::commands::get_stt_mode_info,
             history::list_interview_history,
             history::archive_interview_session,
             history::delete_interview_history_entry,
@@ -177,8 +163,6 @@ pub fn run() {
             notes_mode::store::update_note,
             notes_mode::store::delete_note,
             notes_mode::store::search_notes,
-            notes_mode::dictation::start_note_dictation,
-            notes_mode::dictation::stop_note_dictation,
             notes_mode::ai::summarize_note,
             notes_mode::ai::ask_about_notes,
             hardware::commands::get_hardware_profile,
@@ -188,6 +172,9 @@ pub fn run() {
             personal::commands::personal_get_api_key,
             personal::commands::personal_set_api_key,
             personal::commands::personal_clear_api_key,
+            stt::commands::stt_get_api_key,
+            stt::commands::stt_set_api_key,
+            stt::commands::stt_clear_api_key,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

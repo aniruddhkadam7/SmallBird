@@ -1,12 +1,13 @@
-//! Headless end-to-end test of the production recording pipeline.
+//! Headless demonstration of the WRONG startup ordering: audio capture
+//! started before the STT connection is confirmed ready, unlike
+//! `pipeline_test.rs` (and production `commands.rs`), which start the
+//! connection first. Kept as a companion to `pipeline_test.rs` for
+//! reproducing the startup-backlog symptom `commands.rs`'s doc comment
+//! references (see docs/performance-tuning.md's real-i3-latency-diagnosis
+//! section) rather than for exercising the recommended order.
 //!
-//!     cargo run --bin pipeline_test -- [seconds]
-//!     cargo run --bin pipeline_test -- 40 --lifecycle
-//!
-//! Drives the *same* code the Tauri command runs — `SystemAudioCapture`,
-//! `run_stt_pipeline` (gap-fill included), `SttSidecar`, `TranscriptManager` —
-//! with console callbacks in place of Tauri events. The only thing not
-//! exercised is the window itself.
+//!     DEEPGRAM_API_KEY=... cargo run --bin pipeline_test_old_order -- [seconds]
+//!     DEEPGRAM_API_KEY=... cargo run --bin pipeline_test_old_order -- 40 --lifecycle
 //!
 //! Play audio through the default output device while it runs. Partials are
 //! rewritten in place; finals print on their own line with the latency from
@@ -20,11 +21,19 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use desktop_lib::audio::{run_stt_pipeline, PauseSignal, StopSignal, SystemAudioCapture};
-use desktop_lib::stt::{SttEventKind, SttSidecar};
+use desktop_lib::stt::{SttClient, SttEventKind};
 use desktop_lib::transcript::TranscriptManager;
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    let api_key = match std::env::var("DEEPGRAM_API_KEY") {
+        Ok(key) => key,
+        Err(_) => {
+            eprintln!("DEEPGRAM_API_KEY must be set to run this binary");
+            std::process::exit(1);
+        }
+    };
 
     let args: Vec<String> = std::env::args().collect();
     let seconds: u64 = args
@@ -33,7 +42,7 @@ fn main() {
         .unwrap_or(30);
     let lifecycle = args.iter().any(|a| a == "--lifecycle");
 
-    println!("=== production STT pipeline test ===");
+    println!("=== production STT pipeline test (OLD/WRONG ordering) ===");
     println!("duration : {seconds}s");
     println!("lifecycle: {}", if lifecycle { "Start/Pause/Resume/Stop" } else { "Start/Stop only" });
     println!("Play audio through your speakers now.\n");
@@ -51,13 +60,11 @@ fn main() {
         }
     };
 
-    // `None`: this headless binary has no `PerformanceManager`/`AppHandle` —
-    // preserves the pre-existing STT_NUM_THREADS env-var pass-through
-    // behavior unchanged, same as before this parameter existed.
-    let sidecar = match SttSidecar::spawn(desktop_lib::audio::AudioSource::SystemAudio, stt_tx, None, None) {
-        Ok(sidecar) => sidecar,
+    // `None`: this headless binary has no `AppHandle`.
+    let sidecar = match SttClient::spawn(desktop_lib::audio::AudioSource::SystemAudio, stt_tx, api_key, None) {
+        Ok(client) => client,
         Err(err) => {
-            eprintln!("sidecar failed: {err}");
+            eprintln!("STT client failed: {err}");
             std::process::exit(1);
         }
     };

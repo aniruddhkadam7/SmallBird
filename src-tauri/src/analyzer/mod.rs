@@ -1,7 +1,6 @@
 //! InterviewAnalyzer
 //! ├── TurnProcessor            (groups finalized transcript segments into turns)
-//! ├── QuestionAnswerExtractor  (derives Question/Answer pairs from turns)
-//! └── (RetrievalPlanner lives in `crate::rag` — see `rag::plan_retrieval_queries`)
+//! └── QuestionAnswerExtractor  (derives Question/Answer pairs from turns)
 //!
 //! Runs entirely after recording has stopped, as a read-only derivation over the
 //! already-finalized `InterviewSession` — it never mutates `TranscriptManager` or

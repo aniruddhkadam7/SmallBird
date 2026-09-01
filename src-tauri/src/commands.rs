@@ -6,9 +6,9 @@ use crate::audio::{
     AudioDeviceInfo, AudioDeviceManager, AudioSource, PauseSignal, StopSignal, SystemAudioCapture,
 };
 use crate::backend::{InterviewAnalysisRequest, SetupAnalysisRequest, SetupAnalysisResponse};
-use crate::rag::{DocumentMetadata, KnowledgeBaseStatus, RagClient, SearchResponse};
+use crate::rag::{DocumentMetadata, RagClient};
 use crate::state::AppState;
-use crate::stt::SttSidecar;
+use crate::stt::SttClient;
 use crate::transcript::{InterviewSession, RecordingState, TranscriptSegment};
 
 #[derive(Clone, serde::Serialize)]
@@ -41,27 +41,30 @@ pub fn list_input_devices() -> Result<Vec<AudioDeviceInfo>, String> {
 const STOPPING_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const STOPPING_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
 
-/// Starts the full local pipeline: WASAPI system-audio capture -> STT
-/// sidecar -> TranscriptManager -> `transcript:update` / `audio:level` events to
-/// the frontend. No network call happens here; the backend is only contacted later
-/// when the user explicitly clicks "Analyze Interview" (see docs/architecture.md).
+/// Starts the full pipeline: WASAPI system-audio capture -> Deepgram Flux
+/// STT client -> TranscriptManager -> `transcript:update` / `audio:level` events to
+/// the frontend. The only network call this makes is the Deepgram WebSocket
+/// connection itself; the backend is only contacted separately when the user
+/// explicitly clicks "Analyze Interview" (see docs/architecture.md).
 ///
-/// Deterministic lifecycle: `Idle`/`Stopped` -> `Starting` -> (STT sidecar
-/// confirmed ready -> audio capture confirmed initialized) -> `Recording`,
-/// or -> `Idle` with a real error on any failure along the way, with
-/// whatever was already spawned cleaned up before returning. The `Starting`
-/// state itself is what makes a second, concurrent Start request harmless
-/// (it is rejected immediately with the same "capture already running"
-/// every caller already treats as expected — see e.g.
+/// Deterministic lifecycle: `Idle`/`Stopped` -> `Starting` -> (Deepgram
+/// connection confirmed ready -> audio capture confirmed initialized) ->
+/// `Recording`, or -> `Idle` with a real error on any failure along the way,
+/// with whatever was already spawned cleaned up before returning. The
+/// `Starting` state itself is what makes a second, concurrent Start request
+/// harmless (it is rejected immediately with the same "capture already
+/// running" every caller already treats as expected — see e.g.
 /// `InterviewOverlay.tsx`) instead of racing a second WASAPI/STT startup
 /// against the first. A request that instead lands mid-`Stopping` (a
 /// previous session's teardown still in flight) waits briefly for it to
 /// finish rather than starting a new session while the old one's
-/// device/process handles may still be live. See
+/// device/connection handles may still be live. See
 /// `docs/performance-tuning.md`'s STT-start-reliability section for the
 /// full root-cause writeup this replaces, and its real-i3-latency-diagnosis
-/// section for why the sidecar is started before audio capture rather than
-/// after.
+/// section for why the connection is established before audio capture
+/// rather than after (originally written for the old local-model version of
+/// this same ordering problem — the same fix applies to a network connect
+/// delay).
 #[tauri::command]
 pub fn start_system_audio_capture(
     app: tauri::AppHandle,
@@ -115,7 +118,6 @@ pub fn start_system_audio_capture(
             session.stop_signal = None;
             session.pause_signal = None;
             session.system_audio_thread = None;
-            session.mic_thread = None;
             session.pipeline_thread = None;
             drop(session);
             log::error!("start_system_audio_capture: failed to start: {err}");
@@ -144,62 +146,50 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
 
     let session_start = crate::hardware::telemetry::Stopwatch::start();
 
-    // STT/RAG scheduling coordination (Phase B): signal RAG indexing to
-    // yield BEFORE spawning the sidecar, not after — the sidecar's own
-    // model-load is itself the most CPU/memory-constrained moment of the
-    // whole startup sequence on Entry/Standard-tier hardware, and it used
-    // to run fully unthrottled while RAG's background indexing/embedding
-    // competed with it for the same scarce resources. No-op on
-    // Performance/HighPerformance tier or when Adaptive doesn't call for
-    // throttling — see hardware::stt_rag_coordination's module doc.
-    crate::hardware::stt_rag_coordination::on_stt_session_started(app);
+    let api_key = match crate::stt::key_store::load_key() {
+        Ok(Some(key)) => key,
+        Ok(None) => {
+            return Err("Deepgram API key not configured — add it in Settings".to_string());
+        }
+        Err(err) => {
+            return Err(err);
+        }
+    };
 
-    // `_checked`: this is a natural checkpoint (recording session start) —
-    // feeds a fresh RAM reading into the sustained-pressure tracker, which
-    // may clamp `stt_num_threads` down if the machine has been under
-    // memory pressure across the last couple of checkpoints (see
-    // hardware::pressure). Any resulting downgrade/restoration is logged
-    // from within effective_config_checked itself.
-    let stt_num_threads = crate::hardware::effective_config_checked(app).stt_num_threads;
-
-    // The STT sidecar is spawned BEFORE audio capture starts — deliberately
-    // reversed from the original order. `SttSidecar::spawn` blocks until the
-    // model has finished loading and the sidecar signals ready (see
-    // stt/sidecar.rs). Starting audio capture first meant WASAPI spent that
-    // entire model-load window pushing chunks into an unbounded channel with
-    // nothing yet consuming them — on slow hardware (e.g. an i3/8GB machine,
-    // where model load can take several seconds instead of the ~100ms seen
-    // on faster dev hardware) that produced a real backlog: silence for a
-    // few seconds, then the backlogged audio decoded in a burst the instant
-    // the sidecar came up, before settling into real-time. Starting the
-    // sidecar first means no audio channel — and so no backlog — exists
-    // until STT is already able to keep up with it. See
-    // `docs/performance-tuning.md`'s real-i3-latency-diagnosis section.
-    let sidecar = match SttSidecar::spawn(AudioSource::SystemAudio, stt_tx, Some(stt_num_threads), Some(app)) {
-        Ok(sidecar) => sidecar,
+    // The Deepgram connection is established BEFORE audio capture starts —
+    // deliberately reversed from the naive order. `SttClient::spawn` blocks
+    // until Deepgram confirms the connection (see stt/client.rs). Starting
+    // audio capture first meant WASAPI spent that entire connect window
+    // pushing chunks into an unbounded channel with nothing yet consuming
+    // them — on slow/high-latency networks that produced a real backlog:
+    // silence for a few seconds, then the backlogged audio flushed in a
+    // burst the instant the connection came up, before settling into
+    // real-time. Starting the connection first means no audio channel — and
+    // so no backlog — exists until STT is already able to keep up with it.
+    // See `docs/performance-tuning.md`'s real-i3-latency-diagnosis section
+    // (written for the old local-model version of this same problem; the
+    // same ordering fix applies to a network connect delay).
+    let stt_client = match SttClient::spawn(AudioSource::SystemAudio, stt_tx, api_key, Some(app.clone())) {
+        Ok(client) => client,
         Err(err) => {
             // Audio capture hasn't started yet at this point — nothing to
-            // stop/join here, only the RAG throttle signal to undo before
-            // surfacing the error.
-            crate::hardware::stt_rag_coordination::on_stt_session_ended(app);
+            // stop/join here.
             return Err(err);
         }
     };
     // Each log site reads a fresh `perf_context(app)` rather than one
-    // captured up front — `effective_config_checked` above is what actually
-    // feeds this session's RAM reading into the pressure tracker, so a
-    // context captured before that checkpoint would log the previous
-    // session's (possibly stale) pressure state / thread count instead of
-    // the one actually in effect for this session.
+    // captured up front, so it reflects whatever pressure state is actually
+    // in effect for this session rather than a stale snapshot from before
+    // the Deepgram connection was established.
     crate::hardware::telemetry::log_stage_ms(
         crate::hardware::telemetry::PipelineStage::SttReady,
         session_start.elapsed().as_millis(),
         &crate::hardware::perf_context(app),
     );
 
-    // Audio capture starts only now that the sidecar is confirmed ready to
-    // consume it — no window remains during which chunks can queue up
-    // unread.
+    // Audio capture starts only now that the Deepgram connection is
+    // confirmed ready to consume it — no window remains during which chunks
+    // can queue up unread.
     let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
     // TEMP DIAGNOSTIC: a sender clone purely for polling backlog depth
     // (`.len()`) — crossbeam senders/receivers are safe to clone for a
@@ -211,12 +201,10 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
     let audio_thread = match SystemAudioCapture::start(audio_tx, stop.clone()) {
         Ok(handle) => handle,
         Err(err) => {
-            // The sidecar is already spawned (and ready) at this point —
-            // shut it down cleanly and undo the throttle signal before
-            // surfacing the error, so a failed Start never leaves an
-            // orphaned STT process running.
-            sidecar.shutdown();
-            crate::hardware::stt_rag_coordination::on_stt_session_ended(app);
+            // The Deepgram connection is already established at this point —
+            // shut it down cleanly before surfacing the error, so a failed
+            // Start never leaves an orphaned connection running.
+            stt_client.shutdown();
             return Err(err);
         }
     };
@@ -225,8 +213,8 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
         session_start.elapsed().as_millis(),
         &crate::hardware::perf_context(app),
     );
-    // By this point the whole startup sequence — STT model load AND audio
-    // capture init — is confirmed complete.
+    // By this point the whole startup sequence — Deepgram connection AND
+    // audio capture init — is confirmed complete.
     crate::hardware::telemetry::finish(
         session_start,
         crate::hardware::telemetry::PipelineStage::SttSessionStart,
@@ -254,14 +242,12 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
                     sys.refresh_cpu_usage();
                     let cpu = sys.global_cpu_usage();
                     let avail = crate::hardware::available_ram_mb();
-                    let cfg = crate::hardware::effective_config_checked(&diag_app);
                     let pressure = crate::hardware::perf_context(&diag_app).pressure;
                     log::info!(
-                        "DIAG t={}ms cpu={:.1}% avail_ram_mb={} stt_threads={} pressure={:?}",
+                        "DIAG t={}ms cpu={:.1}% avail_ram_mb={} pressure={:?}",
                         diag_start.elapsed().as_millis(),
                         cpu,
                         avail,
-                        cfg.stt_num_threads,
                         pressure,
                     );
                 }
@@ -273,10 +259,10 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
     let pipeline_thread = std::thread::Builder::new()
         .name("audio-stt-pipeline".into())
         .spawn(move || {
-            // Forward audio chunks to the sidecar and levels to the UI, on this
+            // Forward audio chunks to Deepgram and levels to the UI, on this
             // thread, while a second thread below drains STT events. Two separate
-            // threads are required so writing audio to the sidecar's stdin never
-            // blocks waiting for its stdout to be read (see docs/progress.md Step 4).
+            // threads are required so sending audio never blocks waiting for
+            // the WebSocket's inbound events to be read.
             let stt_events_app = app_for_pipeline.clone();
             let events_thread = std::thread::Builder::new()
                 .name("stt-events-forwarder".into())
@@ -286,8 +272,8 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
                     // at session start) to the first occurrence of each
                     // event kind — the number the user actually experiences
                     // (audio flowing -> text appearing), not a cross-process
-                    // clock reconciliation with the Python sidecar's own
-                    // monotonic timestamps.
+                    // clock reconciliation with Deepgram's own event
+                    // timestamps.
                     let stt_clock = crate::hardware::telemetry::Stopwatch::start();
                     let mut first_partial_logged = false;
                     let mut first_final_logged = false;
@@ -337,17 +323,17 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
                 .ok();
 
             // ===== TEMP DIAGNOSTIC: RMS-threshold speech onset/offset
-            // detector, purely observational (does NOT feed VAD/endpointing
-            // — those stay untouched in Python), plus outbound channel
-            // backlog at each transition, to see whether audio is queuing up
-            // behind STT rather than being delivered promptly.
+            // detector, purely observational (does NOT feed Deepgram's own
+            // end-of-turn detection), plus outbound channel backlog at each
+            // transition, to see whether audio is queuing up behind STT
+            // rather than being delivered promptly.
             let diag_audio_tx = audio_tx_for_diag.clone();
             let mut diag_speaking = false;
             // ===== END TEMP DIAGNOSTIC (setup) =====
 
             // The loop itself lives in `audio::pipeline` so that the headless
             // `pipeline_test` binary drives the same code rather than a copy.
-            crate::audio::run_stt_pipeline(audio_rx, sidecar, pause_for_pipeline, move |chunk| {
+            crate::audio::run_stt_pipeline(audio_rx, stt_client, pause_for_pipeline, move |chunk| {
                 let _ = app_for_pipeline.emit(
                     "audio:level",
                     AudioLevelEvent {
@@ -395,8 +381,8 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
 }
 
 /// Pauses recording: audio capture keeps running internally (so the OS device
-/// buffer never overflows) but no audio reaches the STT sidecar or the UI meter,
-/// and no transcript segment changes. The sidecar process is left running so
+/// buffer never overflows) but no audio reaches Deepgram or the UI meter,
+/// and no transcript segment changes. The Deepgram connection is left open so
 /// resuming is instant and the transcript-so-far is untouched.
 #[tauri::command]
 pub fn pause_recording(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
@@ -462,30 +448,30 @@ pub fn resume_recording(app: tauri::AppHandle, state: State<'_, AppState>) -> Re
     Ok(())
 }
 
-/// Stops recording: halts WASAPI capture, flushes and finalizes the STT sidecar
-/// (so any in-progress utterance is finalized rather than dropped), and marks the
-/// session as completed. Does not contact the backend — that only happens if/when
-/// the user explicitly clicks "Analyze Interview".
+/// Stops recording: halts WASAPI capture, flushes and finalizes the Deepgram
+/// connection (so any in-progress utterance is finalized rather than dropped),
+/// and marks the session as completed. Does not contact the backend — that
+/// only happens if/when the user explicitly clicks "Analyze Interview".
 #[tauri::command]
 pub fn stop_audio_capture(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     log::info!("stop_audio_capture: invoked");
     // Take the handles out and drop the lock *before* joining threads below —
-    // joining can block for as long as the STT sidecar takes to flush and exit,
-    // and holding `state.capture` for that whole span would deadlock every other
-    // recording command (get_recording_state, pause/resume, a fresh start) that
-    // also needs this same mutex while Stop is still in flight. The
-    // `Stopping` state set here (rather than jumping straight to `Stopped`)
-    // is what a concurrent Start request sees and waits on instead of
-    // racing a new WASAPI/STT session against this teardown's still-live
-    // device/process handles — see `start_system_audio_capture`.
-    let (pause_signal, stop_signal, system_audio_thread, mic_thread, pipeline_thread) = {
+    // joining can block for as long as the Deepgram connection takes to flush
+    // and close, and holding `state.capture` for that whole span would
+    // deadlock every other recording command (get_recording_state,
+    // pause/resume, a fresh start) that also needs this same mutex while
+    // Stop is still in flight. The `Stopping` state set here (rather than
+    // jumping straight to `Stopped`) is what a concurrent Start request sees
+    // and waits on instead of racing a new WASAPI/STT session against this
+    // teardown's still-live device/connection handles — see
+    // `start_system_audio_capture`.
+    let (pause_signal, stop_signal, system_audio_thread, pipeline_thread) = {
         let mut session = state.capture.lock().map_err(|e| e.to_string())?;
         session.recording_state = RecordingState::Stopping;
         (
             session.pause_signal.take(),
             session.stop_signal.take(),
             session.system_audio_thread.take(),
-            session.mic_thread.take(),
             session.pipeline_thread.take(),
         )
     };
@@ -503,9 +489,6 @@ pub fn stop_audio_capture(app: tauri::AppHandle, state: State<'_, AppState>) -> 
     if let Some(handle) = system_audio_thread {
         let _ = handle.join();
     }
-    if let Some(handle) = mic_thread {
-        let _ = handle.join();
-    }
     if let Some(handle) = pipeline_thread {
         let _ = handle.join();
     }
@@ -519,12 +502,6 @@ pub fn stop_audio_capture(app: tauri::AppHandle, state: State<'_, AppState>) -> 
         let mut session = state.capture.lock().map_err(|e| e.to_string())?;
         session.recording_state = RecordingState::Stopped;
     }
-
-    // STT/RAG scheduling coordination (Phase B): releases the throttle this
-    // session may have activated. Safe no-op if it never did (different
-    // tier/mode, or this call races a start that hasn't incremented yet —
-    // see on_stt_session_ended's own guard against underflow).
-    crate::hardware::stt_rag_coordination::on_stt_session_ended(&app);
 
     let _ = app.emit(
         "recording:state",
@@ -731,13 +708,12 @@ pub async fn check_backend_connection() -> Result<bool, String> {
 
 /// Runs the full Step 10 analysis pipeline: extract question/answer pairs
 /// from the finalized transcript (deterministic, local, no LLM — see
-/// `crate::analyzer`), run a local RAG search for each question (local, see
-/// `crate::rag::RetrievalPlanner`), then stream the resulting
-/// question+context set to the backend for LLM analysis. Only reachable from
+/// `crate::analyzer`), then stream the resulting question set to the LLM
+/// for analysis. Only reachable from
 /// the "Analyze Interview" button on the post-stop summary screen — never
-/// called automatically when recording stops. Sends text only (transcript-
-/// derived question/answer text plus retrieved chunk text); no audio, no
-/// original documents, no embeddings, no vector database.
+/// called automatically when recording stops. Sends text only
+/// (transcript-derived question/answer text); no audio, no original
+/// documents.
 ///
 /// Streams progress as `analysis:progress` Tauri events (one per SSE event
 /// from the backend) so the frontend can show incremental status without the
@@ -760,38 +736,15 @@ pub async fn analyze_interview(
     }
 
     let qa_pairs = crate::analyzer::extract_question_answers(&session);
-
-    // Tier-driven top_k/similarity_threshold/max_context_chars, but no
-    // `.with_timeout()` — this offline analysis path intentionally keeps the
-    // client's generous default HTTP budget rather than the tight
-    // live-answer timeout, since there's no user waiting on an immediate
-    // answer here. `_checked` once here (not per qa_pair in the loop below)
-    // — analysis-start is the checkpoint, not each of its many retrievals.
-    let cfg = crate::hardware::effective_config_checked(&app);
-    let planner = crate::rag::RetrievalPlanner::new().with_config(
-        cfg.rag_top_k,
-        cfg.rag_similarity_threshold,
-        cfg.rag_max_context_chars,
-    );
-    let mut wire_question_answers = Vec::with_capacity(qa_pairs.len());
-    for pair in &qa_pairs {
-        let results = planner.plan_for_question(&pair.question).await;
-        wire_question_answers.push(crate::backend::WireQuestionAnswer {
+    let wire_question_answers = qa_pairs
+        .iter()
+        .map(|pair| crate::backend::WireQuestionAnswer {
             question_id: pair.question_id.clone(),
             question: pair.question.clone(),
             candidate_answer: pair.candidate_answer.clone(),
             timestamp: pair.timestamp.clone(),
-            retrieved_context: results
-                .into_iter()
-                .map(|r| crate::backend::WireRetrievedChunk {
-                    text: r.text,
-                    source_filename: r.metadata.filename,
-                    document_type: r.metadata.document_type,
-                    score: r.score,
-                })
-                .collect(),
-        });
-    }
+        })
+        .collect();
 
     let request = build_analysis_request(&session, role, company, job_description, wire_question_answers);
 
@@ -857,22 +810,23 @@ fn format_relative_timestamp(ms: u64) -> String {
     }
 }
 
-fn rag_unavailable_err() -> String {
-    "RAG service is not available (it may still be starting up, or the \
+fn document_extraction_unavailable_err() -> String {
+    "The document extraction service is not available (it may still be starting up, or the \
      sidecars/rag-lite binary was not found — see README.md's \"Getting the \
-     model and sidecar binaries\" section)"
+     RAG sidecar binary\" section)"
         .to_string()
 }
 
-/// Every RAG command below checks `state.rag_service` is `Some` before making
-/// any HTTP call — this is what makes "RAG unavailable" a clean user-facing
-/// error rather than a raw connection-refused message, and it's also what lets
-/// the rest of the app (recording, transcript, export, analyze) keep working
-/// normally even if the RAG service's environment was never set up.
+/// Every document command below checks `state.rag_service` is `Some` before
+/// making any HTTP call — this is what makes "extraction service
+/// unavailable" a clean user-facing error rather than a raw
+/// connection-refused message, and it's also what lets the rest of the app
+/// (recording, transcript, export, analyze) keep working normally even if
+/// the extraction service's environment was never set up.
 fn ensure_rag_available(state: &State<'_, AppState>) -> Result<(), String> {
     let slot = state.rag_service.lock().map_err(|e| e.to_string())?;
     if slot.is_none() {
-        return Err(rag_unavailable_err());
+        return Err(document_extraction_unavailable_err());
     }
     Ok(())
 }
@@ -888,9 +842,9 @@ pub async fn check_rag_connection(state: State<'_, AppState>) -> Result<bool, St
 
 /// New Interview setup page's auto-analysis: summarizes pasted/uploaded CV
 /// and job-description text into a short "Interview Focus" for the setup
-/// page to display, using your own configured AI provider directly — no
-/// RAG/embedding involved, so unlike the commands below it does not require
-/// the RAG service to be available.
+/// page to display, using your own configured AI provider directly —
+/// unlike the commands below it does not require the document extraction
+/// service to be available.
 #[tauri::command]
 pub async fn analyze_setup_context(
     resume_text: Option<String>,
@@ -945,33 +899,4 @@ pub async fn delete_document(state: State<'_, AppState>, document_id: String) ->
     ensure_rag_available(&state)?;
     let client = RagClient::new();
     client.delete_document(&document_id).await
-}
-
-#[tauri::command]
-pub async fn clear_knowledge_base(state: State<'_, AppState>, agent_id: Option<String>) -> Result<(), String> {
-    ensure_rag_available(&state)?;
-    let client = RagClient::new();
-    client.clear_knowledge_base(agent_id.as_deref()).await
-}
-
-#[tauri::command]
-pub async fn knowledge_base_status(
-    state: State<'_, AppState>,
-    agent_id: Option<String>,
-) -> Result<KnowledgeBaseStatus, String> {
-    ensure_rag_available(&state)?;
-    let client = RagClient::new();
-    client.knowledge_base_status(agent_id.as_deref()).await
-}
-
-#[tauri::command]
-pub async fn search_knowledge_base(
-    state: State<'_, AppState>,
-    query: String,
-    top_k: u32,
-    agent_id: Option<String>,
-) -> Result<SearchResponse, String> {
-    ensure_rag_available(&state)?;
-    let client = RagClient::new();
-    client.search(&query, top_k, agent_id.as_deref()).await
 }

@@ -58,10 +58,6 @@ fn context_blocks(request: &MeetingAskRequest) -> Vec<String> {
     if let Some(participants) = &request.participants {
         blocks.push(format!("Participants: {participants}"));
     }
-    if !request.retrieved_context.is_empty() {
-        let chunks = request.retrieved_context.iter().map(|c| c.text.as_str()).collect::<Vec<_>>().join("\n\n");
-        blocks.push(format!("Agenda/reference background:\n{chunks}"));
-    }
     blocks
 }
 
@@ -191,7 +187,6 @@ mod tests {
         MeetingAskRequest {
             question: question.to_string(),
             conversation_history: vec![],
-            retrieved_context: vec![],
             meeting_title: None,
             participants: None,
             answer_length: "default".to_string(),

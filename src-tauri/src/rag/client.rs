@@ -1,10 +1,7 @@
 use std::time::Duration;
 
 use super::process::RagServiceHandle;
-use super::types::{
-    DocumentListResponse, DocumentMetadata, DocumentTextResponse, KnowledgeBaseStatus,
-    SearchResponse,
-};
+use super::types::{DocumentListResponse, DocumentMetadata, DocumentTextResponse};
 
 pub struct RagClient {
     http: reqwest::Client,
@@ -38,18 +35,18 @@ impl RagClient {
             .timeout(Duration::from_secs(3))
             .send()
             .await
-            .map_err(|e| format!("RAG service unreachable: {e}"))?;
+            .map_err(|e| format!("document extraction service unreachable: {e}"))?;
         if response.status().is_success() {
             Ok(())
         } else {
-            Err(format!("RAG service health check returned {}", response.status()))
+            Err(format!("document extraction service health check returned {}", response.status()))
         }
     }
 
-    /// `agent_id: None` uploads into the original global/unscoped knowledge
-    /// base (Interview/Sales/Consulting Mode's shared KB, unchanged
+    /// `agent_id: None` uploads into the original global/unscoped document
+    /// store (Interview/Sales/Consulting Mode's shared store, unchanged
     /// behavior). `Some(id)` scopes the document to that Custom Agent's own
-    /// workspace — see `packages/rag/app/vector_store.py`'s agent_id column.
+    /// workspace.
     pub async fn upload_document(
         &self,
         filename: String,
@@ -72,7 +69,7 @@ impl RagClient {
             .multipart(form)
             .send()
             .await
-            .map_err(|e| format!("failed to reach RAG service: {e}"))?;
+            .map_err(|e| format!("failed to reach document extraction service: {e}"))?;
 
         parse_response_or_error(response).await
     }
@@ -85,9 +82,10 @@ impl RagClient {
         let response = self
             .http
             .get(&url)
+            .timeout(Duration::from_secs(3))
             .send()
             .await
-            .map_err(|e| format!("failed to reach RAG service: {e}"))?;
+            .map_err(|e| format!("failed to reach document extraction service: {e}"))?;
         let parsed: DocumentListResponse = parse_response_or_error(response).await?;
         Ok(parsed.documents)
     }
@@ -95,10 +93,8 @@ impl RagClient {
     /// Fetches the cleaned, extracted plain text for a document already
     /// uploaded via `upload_document`, once its pipeline has produced it.
     /// Returns `Ok(None)` while extraction is still in progress (or the
-    /// document doesn't exist) rather than an error — the New Interview
-    /// setup page polls this after a PDF/DOCX upload to feed the real
-    /// extracted text into its auto-analysis summary, and "not ready yet" is
-    /// a completely normal, expected state to poll through.
+    /// document doesn't exist) rather than an error — "not ready yet" is a
+    /// completely normal, expected state to poll through.
     pub async fn get_document_text(&self, document_id: &str) -> Result<Option<String>, String> {
         let url = format!("{}/documents/{document_id}/text", self.base_url);
         let response = self
@@ -107,7 +103,7 @@ impl RagClient {
             .timeout(Duration::from_secs(10))
             .send()
             .await
-            .map_err(|e| format!("failed to reach RAG service: {e}"))?;
+            .map_err(|e| format!("failed to reach document extraction service: {e}"))?;
 
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
@@ -123,102 +119,12 @@ impl RagClient {
             .delete(&url)
             .send()
             .await
-            .map_err(|e| format!("failed to reach RAG service: {e}"))?;
+            .map_err(|e| format!("failed to reach document extraction service: {e}"))?;
         if response.status().is_success() {
             Ok(())
         } else {
             Err(format!("failed to delete document: {}", response.status()))
         }
-    }
-
-    pub async fn clear_knowledge_base(&self, agent_id: Option<&str>) -> Result<(), String> {
-        let mut url = format!("{}/knowledge-base/clear", self.base_url);
-        if let Some(agent_id) = agent_id {
-            url = format!("{url}?agent_id={}", urlencode(agent_id));
-        }
-        let response = self
-            .http
-            .post(&url)
-            .send()
-            .await
-            .map_err(|e| format!("failed to reach RAG service: {e}"))?;
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(format!("failed to clear knowledge base: {}", response.status()))
-        }
-    }
-
-    pub async fn knowledge_base_status(&self, agent_id: Option<&str>) -> Result<KnowledgeBaseStatus, String> {
-        let mut url = format!("{}/knowledge-base/status", self.base_url);
-        if let Some(agent_id) = agent_id {
-            url = format!("{url}?agent_id={}", urlencode(agent_id));
-        }
-        let response = self
-            .http
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| format!("failed to reach RAG service: {e}"))?;
-        parse_response_or_error(response).await
-    }
-
-    /// STT/RAG scheduling coordination (Phase B — see
-    /// packages/rag/app/throttle.py's module doc). `active=true` tells the
-    /// RAG service's embedding step to yield while STT is running on
-    /// low-end hardware; must be refreshed periodically while STT stays
-    /// active (see `hardware::stt_rag_coordination`) or it auto-expires on
-    /// the RAG side. Never affects `/search` — only the embedding step
-    /// inside document upload/indexing checks this.
-    pub async fn set_throttle(&self, active: bool) -> Result<(), String> {
-        let url = format!("{}/internal/throttle", self.base_url);
-        let response = self
-            .http
-            .post(&url)
-            .timeout(Duration::from_secs(3))
-            .json(&serde_json::json!({ "active": active }))
-            .send()
-            .await
-            .map_err(|e| format!("failed to reach RAG service: {e}"))?;
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(format!("failed to set RAG throttle: {}", response.status()))
-        }
-    }
-
-    pub async fn search(&self, query: &str, top_k: u32, agent_id: Option<&str>) -> Result<SearchResponse, String> {
-        self.search_with_timeout(query, top_k, agent_id, None).await
-    }
-
-    /// `timeout` overrides the client-wide 120s budget for this one request.
-    /// Interview Mode passes a short one: retrieval there sits directly in
-    /// front of a live answer, and context is optional, so a slow or
-    /// not-yet-started RAG service must cost a fraction of a second and then
-    /// be abandoned — never hold up the answer. `agent_id: None` searches the
-    /// original global/unscoped knowledge base; `Some(id)` scopes the search
-    /// to that Custom Agent's own uploaded documents only.
-    pub async fn search_with_timeout(
-        &self,
-        query: &str,
-        top_k: u32,
-        agent_id: Option<&str>,
-        timeout: Option<Duration>,
-    ) -> Result<SearchResponse, String> {
-        let url = format!("{}/search", self.base_url);
-        let mut request = self.http.post(&url).json(&serde_json::json!({
-            "query": query,
-            "top_k": top_k,
-            "agent_id": agent_id,
-        }));
-        if let Some(timeout) = timeout {
-            request = request.timeout(timeout);
-        }
-        let response = request
-            .send()
-            .await
-            .map_err(|e| format!("failed to reach RAG service: {e}"))?;
-        parse_response_or_error(response).await
     }
 }
 
@@ -253,9 +159,9 @@ async fn parse_response_or_error<T: serde::de::DeserializeOwned>(
         response
             .json::<T>()
             .await
-            .map_err(|e| format!("RAG service returned an unexpected response: {e}"))
+            .map_err(|e| format!("document extraction service returned an unexpected response: {e}"))
     } else {
         let body_text = response.text().await.unwrap_or_default();
-        Err(format!("RAG service returned {status}: {body_text}"))
+        Err(format!("document extraction service returned {status}: {body_text}"))
     }
 }

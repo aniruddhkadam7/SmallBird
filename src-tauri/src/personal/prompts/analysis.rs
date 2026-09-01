@@ -5,14 +5,12 @@
 //! mathematical average — averaging only happens in the fallback path when
 //! Stage 2 itself fails to parse).
 
-use crate::backend::{
-    InterviewAnalysisRequest, OverallInterviewAnalysis, QuestionAnalysis, RetrievedSourceRef, WireQuestionAnswer,
-};
+use crate::backend::{InterviewAnalysisRequest, OverallInterviewAnalysis, QuestionAnalysis, WireQuestionAnswer};
 use super::{extract_json_object, ChatMessage};
 
 pub const SYSTEM_INSTRUCTIONS: &str = "You are an expert technical interviewer and interview coach.
 
-Analyze the candidate's completed interview using only the candidate context and retrieved knowledge provided.
+Analyze the candidate's completed interview using only the candidate context provided.
 
 Do not invent experience.
 
@@ -64,17 +62,6 @@ fn context_header(role: &Option<String>, company: &Option<String>, job_descripti
     }
 }
 
-fn format_retrieved_context(qa: &WireQuestionAnswer) -> String {
-    if qa.retrieved_context.is_empty() {
-        return "(No relevant context was retrieved from the candidate's documents for this question.)".to_string();
-    }
-    qa.retrieved_context
-        .iter()
-        .map(|chunk| format!("[Source: {} ({}), relevance {:.2}]\n{}", chunk.source_filename, chunk.document_type, chunk.score, chunk.text))
-        .collect::<Vec<_>>()
-        .join("\n\n")
-}
-
 /// Returns (system_prompt, user_prompt) for Stage 1 (per-question analysis).
 pub fn build_question_prompt(
     qa: &WireQuestionAnswer,
@@ -86,8 +73,7 @@ pub fn build_question_prompt(
     let answer = if qa.candidate_answer.is_empty() { "(No answer was captured for this question.)" } else { &qa.candidate_answer };
 
     let user_prompt = format!(
-        "{header}\n\nRELEVANT RETRIEVED KNOWLEDGE\n{}\n\nINTERVIEW QUESTION\n{}\n\nCANDIDATE ANSWER\n{answer}\n\n{RUBRIC}\n\nRespond with a single JSON object matching exactly this schema:\n{{\n  \"assessment\": \"string — what the candidate actually said, evaluated against the rubric, referencing the retrieved knowledge where relevant\",\n  \"score\": 0,\n  \"strengths\": [\"string\", \"...\"],\n  \"issues\": [\"string\", \"...\"],\n  \"improved_answer\": \"string — first-person, conversational, interview-ready, grounded only in the retrieved knowledge and the candidate's actual answer; do not fabricate accomplishments\"\n}}\n\nThe field \"question_id\" is not part of your response — it is added separately.",
-        format_retrieved_context(qa),
+        "{header}\n\nINTERVIEW QUESTION\n{}\n\nCANDIDATE ANSWER\n{answer}\n\n{RUBRIC}\n\nRespond with a single JSON object matching exactly this schema:\n{{\n  \"assessment\": \"string — what the candidate actually said, evaluated against the rubric\",\n  \"score\": 0,\n  \"strengths\": [\"string\", \"...\"],\n  \"issues\": [\"string\", \"...\"],\n  \"improved_answer\": \"string — first-person, conversational, interview-ready, grounded only in the candidate's actual answer; do not fabricate accomplishments\"\n}}\n\nThe field \"question_id\" is not part of your response — it is added separately.",
         qa.question,
     );
 
@@ -131,20 +117,14 @@ pub fn question_messages(system_prompt: &str, user_prompt: &str) -> Vec<ChatMess
 }
 
 /// Parses a Stage-1 raw model response into a `QuestionAnalysis`. On
-/// malformed JSON/missing-field errors, returns a `failed=true` record with
-/// `retrieved_sources` still populated (matches the Python `except
-/// (ValidationError, ValueError, KeyError, TypeError, JSONDecodeError)`
-/// branch) — this function does not distinguish that from a provider-level
-/// failure (network/auth/rate-limit); callers construct the
-/// `retrieved_sources`-empty failed variant themselves for that case, since
-/// this function only ever runs after a successful provider call.
+/// malformed JSON/missing-field errors, returns a `failed=true` record
+/// (matches the Python `except (ValidationError, ValueError, KeyError,
+/// TypeError, JSONDecodeError)` branch) — this function does not
+/// distinguish that from a provider-level failure (network/auth/
+/// rate-limit); callers construct that failed variant themselves for that
+/// case, since this function only ever runs after a successful provider
+/// call.
 pub fn parse_question_analysis(raw: &str, qa: &WireQuestionAnswer) -> QuestionAnalysis {
-    let retrieved_sources: Vec<RetrievedSourceRef> = qa
-        .retrieved_context
-        .iter()
-        .map(|c| RetrievedSourceRef { filename: c.source_filename.clone(), document_type: c.document_type.clone(), score: c.score, text: c.text.clone() })
-        .collect();
-
     let parse_result: Result<serde_json::Value, String> = extract_json_object(raw).and_then(|json_str| serde_json::from_str(&json_str).map_err(|e| e.to_string()));
 
     match parse_result {
@@ -161,18 +141,17 @@ pub fn parse_question_analysis(raw: &str, qa: &WireQuestionAnswer) -> QuestionAn
                     strengths: parsed.get("strengths").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect()).unwrap_or_default(),
                     issues: parsed.get("issues").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect()).unwrap_or_default(),
                     improved_answer: parsed.get("improved_answer").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    retrieved_sources,
                     failed: false,
                     error_message: None,
                 },
-                _ => failed_question_analysis(qa, retrieved_sources, "response JSON was missing required fields (assessment/score)".to_string()),
+                _ => failed_question_analysis(qa, "response JSON was missing required fields (assessment/score)".to_string()),
             }
         }
-        Err(err) => failed_question_analysis(qa, retrieved_sources, err),
+        Err(err) => failed_question_analysis(qa, err),
     }
 }
 
-fn failed_question_analysis(qa: &WireQuestionAnswer, retrieved_sources: Vec<RetrievedSourceRef>, error_message: String) -> QuestionAnalysis {
+fn failed_question_analysis(qa: &WireQuestionAnswer, error_message: String) -> QuestionAnalysis {
     QuestionAnalysis {
         question_id: qa.question_id.clone(),
         question: qa.question.clone(),
@@ -182,15 +161,13 @@ fn failed_question_analysis(qa: &WireQuestionAnswer, retrieved_sources: Vec<Retr
         strengths: vec![],
         issues: vec![],
         improved_answer: String::new(),
-        retrieved_sources,
         failed: true,
         error_message: Some(error_message),
     }
 }
 
 /// A provider-level failure (network/auth/rate-limit, not a parse error) —
-/// matches the Python `except Exception` branch, which leaves
-/// `retrieved_sources` empty (bug-for-bug parity with the reference).
+/// matches the Python `except Exception` branch.
 pub fn provider_failure_question_analysis(qa: &WireQuestionAnswer, error_message: String) -> QuestionAnalysis {
     QuestionAnalysis {
         question_id: qa.question_id.clone(),
@@ -201,7 +178,6 @@ pub fn provider_failure_question_analysis(qa: &WireQuestionAnswer, error_message
         strengths: vec![],
         issues: vec![],
         improved_answer: String::new(),
-        retrieved_sources: vec![],
         failed: true,
         error_message: Some(format!("LLM request failed: {error_message}")),
     }
@@ -305,7 +281,6 @@ pub fn questions_to_analyze(request: &InterviewAnalysisRequest, max_questions: u
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::{RetrievedSourceRef as RSR, WireRetrievedChunk};
 
     fn sample_qa() -> WireQuestionAnswer {
         WireQuestionAnswer {
@@ -313,16 +288,7 @@ mod tests {
             question: "What is RAG?".to_string(),
             candidate_answer: "Retrieval augmented generation".to_string(),
             timestamp: "00:00:10".to_string(),
-            retrieved_context: vec![WireRetrievedChunk { text: "RAG combines retrieval with generation".to_string(), source_filename: "resume.pdf".to_string(), document_type: "resume".to_string(), score: 0.8 }],
         }
-    }
-
-    #[test]
-    fn question_prompt_includes_retrieved_context_with_source_info() {
-        let (_sys, user) = build_question_prompt(&sample_qa(), &None, &None, &None);
-        assert!(user.contains("resume.pdf"));
-        assert!(user.contains("0.80"));
-        assert!(user.contains("RAG combines retrieval with generation"));
     }
 
     #[test]
@@ -338,22 +304,19 @@ mod tests {
         assert!(!result.failed);
         assert_eq!(result.score, 80);
         assert_eq!(result.assessment, "Good answer");
-        assert_eq!(result.retrieved_sources.len(), 1);
     }
 
     #[test]
-    fn marks_failed_on_malformed_json_but_keeps_retrieved_sources() {
+    fn marks_failed_on_malformed_json() {
         let result = parse_question_analysis("not json at all", &sample_qa());
         assert!(result.failed);
         assert_eq!(result.score, 0);
-        assert_eq!(result.retrieved_sources.len(), 1); // still populated, per the ValueError branch
     }
 
     #[test]
-    fn provider_failure_leaves_retrieved_sources_empty() {
+    fn provider_failure_is_marked_failed_with_the_error_message() {
         let result = provider_failure_question_analysis(&sample_qa(), "timeout".to_string());
         assert!(result.failed);
-        assert!(result.retrieved_sources.is_empty());
         assert!(result.error_message.unwrap().contains("timeout"));
     }
 
@@ -367,7 +330,6 @@ mod tests {
             strengths: vec![],
             issues: vec![],
             improved_answer: String::new(),
-            retrieved_sources: vec![RSR { filename: "f".to_string(), document_type: "t".to_string(), score: 0.5, text: "x".to_string() }],
             failed,
             error_message: None,
         }

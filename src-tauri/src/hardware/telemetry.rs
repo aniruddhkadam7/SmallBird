@@ -1,5 +1,5 @@
 //! Milestone 7: lightweight end-to-end latency instrumentation for the
-//! STT -> RAG retrieval -> cloud LLM -> answer pipeline.
+//! STT -> cloud LLM -> answer pipeline.
 //!
 //! Scope and safety rules (all deliberate, not oversights):
 //!
@@ -62,14 +62,6 @@ pub enum PipelineStage {
     SttFirstPartial,
     /// Speech end -> finalized transcript segment.
     SttFinal,
-    /// One `RetrievalPlanner::plan_for_question` call: the RAG HTTP round
-    /// trip plus local filter/dedup/truncate — see `retrieval_planner.rs`'s
-    /// `filter_and_limit`, which is in-process and fast enough (sub-ms at
-    /// realistic result counts) that splitting it out as its own separately
-    /// logged number would not be a meaningful additional measurement, so
-    /// it is folded into this one stage rather than invented as a second
-    /// one that would just restate "basically zero."
-    RagRetrieval,
     /// Cloud LLM request dispatched -> first streamed answer token/delta
     /// received (time-to-first-token).
     LlmFirstToken,
@@ -88,7 +80,6 @@ impl PipelineStage {
             Self::SttSessionStart => "stt_session_start",
             Self::SttFirstPartial => "stt_first_partial",
             Self::SttFinal => "stt_final",
-            Self::RagRetrieval => "rag_retrieval",
             Self::LlmFirstToken => "llm_first_token",
             Self::LlmTotal => "llm_total",
             Self::QuestionToAnswer => "question_to_answer",
@@ -174,30 +165,19 @@ impl Default for FirstTokenTracker {
 }
 
 /// The performance-correlation context to attach to a logged timing —
-/// exactly the fields the product brief asked for (tier, mode, pressure
-/// state, STT thread count, RAG retrieval config), nothing else. All of
-/// these are either enums or small numbers, never anything derived from
-/// user content.
+/// tier, mode, pressure state, STT thread count. All of these are either
+/// enums or small numbers, never anything derived from user content.
 #[derive(Debug, Clone, Copy)]
 pub struct PerfContext {
     pub tier: HardwareTier,
     pub mode: PerformanceMode,
     pub pressure: PressureState,
     pub stt_num_threads: u32,
-    pub rag_top_k: u32,
-    pub rag_max_context_chars: usize,
 }
 
 impl PerfContext {
     pub fn new(tier: HardwareTier, mode: PerformanceMode, pressure: PressureState, config: &PerformanceConfig) -> Self {
-        Self {
-            tier,
-            mode,
-            pressure,
-            stt_num_threads: config.stt_num_threads,
-            rag_top_k: config.rag_top_k,
-            rag_max_context_chars: config.rag_max_context_chars,
-        }
+        Self { tier, mode, pressure, stt_num_threads: config.stt_num_threads }
     }
 }
 
@@ -218,15 +198,13 @@ pub fn log_stage(timing: &StageTiming, ctx: &PerfContext) {
 /// and compute `.elapsed()` themselves.
 pub fn log_stage_ms(stage: PipelineStage, ms: u128, ctx: &PerfContext) {
     log::info!(
-        "perf: stage={} ms={} tier={:?} mode={:?} pressure={:?} stt_threads={} rag_top_k={} rag_ctx_chars={}",
+        "perf: stage={} ms={} tier={:?} mode={:?} pressure={:?} stt_threads={}",
         stage.label(),
         ms,
         ctx.tier,
         ctx.mode,
         ctx.pressure,
         ctx.stt_num_threads,
-        ctx.rag_top_k,
-        ctx.rag_max_context_chars,
     );
 }
 
@@ -246,15 +224,7 @@ mod tests {
     use crate::hardware::manager::PerformanceConfig;
 
     fn sample_config() -> PerformanceConfig {
-        PerformanceConfig {
-            stt_num_threads: 4,
-            rag_top_k: 4,
-            rag_max_context_chars: 3500,
-            rag_similarity_threshold: 0.3,
-            rag_retrieval_timeout_ms: 1500,
-            rag_embed_batch_size: 32,
-            rag_torch_threads: 4,
-        }
+        PerformanceConfig { stt_num_threads: 4 }
     }
 
     #[test]
@@ -277,7 +247,6 @@ mod tests {
             PipelineStage::SttSessionStart,
             PipelineStage::SttFirstPartial,
             PipelineStage::SttFinal,
-            PipelineStage::RagRetrieval,
             PipelineStage::LlmFirstToken,
             PipelineStage::LlmTotal,
             PipelineStage::QuestionToAnswer,
@@ -300,8 +269,6 @@ mod tests {
         assert_eq!(ctx.mode, PerformanceMode::Adaptive);
         assert_eq!(ctx.pressure, PressureState::Normal);
         assert_eq!(ctx.stt_num_threads, 4);
-        assert_eq!(ctx.rag_top_k, 4);
-        assert_eq!(ctx.rag_max_context_chars, 3500);
     }
 
     #[test]
@@ -309,7 +276,7 @@ mod tests {
         let ctx = PerfContext::new(HardwareTier::Entry, PerformanceMode::BatterySaver, PressureState::Normal, &sample_config());
         let sw = Stopwatch::start();
         std::thread::sleep(Duration::from_millis(2));
-        let elapsed = finish(sw, PipelineStage::RagRetrieval, &ctx);
+        let elapsed = finish(sw, PipelineStage::SttFinal, &ctx);
         assert!(elapsed >= Duration::from_millis(2));
     }
 
@@ -386,16 +353,10 @@ mod tests {
     }
 
     #[test]
-    fn composed_question_to_answer_flow_measures_retrieval_first_token_and_total_correctly() {
+    fn composed_question_to_answer_flow_measures_first_token_and_total_correctly() {
         let ctx = PerfContext::new(HardwareTier::Performance, PerformanceMode::Adaptive, PressureState::Normal, &sample_config());
 
         let question_to_answer = Stopwatch::start();
-
-        // Simulated RAG retrieval leg.
-        let retrieval_timer = Stopwatch::start();
-        std::thread::sleep(Duration::from_millis(4));
-        let retrieval_ms = finish(retrieval_timer, PipelineStage::RagRetrieval, &ctx).as_millis();
-        assert!(retrieval_ms >= 4);
 
         // Simulated LLM leg — mirrors the real call sites exactly.
         let llm_timer = Stopwatch::start();
@@ -415,7 +376,7 @@ mod tests {
 
         let question_to_answer_ms = finish(question_to_answer, PipelineStage::QuestionToAnswer, &ctx).as_millis();
         assert!(
-            question_to_answer_ms >= retrieval_ms + llm_total_ms.min(question_to_answer_ms),
+            question_to_answer_ms >= llm_total_ms.min(question_to_answer_ms),
             "end-to-end must be at least as long as its slowest known sub-leg"
         );
     }
