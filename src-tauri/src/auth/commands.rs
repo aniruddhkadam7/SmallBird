@@ -30,6 +30,7 @@ pub fn logout(state: State<'_, AppState>) -> Result<(), String> {
 /// What the frontend needs to render login state — never includes the raw
 /// access/refresh tokens, which stay server(Rust)-side only.
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuthSessionInfo {
     pub logged_in: bool,
     pub email: Option<String>,

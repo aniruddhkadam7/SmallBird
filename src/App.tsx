@@ -26,51 +26,28 @@ import {
   IconRestore,
   IconSettings,
 } from "./Icons";
-import { IconAnthropic, IconDeepSeek, IconGemini, IconOpenAI } from "./ProviderIcons";
+import { IconAnthropic, IconDeepSeek, IconOpenAI } from "./ProviderIcons";
 import { INTERVIEW_CONTEXT_SECTIONS } from "./headerPopups";
-import { hasStoredLlmProvider, loadLlmProvider, saveLlmProvider, type LlmProvider } from "./llmProviderSetting";
-import { getPersonalApiKey } from "./personalApiKeys";
+import { loadLlmProvider, saveLlmProvider, type LlmProvider } from "./llmProviderSetting";
+import { getAuthSession, type AuthSessionInfo } from "./auth";
 
 type SessionState = "IDLE" | "STARTING" | "LISTENING";
 type Popover = "MODEL" | "CONTEXT" | "SETTINGS" | "ACCOUNT" | null;
 
-// Only "openai", "anthropic", and "gemini" have a real backend
-// implementation (see apps/backend/app/services/llm/__init__.py::
-// get_llm_provider) — "deepseek" is listed so the dropdown shows all four,
-// but stays disabled until a provider is actually built for it.
+// Only "openai" and "anthropic" have a real backend implementation (see
+// backend/supabase/functions/llm-proxy's PROVIDER_URLS). "gemini" was
+// dropped when this build switched from BYOK to backend-metered (llm-proxy
+// has no Gemini support); "deepseek" is listed so the dropdown shows it but
+// stays disabled until a provider is actually built for it.
 const LLM_PROVIDERS: { value: LlmProvider; label: string; icon: typeof IconOpenAI; available: boolean }[] = [
   { value: "anthropic", label: "Anthropic", icon: IconAnthropic, available: true },
   { value: "openai", label: "OpenAI", icon: IconOpenAI, available: true },
-  { value: "gemini", label: "Gemini", icon: IconGemini, available: true },
   { value: "deepseek", label: "DeepSeek", icon: IconDeepSeek, available: false },
 ];
 
 function App() {
   const [llmProvider, setLlmProvider] = useState<LlmProvider>(() => loadLlmProvider());
-
-  // First launch (no provider explicitly chosen yet): auto-select whichever
-  // provider actually has an API key saved, instead of silently defaulting
-  // to Anthropic and leaving the user to guess why requests fail. Checked in
-  // LLM_PROVIDERS order so the first configured, available provider wins.
-  useEffect(() => {
-    if (hasStoredLlmProvider()) return;
-    let cancelled = false;
-    (async () => {
-      for (const { value, available } of LLM_PROVIDERS) {
-        if (!available || value === "deepseek") continue;
-        const key = await getPersonalApiKey(value).catch(() => null);
-        if (cancelled) return;
-        if (key) {
-          setLlmProvider(value);
-          saveLlmProvider(value);
-          return;
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const [authSession, setAuthSession] = useState<AuthSessionInfo | null>(null);
   const [sessionState, setSessionState] = useState<SessionState>("IDLE");
   const [openPopover, setOpenPopover] = useState<Popover>(null);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +57,26 @@ function App() {
   const [interviewContext, setInterviewContext] = useState<DocumentContextState>(() =>
     emptyDocumentContextState(INTERVIEW_CONTEXT_SECTIONS),
   );
+
+  // Every AI feature requires a signed-in session now (no BYOK fallback) —
+  // check once at startup and, if nothing is signed in, open the Account
+  // panel automatically so login is the first thing a new/logged-out user
+  // sees rather than a confusing failure the first time they click Start.
+  useEffect(() => {
+    let cancelled = false;
+    getAuthSession()
+      .then((session) => {
+        if (cancelled) return;
+        setAuthSession(session);
+        if (!session.loggedIn) {
+          setOpenPopover("ACCOUNT");
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Prewarm STT the moment the app launches — the mic model loads while the
   // user is still picking a mode/attaching context, so Start doesn't eat the
@@ -153,14 +150,12 @@ function App() {
 
     uploadDocumentContext(INTERVIEW_CONTEXT_SECTIONS, interviewContext);
 
-    // Opt-in, signed-in-only: resolves to { rejection: null } when the user
-    // isn't signed in, or when something unrelated to entitlement went wrong
-    // (credential-store hiccup, network blip reaching the backend) — local
-    // recording has no dependency on this feature and must never be blocked
-    // by it. Only a genuine backend entitlement rejection (no remaining
-    // minutes, concurrent session limit, etc.) sets `rejection`, which we
-    // propagate so Start actually stops — see start_backend_session's
-    // Rust-side doc (BackendSessionResult) for the full contract.
+    // Mints the session's Deepgram key and starts the metered
+    // interview_sessions row server-side. Any rejection here (not logged
+    // in, no remaining minutes, a session already active elsewhere, or a
+    // network problem reaching the backend) genuinely blocks Start — there
+    // is no local fallback anymore. See start_backend_session's Rust-side
+    // doc (BackendSessionResult) for the full contract.
     const sessionResult = await invoke<{ rejection: string | null }>("start_backend_session", {
       sttMode: "local",
     });
@@ -335,7 +330,12 @@ function App() {
               Stop
             </Button>
           ) : (
-            <Button variant="primary" onClick={handleStart} disabled={sessionState === "STARTING"}>
+            <Button
+              variant="primary"
+              onClick={handleStart}
+              disabled={sessionState === "STARTING" || authSession?.loggedIn === false}
+              title={authSession?.loggedIn === false ? "Log in from the Account panel to start" : undefined}
+            >
               {/* The STT model load behind Start can take a couple of
                   seconds (cold-starting the sidecar process + loading the
                   ONNX model) — a static label made that wait look frozen.
@@ -365,14 +365,7 @@ function App() {
             </button>
             {openPopover === "SETTINGS" && (
               <HeaderDropdown onClose={closePopover} className="header-dropdown-panel header-dropdown-settings">
-                <SettingsPopover
-                  onClose={closePopover}
-                  historyRefreshKey={historyRefreshKey}
-                  onApiKeySaved={(provider) => {
-                    setLlmProvider(provider);
-                    saveLlmProvider(provider);
-                  }}
-                />
+                <SettingsPopover onClose={closePopover} historyRefreshKey={historyRefreshKey} />
               </HeaderDropdown>
             )}
           </div>
@@ -390,7 +383,7 @@ function App() {
             </button>
             {openPopover === "ACCOUNT" && (
               <HeaderDropdown onClose={closePopover} className="header-dropdown-panel">
-                <Account onClose={closePopover} />
+                <Account onClose={closePopover} onSessionChange={setAuthSession} />
               </HeaderDropdown>
             )}
           </div>

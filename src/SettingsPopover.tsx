@@ -3,18 +3,14 @@ import { PerformancePanel } from "./PerformancePanel";
 import { PersonalizationPanel } from "./PersonalizationPanel";
 import { AttachedDocumentsPanel } from "./AttachedDocumentsPanel";
 import { InterviewHistory } from "./InterviewHistory";
-import { PersonalApiKeySettings } from "./PersonalApiKeySettings";
-import { DeepgramApiKeySettings } from "./DeepgramApiKeySettings";
-import type { PersonalLlmProvider } from "./personalApiKeys";
 
-type SettingsSection = "SESSIONS" | "PERSONALIZATION" | "PERFORMANCE" | "CONTEXT" | "API_KEYS" | "PRIVACY" | "ABOUT";
+type SettingsSection = "SESSIONS" | "PERSONALIZATION" | "PERFORMANCE" | "CONTEXT" | "PRIVACY" | "ABOUT";
 
 const SECTIONS: { key: SettingsSection; label: string }[] = [
   { key: "SESSIONS", label: "Sessions" },
   { key: "PERSONALIZATION", label: "Personalization" },
   { key: "PERFORMANCE", label: "Performance" },
   { key: "CONTEXT", label: "Context / Documents" },
-  { key: "API_KEYS", label: "API Keys" },
   { key: "PRIVACY", label: "Privacy" },
   { key: "ABOUT", label: "About / Version" },
 ];
@@ -22,7 +18,6 @@ const SECTIONS: { key: SettingsSection; label: string }[] = [
 interface Props {
   onClose: () => void;
   historyRefreshKey: number;
-  onApiKeySaved?: (provider: PersonalLlmProvider) => void;
 }
 
 /// Settings popover reached from the header's gear icon. Every section
@@ -34,8 +29,9 @@ interface Props {
 /// placeholder stubs and have been dropped. Sessions (past Interview
 /// history) and Personalization (answer tone/length/style) live
 /// here rather than as separate header buttons, alongside the app's other
-/// settings.
-export function SettingsPopover({ onClose, historyRefreshKey, onApiKeySaved }: Props) {
+/// settings. API key management lives in the Account panel instead of here
+/// now that the app requires login rather than a locally-stored key.
+export function SettingsPopover({ onClose, historyRefreshKey }: Props) {
   const [section, setSection] = useState<SettingsSection>("SESSIONS");
 
   return (
@@ -66,28 +62,18 @@ export function SettingsPopover({ onClose, historyRefreshKey, onApiKeySaved }: P
             {section === "PERSONALIZATION" && <PersonalizationPanel />}
             {section === "PERFORMANCE" && <PerformancePanel />}
             {section === "CONTEXT" && <AttachedDocumentsPanel />}
-            {section === "API_KEYS" && (
-              <>
-                <PersonalApiKeySettings onKeySaved={onApiKeySaved} />
-                <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid var(--border-color, #333)" }}>
-                  <DeepgramApiKeySettings />
-                </div>
-              </>
-            )}
             {section === "PRIVACY" && (
               <p className="setup-hint">
                 Smallbird extracts text from your uploaded resume/CV and job description locally on this device.
-                Speech-to-text audio is sent,
-                encrypted, directly to Deepgram (using your own Deepgram API key) for transcription —
-                nowhere else. This personal build talks directly to your own configured AI provider for
-                everything else. Nothing is sent to Smallbird Cloud or any other backend.
+                Speech-to-text audio is sent, encrypted, directly to Deepgram (via a short-lived key issued per
+                session) for transcription — nowhere else. Interview analysis and Notes AI features route
+                through Smallbird's backend using your signed-in account, which is how usage against your plan
+                is metered.
               </p>
             )}
             {section === "ABOUT" && (
               <p className="setup-hint">
                 Smallbird — version 0.1.0
-                <br />
-                Personal Build — uses your own API key, no Smallbird Cloud.
               </p>
             )}
           </div>
