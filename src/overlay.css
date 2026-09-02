@@ -264,6 +264,18 @@ body.overlay-window #root {
   color: #fff;
 }
 
+/* Mute button while actively muted — a steady warm highlight so "muted" is
+   visible at a glance, not just on hover. */
+.overlay-icon-button.on {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+}
+
+.overlay-icon-button.on:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.3);
+  color: #fecaca;
+}
+
 /* ---------- close confirmation ---------- */
 
 .overlay-confirm-close {

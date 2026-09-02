@@ -74,6 +74,11 @@ export function InterviewOverlay() {
   // invocation racing an already-successful start from InterviewSetup) is
   // treated as active too, not an error.
   const [captureActive, setCaptureActive] = useState(false);
+  // Mic/system-audio mute: true once `pause_recording` has been confirmed —
+  // audio capture keeps running internally but nothing reaches STT or the
+  // transcript while muted (see commands.rs's pause_recording doc comment).
+  const [muted, setMuted] = useState(false);
+  const [muteBusy, setMuteBusy] = useState(false);
   // True only while STT is actively producing transcript output right now —
   // gates the listening animation so it doesn't run through silence just
   // because capture is technically still open.
@@ -278,6 +283,7 @@ export function InterviewOverlay() {
       setError(null);
       setConfirmingClose(false);
       setSettingsOpen(false);
+      setMuted(false);
       committedRef.current = "";
       busyRef.current = false;
       sessionStartedAtRef.current = Date.now();
@@ -405,6 +411,20 @@ export function InterviewOverlay() {
   // one exchange ask for confirmation first (closing mid-interview is easy to
   // trigger by accident), while an empty session just closes immediately —
   // there's nothing to lose by skipping the prompt.
+  const toggleMute = useCallback(async () => {
+    if (muteBusy || !captureActive) return;
+    setMuteBusy(true);
+    setError(null);
+    try {
+      await invoke(muted ? "resume_recording" : "pause_recording");
+      setMuted((v) => !v);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setMuteBusy(false);
+    }
+  }, [muted, muteBusy, captureActive]);
+
   const requestClose = useCallback(() => {
     const hasConversation = turns.some((t) => !t.pending && t.answer.trim());
     if (hasConversation) {
@@ -527,12 +547,29 @@ export function InterviewOverlay() {
             ? `Opacity ${opacityPercent}%`
             : busy
               ? "Answering…"
-              : captureActive
-                ? "Listening"
-                : "Starting…"}
+              : muted
+                ? "Muted"
+                : captureActive
+                  ? "Listening"
+                  : "Starting…"}
         </div>
 
         <div className="overlay-header-actions">
+          {/* Pauses/resumes audio capture without tearing down the STT
+              connection or clearing the transcript-so-far — see
+              commands.rs's pause_recording/resume_recording doc comments.
+              Disabled until capture is actually confirmed active, matching
+              the backend's own state-machine requirement. */}
+          <button
+            type="button"
+            className={`overlay-icon-button${muted ? " on" : ""}`}
+            onClick={toggleMute}
+            disabled={!captureActive || muteBusy}
+            title={muted ? "Unmute — resume transcribing" : "Mute — pause transcribing"}
+          >
+            {muted ? "🔇" : "🎤"}
+          </button>
+
           {/* A <button>, not a checkbox+<label>: Tauri's drag script already
               treats BUTTON as clickable and blocks dragging for it (see the
               comment on the opacity slider below), and a bare button avoids

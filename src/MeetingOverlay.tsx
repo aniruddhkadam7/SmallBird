@@ -67,6 +67,11 @@ export function MeetingOverlay() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [captureExcluded, setCaptureExcluded] = useState<boolean | null>(null);
+  const [captureActive, setCaptureActive] = useState(false);
+  // Mic/system-audio mute — same mechanism as Interview Mode's overlay, see
+  // its toggleMute for the full explanation.
+  const [muted, setMuted] = useState(false);
+  const [muteBusy, setMuteBusy] = useState(false);
   const [confirmingClose, setConfirmingClose] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Shows the opacity percentage in the header for a moment after adjusting
@@ -116,11 +121,15 @@ export function MeetingOverlay() {
       // Best-effort — the window simply stays at its default size.
     });
 
-    invoke("start_system_audio_capture").catch((e) => {
-      if (String(e) !== "capture already running") {
-        setError(`Could not start audio capture: ${String(e)}`);
-      }
-    });
+    invoke("start_system_audio_capture")
+      .then(() => setCaptureActive(true))
+      .catch((e) => {
+        if (String(e) !== "capture already running") {
+          setError(`Could not start audio capture: ${String(e)}`);
+        } else {
+          setCaptureActive(true);
+        }
+      });
   }, []);
 
   // The overlay window is *reused* across meetings, not recreated (see
@@ -142,6 +151,7 @@ export function MeetingOverlay() {
       setError(null);
       setConfirmingClose(false);
       setSettingsOpen(false);
+      setMuted(false);
       rawTurnsRef.current = [];
       busyRef.current = false;
       meetingInfoRef.current = loadActiveMeeting();
@@ -326,6 +336,20 @@ export function MeetingOverlay() {
     }
   }, [turns, summary, closeOverlay]);
 
+  const toggleMute = useCallback(async () => {
+    if (muteBusy || !captureActive) return;
+    setMuteBusy(true);
+    setError(null);
+    try {
+      await invoke(muted ? "resume_recording" : "pause_recording");
+      setMuted((v) => !v);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setMuteBusy(false);
+    }
+  }, [muted, muteBusy, captureActive]);
+
   const handleOpacityChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const next = Math.min(OPACITY_MAX, Math.max(OPACITY_MIN, Number(e.target.value)));
     setSettings((prev) => ({ ...prev, opacity: next }));
@@ -398,9 +422,22 @@ export function MeetingOverlay() {
       >
         <AudioLevelBars active={sttSpeaking && !busy} />
         <div className="overlay-title">
-          {opacityHint ? `Opacity ${opacityPercent}%` : busy ? "Answering…" : "Meeting"}
+          {opacityHint ? `Opacity ${opacityPercent}%` : busy ? "Answering…" : muted ? "Muted" : "Meeting"}
         </div>
         <div className="overlay-header-actions">
+          {/* Pauses/resumes audio capture — same mechanism as Interview
+              Mode's overlay, see its equivalent button for the full
+              explanation. */}
+          <button
+            type="button"
+            className={`overlay-icon-button${muted ? " on" : ""}`}
+            onClick={toggleMute}
+            disabled={!captureActive || muteBusy}
+            title={muted ? "Unmute — resume transcribing" : "Mute — pause transcribing"}
+          >
+            {muted ? "🔇" : "🎤"}
+          </button>
+
           {/* Visual parity with Interview Mode's overlay only — Interview's
               Auto AI auto-sends the interviewer's live-dictated question on
               silence, which has no equivalent here since Meeting's question
