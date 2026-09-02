@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -76,18 +76,6 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  // Prewarm STT the moment the app launches — the mic model loads while the
-  // user is still picking a mode/attaching context, so Start doesn't eat the
-  // full load time.
-  const prewarmRef = useRef<Promise<void> | null>(null);
-  useEffect(() => {
-    const promise = invoke<void>("start_system_audio_capture").catch((e) => {
-      if (String(e) !== "capture already running") throw e;
-    });
-    prewarmRef.current = promise;
-    promise.catch(() => {});
   }, []);
 
   // History/status content only has room to render once the user has
@@ -169,10 +157,9 @@ function App() {
       throw new Error(sessionResult.rejection);
     }
 
-    await (prewarmRef.current ??
-      invoke("start_system_audio_capture").catch((e) => {
-        if (String(e) !== "capture already running") throw e;
-      }));
+    await invoke("start_system_audio_capture").catch((e) => {
+      if (String(e) !== "capture already running") throw e;
+    });
     await invoke("clear_transcript").catch(() => {});
     await invoke("show_interview_overlay");
   }, [interviewContext]);
