@@ -52,6 +52,7 @@ Before answering, classify the question into one of four depth tiers, from its w
 - MEDIUM — a \"why\"/reasoning question, or a direct question that needs one layer of explanation (\"Why did you choose X?\", \"How exactly did you use Python?\"). State the answer, then the reasoning or detail behind it in a few sentences or short bullets — not a full essay.
 - LONG — a request for a real explanation of a process or a specific piece of it (\"How did you implement the system?\", \"What did you use for embeddings?\" as a follow-up). A structured, multi-part answer per FORMAT below — genuinely earns the space, don't compress it to one line.
 - VERY LONG / DETAILED — an explicit ask for the complete picture (\"Explain the complete RAG architecture\", \"Walk me through the entire implementation step by step\"). The fullest structured answer per FORMAT below, covering every real stage — don't truncate this one to save words.
+- CODE — the interviewer wants you to actually write code (\"Write a function that...\", \"Implement X in Python\", \"What would the SQL look like?\"), not talk about it. This tier is judged on completeness and correctness of the code, not a word count — see FORMAT 7 below.
 
 - A follow-up (\"why did you choose that?\", \"what about scaling?\", \"and then?\") inherits the depth tier of the exchange it is following up on, resolved from the conversation so far — UNLESS it narrows into one specific piece (see CONVERSATION CONTEXT below), in which case it drops to SHORT/MEDIUM for that one piece regardless of how long the earlier answer was.
 - A request that narrows the scope of what was just discussed (\"Can you give me an example?\", \"Just the example\", \"Can you be more specific about X?\", \"Can you explain the first step?\") drops to SHORT/MEDIUM and answers only the narrowed thing — give the example, the one step, or the specific detail asked for, without re-explaining or restating the broader answer it came from.
@@ -75,6 +76,8 @@ Formatting is part of the answer, not optional. Determine the question type firs
 
 6. ANY OTHER TECHNICAL EXPLANATION that earns real depth: use short paragraphs, a Markdown heading only if the answer has multiple distinct sections, and numbered steps or bullets wherever there is a sequence or a list of distinct points — never one undivided paragraph for something with inherently separable parts.
 
+7. CODE / IMPLEMENTATION REQUEST (\"Write a function that...\", \"Can you code that up?\", \"Implement X in Python\", \"What would the SQL look like?\", a LeetCode-style problem): the interviewer wants to see actual code, not a description of code. At most one short spoken sentence framing the approach, then a single fenced Markdown code block (```python ... ``` or whatever language fits — use the language the interviewer named, or the clearest idiomatic default for the task, e.g. Python for a general algorithm, SQL for a query, bash for a shell task) containing complete, correct, properly indented code that actually solves what was asked — never pseudocode dressed up as an answer unless pseudocode is explicitly what was asked for. Optionally, 1-2 short spoken sentences after the block for a genuinely useful note (time/space complexity, a key trade-off) — skip this entirely if there's nothing worth adding. Never describe the code in prose instead of writing it, and never wrap the explanation itself in a code block — only the code goes in the fence.
+
 A follow-up question answers only the new point being asked, using the FORMAT that matches the follow-up itself (a narrow follow-up usually earns format 1, even if the question it follows up on used a fuller format) — see FOLLOW-UP QUESTIONS below for how to resolve what it's referring to.
 
 WORKED EXAMPLE (format 4, architecture/system design — follow this exact shape AND this exact spoken voice, adapted to whatever system is actually being discussed):
@@ -93,6 +96,22 @@ Good answer:
 So the result is you get answers that are accurate and up to date, without having to retrain the whole model every time the data changes.\"
 
 Notice this is still one connected voice throughout — \"so\", \"then\", \"first\", \"finally\" tie the steps together like someone actually talking, and each step is a full spoken sentence, not a clipped label. This is the level of structure AND voice every format-4 (and, adapted, format-3) answer must reach — never collapse the structure into one paragraph, and never flatten the voice into dry, impersonal documentation.
+
+WORKED EXAMPLE (format 7, code/implementation — follow this exact shape: one short framing sentence, then real code in a fenced block, nothing more unless it adds genuine value):
+
+Question: \"Can you write a function that checks if a string is a palindrome?\"
+Good answer:
+\"Sure — I'd just compare the string to its reverse.
+
+```python
+def is_palindrome(s: str) -> bool:
+    cleaned = s.lower().replace(\" \", \"\")
+    return cleaned == cleaned[::-1]
+```
+
+That's O(n) time and O(n) space for the reversed copy.\"
+
+Never answer a question like this with a paragraph describing what the function would do instead of writing it.
 
 HONESTY
 
@@ -172,6 +191,19 @@ const NARROW_FOLLOWUP_MARKERS: &[&str] = &[
 ];
 const DIRECT_EXPERIENCE_MARKERS: &[&str] = &["have you worked", "have you used", "have you built", "do you have experience", "are you familiar with"];
 const EXAMPLE_SCOPE_MARKERS: &[&str] = &["give me an example", "just the example", "just give the example", "can you be more specific", "just that part"];
+// Explicit signals that the interviewer wants runnable code back, not a
+// spoken explanation of code — either a direct "write/implement/code" verb,
+// a named programming language, or a recognizable coding-interview phrasing.
+const CODE_MARKERS: &[&str] = &[
+    "write a function", "write a program", "write a script", "write a query",
+    "write the code", "write some code", "write code", "code that up", "code up",
+    "write pseudocode", "write an algorithm", "write a regex", "write sql",
+    "implement a function", "implement the function", "implement a program",
+    "coding question", "coding problem", "coding challenge", "leetcode",
+    "reverse a linked list", "in python", "in javascript", "in typescript",
+    "in java", "in c++", "in golang", "in rust", "using python", "using javascript",
+    "using sql", "what would the sql", "what would the code", "how would you code",
+];
 
 /// Whole-word containment check — plain substring `contains` would match
 /// "type" inside "prototype" or "types" inside "stereotypes", which
@@ -200,6 +232,9 @@ fn classify_format(question: &str) -> Option<&'static str> {
 
     if NARROW_FOLLOWUP_MARKERS.iter().any(|m| lowered.contains(m)) || EXAMPLE_SCOPE_MARKERS.iter().any(|m| lowered.contains(m)) {
         return Some("FORMAT 1-STYLE (narrow follow-up): answer only the specific piece asked about, in 1-3 plain sentences. No headings, no lists, no recap of the broader topic it's part of.");
+    }
+    if CODE_MARKERS.iter().any(|m| lowered.contains(m)) {
+        return Some("FORMAT 7 (code/implementation): at most one short framing sentence, then a single fenced Markdown code block (```language ... ```) with complete, correct, runnable code that actually solves what was asked, then optionally 1-2 short sentences after it only if genuinely useful (e.g. complexity). Never describe the code in prose instead of writing it.");
     }
     if ARCHITECTURE_MARKERS.iter().any(|m| lowered.contains(m)) {
         return Some("FORMAT 4 (architecture/system design): one-sentence overview, then a Markdown numbered list (1. 2. 3. ...) with one stage per step, then a short final-result line. Do not write this as a single paragraph.");
@@ -250,6 +285,10 @@ fn length_target(tier: &str) -> LengthTarget {
             prompt_text: "LONG (about 120-200 words) — this genuinely earns the fuller, structured answer per the FORMAT above; do not compress it.",
             max_tokens: 360,
         },
+        "code" => LengthTarget {
+            prompt_text: "CODE (word count doesn't apply) — at most one short framing sentence, then complete, correct, runnable code in a fenced block, then at most 1-2 short sentences after it only if genuinely useful. Don't pad with unnecessary explanation, but never truncate the code itself to save space — a partial or pseudocode answer is not acceptable when real code was asked for.",
+            max_tokens: 500,
+        },
         "very_long" => LengthTarget {
             prompt_text: "VERY LONG / DETAILED (about 200-320 words) — the interviewer explicitly asked for the complete picture. Give the fullest structured answer per the FORMAT above, covering every real stage — don't truncate this one to save words.",
             max_tokens: 540,
@@ -272,6 +311,10 @@ fn classify_length(question: &str) -> (&'static str, u32) {
     }
     if EXAMPLE_SCOPE_MARKERS.iter().any(|m| lowered.contains(m)) {
         let t = length_target("example");
+        return (t.prompt_text, t.max_tokens);
+    }
+    if CODE_MARKERS.iter().any(|m| lowered.contains(m)) {
+        let t = length_target("code");
         return (t.prompt_text, t.max_tokens);
     }
     if DIRECT_EXPERIENCE_MARKERS.iter().any(|o| lowered.starts_with(o)) {
@@ -461,6 +504,28 @@ mod tests {
         let mut req = base_request("What is Rust?");
         req.answer_length = "detailed".to_string();
         assert_eq!(max_tokens_for_question(&req), 75);
+    }
+
+    #[test]
+    fn classifies_code_request_with_code_format_and_budget() {
+        let hint = classify_format("Can you write a function that checks if a string is a palindrome?");
+        assert!(hint.unwrap().contains("FORMAT 7"));
+        let (_, budget) = classify_length("Can you write a function that checks if a string is a palindrome?");
+        assert_eq!(budget, 500);
+    }
+
+    #[test]
+    fn classifies_language_named_question_as_code() {
+        let hint = classify_format("How would you reverse a linked list in Python?");
+        assert!(hint.unwrap().contains("FORMAT 7"));
+    }
+
+    #[test]
+    fn code_request_takes_priority_over_how_process_marker() {
+        // Shares "how" phrasing with HOW_PROCESS_MARKERS but is a literal
+        // code request, which must win.
+        let hint = classify_format("How would you code a binary search in Java?");
+        assert!(hint.unwrap().contains("FORMAT 7"));
     }
 
     #[test]
