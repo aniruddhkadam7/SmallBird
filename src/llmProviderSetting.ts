@@ -6,7 +6,11 @@
 export type LlmProvider = "anthropic" | "openai" | "gemini" | "deepseek";
 
 const STORAGE_KEY = "smallbird:llm-provider";
-const DEFAULT_PROVIDER: LlmProvider = "anthropic";
+// Defaults to OpenAI rather than Anthropic since that's the provider with a
+// funded key set as a Supabase secret so far — switch back once an
+// ANTHROPIC_API_KEY secret is set, or just pick Anthropic from the header
+// dropdown once it's available.
+const DEFAULT_PROVIDER: LlmProvider = "openai";
 
 // Only providers with a real backend implementation are ever sent on the
 // wire (see apps/backend/app/schemas/ask.py's LlmProviderChoice) — "gemini"/

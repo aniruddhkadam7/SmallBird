@@ -32,16 +32,19 @@ pub struct DirectLlmClient {
 }
 
 impl DirectLlmClient {
-    /// `provider` defaults to Anthropic — the same default
+    /// `provider` defaults to OpenAI — the same default
     /// `llmProviderSetting.ts` uses — when the caller doesn't name one
     /// explicitly (e.g. Notes ask's request schema has no `llm_provider`
-    /// field). `access_token` is the caller's already-fetched, already-valid
-    /// Supabase session token (see `crate::auth::current_access_token`) —
-    /// unlike the removed BYOK version, this never fails to construct, since
-    /// there's no local key lookup to fail; a missing/expired session is the
-    /// caller's problem to surface before ever reaching here.
+    /// field). TODO: switch both defaults to Anthropic once an
+    /// ANTHROPIC_API_KEY secret is set — OpenAI is the default only because
+    /// it's the provider with a funded key so far. `access_token` is the
+    /// caller's already-fetched, already-valid Supabase session token (see
+    /// `crate::auth::current_access_token`) — unlike the removed BYOK
+    /// version, this never fails to construct, since there's no local key
+    /// lookup to fail; a missing/expired session is the caller's problem to
+    /// surface before ever reaching here.
     pub fn new(provider: Option<&str>, access_token: String) -> Self {
-        let provider = provider.and_then(LlmProvider::from_wire_str).unwrap_or(LlmProvider::Anthropic);
+        let provider = provider.and_then(LlmProvider::from_wire_str).unwrap_or(LlmProvider::OpenAi);
         Self { provider, access_token }
     }
 

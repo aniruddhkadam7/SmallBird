@@ -14,7 +14,7 @@ use super::session_store;
 /// NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY. Find them in the
 /// Supabase dashboard: Project Settings -> API.
 const SUPABASE_URL: &str = "https://xubbwgrjvvsbfvxcuzav.supabase.co";
-const SUPABASE_ANON_KEY: &str = "REPLACE_WITH_REAL_SUPABASE_ANON_KEY";
+const SUPABASE_ANON_KEY: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh1YmJ3Z3JqdnZzYmZ2eGN1emF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4NzQ5NjAsImV4cCI6MjEwMjQ1MDk2MH0.ZBkDqETqfJFcrmx68wQCqE2RsfvDwyy_k7uJvlY3vJo";
 
 const REQUEST_TIMEOUT_SECS: u64 = 15;
 
