@@ -12,5 +12,5 @@ verify_jwt = true
 [functions.session-heartbeat]
 verify_jwt = true
 
-[functions.stripe-webhook]
+[functions.razorpay-webhook]
 verify_jwt = false

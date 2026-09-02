@@ -14,12 +14,14 @@ backend/supabase/
   migrations/
     0005_backend_rpc_functions.sql   -- adds increment/decrement_entitlement_minutes RPCs
     0006_session_expiry_sweep.sql    -- pg_cron job that expires abandoned sessions
+    0008_fix_plan_ids.sql            -- fixes plan ids to match the website (free/interview-pass/pro-monthly/pro-annual)
+    0009_webhook_events.sql          -- idempotency table for the Razorpay webhook
   functions/
-    llm-proxy/          -- forwards chat requests to OpenAI/Anthropic with OUR key, logs to usage_costs
-    stt-token/           -- starts an interview_sessions row + mints a short-lived Deepgram key
-    session-heartbeat/   -- client pings every ~30s to keep a session's last_heartbeat_at fresh
-    usage-report/        -- client reports actual session duration when it ends
-    stripe-webhook/       -- keeps subscriptions + entitlements in sync with Stripe
+    llm-proxy/            -- forwards chat requests to OpenAI/Anthropic with OUR key, logs to usage_costs
+    stt-token/             -- starts an interview_sessions row + mints a short-lived Deepgram key
+    session-heartbeat/     -- client pings every ~30-90s to keep a session's last_heartbeat_at fresh
+    usage-report/          -- client reports actual session duration when it ends
+    razorpay-webhook/       -- keeps subscriptions + entitlements in sync with Razorpay
     _shared/entitlement.ts -- auth + plan/balance check shared by the above
 ```
 
@@ -29,9 +31,9 @@ metadata (token counts, minutes, cost estimates) needed for metering.
 ## How the pieces fit the existing schema
 
 - `entitlements.remaining_minutes` is a spendable balance (not a monthly
-  reset counter) — it goes up via Stripe events, down via `usage-report`.
-  This matches `plans.billing_type` supporting both `monthly` subscriptions
-  and `one_time` minute packs.
+  reset counter) — it goes up via Razorpay events, down via `usage-report`.
+  This matches `plans.billing_type` supporting `free`, `one_time`,
+  `monthly`, and `yearly`.
 - `interview_sessions` has a DB-level unique index
   (`interview_sessions_one_active_per_user`) allowing only one `active`
   session per user — `stt-token` relies on this and returns 409 if the
@@ -41,13 +43,20 @@ metadata (token counts, minutes, cost estimates) needed for metering.
   app doesn't permanently occupy that one-active-session slot. **Enable the
   `pg_cron` extension** (Database -> Extensions in the dashboard) before
   applying this migration.
+- `0008_fix_plan_ids.sql` corrects a real bug: the original seed used ids
+  (`free/starter/pro/power`) that never matched the website's actual plan
+  ids (`free/interview-pass/pro-monthly/pro-annual`). Apply this before
+  testing any real checkout.
+- `webhook_events` (from `0009`) exists because Razorpay retries webhook
+  deliveries that don't get acknowledged — without a dedupe check, a
+  retried `order.paid`/`subscription.charged` would double-credit minutes.
 
-## Applying the new migrations
+## Applying migrations
 
-The MCP connection used to inspect this project (from this chat) is
+The MCP connection used to inspect this project (from Claude's chat) is
 **read-only by design** — it will not, and should not, push schema changes.
-Apply `0005` and `0006` yourself via the Supabase dashboard's SQL Editor
-(paste each file's contents and run), or via the CLI:
+Apply pending migrations yourself via the Supabase dashboard's SQL Editor
+(paste each file's contents and run, in order), or via the CLI:
 
 ```powershell
 cd backend
@@ -65,12 +74,13 @@ supabase secrets set OPENAI_API_KEY=sk-...
 supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
 supabase secrets set DEEPGRAM_API_KEY=<a Deepgram key with project key-management scope>
 supabase secrets set DEEPGRAM_PROJECT_ID=<your Deepgram project id>
-supabase secrets set STRIPE_SECRET_KEY=sk_test_...
-supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_...
+supabase secrets set RAZORPAY_WEBHOOK_SECRET=<shown when you create the webhook in Razorpay's dashboard>
 ```
 
 `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` are injected
-automatically — don't set those yourself.
+automatically — don't set those yourself. `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET`
+are used by the **website's** server-side order/subscription creation, not by
+this backend — set those in the website's hosting env instead.
 
 ## Deploy the functions
 
@@ -79,31 +89,36 @@ supabase functions deploy llm-proxy
 supabase functions deploy stt-token
 supabase functions deploy session-heartbeat
 supabase functions deploy usage-report
-supabase functions deploy stripe-webhook
+supabase functions deploy razorpay-webhook
 ```
 
-## Stripe setup checklist
+## Razorpay setup checklist
 
-`plans` already has rows with `id`, `included_minutes`, `price_inr_paise`,
-`billing_type`. When you create the matching Products/Prices in Stripe:
+`plans` has rows with `id`, `included_minutes`, `price_inr_paise`,
+`billing_type` matching the website exactly after `0008` is applied.
 
-1. When creating a Checkout Session from your website, set:
-   - `client_reference_id`: the Supabase user id
-   - `metadata: { plan_id: "<id from public.plans>" }`
-   - For subscription-mode sessions, also set
-     `subscription_data: { metadata: { user_id, plan_id } }` — this schema
-     has no `stripe_customer_id`/`stripe_subscription_id` columns, so
-     `user_id` travels via Stripe metadata instead of a DB lookup.
-2. Add a webhook endpoint pointing at
-   `https://xubbwgrjvvsbfvxcuzav.supabase.co/functions/v1/stripe-webhook`,
-   subscribed to `checkout.session.completed`, `invoice.paid`,
-   `customer.subscription.deleted`.
+1. Create a Razorpay account, complete KYC. Test-mode keys work before KYC
+   clears — enough to build and test everything below.
+2. Create two Razorpay **Plans** (Dashboard -> Subscriptions -> Plans) for
+   `pro-monthly` and `pro-annual` — Razorpay recurring billing needs a
+   pre-existing Razorpay-side plan id, separate from `public.plans.id`.
+3. When the website creates an Order (one-time, `interview-pass`) or a
+   Subscription (`pro-monthly`/`pro-annual`) server-side, it must set
+   `notes: { user_id: "<supabase user id>", plan_id: "<id from public.plans>" }`
+   — Razorpay's free-form metadata equivalent (max 15 keys). This function
+   reads `user_id`/`plan_id` from there; there's no `stripe_customer_id`-style
+   column to look up instead.
+4. Add a webhook endpoint (Dashboard -> Account & Settings -> Webhooks)
+   pointing at
+   `https://xubbwgrjvvsbfvxcuzav.supabase.co/functions/v1/razorpay-webhook`,
+   subscribed to `order.paid`, `subscription.charged`, `subscription.cancelled`.
+   Note the webhook secret shown at creation — that's `RAZORPAY_WEBHOOK_SECRET`.
 
 ## Every new user already starts on a plan
 
 The existing `handle_new_user_entitlement` trigger gives every signup an
 `entitlements` row on the `free` plan with `free`'s `included_minutes`.
-Nothing here charges anyone until they go through Stripe Checkout.
+Nothing here charges anyone until they go through Razorpay Checkout.
 
 ## Local testing
 
