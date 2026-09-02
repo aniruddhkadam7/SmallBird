@@ -93,6 +93,30 @@ function App() {
     };
   }, []);
 
+  // Closing the main window (its own ✕, Alt+F4, etc.) previously just quit
+  // without ever telling the backend — same class of bug as the overlay's
+  // own close controls, but for the whole app. Intercepting the close lets
+  // this run one best-effort end_backend_session call first (safe/cheap to
+  // call even when no session is active — see end_backend_session's Rust
+  // doc) before actually closing. A true crash/force-kill still can't run
+  // this; that's what the backend's stale-session sweep is for.
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    const unlistenPromise = appWindow.onCloseRequested(async (event) => {
+      event.preventDefault();
+      try {
+        await invoke("end_backend_session");
+      } catch {
+        // Best-effort — never block the app from closing over this.
+      } finally {
+        await appWindow.destroy();
+      }
+    });
+    return () => {
+      unlistenPromise.then((f) => f());
+    };
+  }, []);
+
   // The main window is `transparent: true` (tauri.conf.json) so the extra
   // height it grows into for an open header dropdown is genuinely
   // see-through rather than a visible grey panel — see App.css's
