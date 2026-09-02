@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { CheckCircle2 } from "lucide-react"
 import {
   Dialog,
@@ -12,22 +13,19 @@ import {
 } from "@/components/ui/dialog"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { PLAN_LABELS, usePurchaseFlow } from "@/lib/purchase-flow"
-
-const PLAN_PRICE_SUMMARY: Record<string, string> = {
-  free: "₹0 — no payment needed",
-  "interview-pass": "₹199 one-time",
-  "pro-monthly": "₹699 / month",
-  "pro-annual": "₹4,999 / year",
-}
+import { getPlan } from "@/lib/plans"
 
 export function PurchaseFlowDialog() {
-  const { activeFlow, closeFlow, completeSignup, completePayment } = usePurchaseFlow()
+  const { activeFlow, closeFlow, requestCode, verifyCode, completePayment, busy, error } = usePurchaseFlow()
   const [email, setEmail] = useState("")
+  const [code, setCode] = useState("")
+  const router = useRouter()
 
   if (!activeFlow) return null
 
+  const plan = getPlan(activeFlow.plan)
   const planLabel = PLAN_LABELS[activeFlow.plan]
-  const priceSummary = PLAN_PRICE_SUMMARY[activeFlow.plan]
+  const priceSummary = plan.cadence ? `${plan.price} ${plan.cadence}` : `${plan.price} — no payment needed`
 
   return (
     <Dialog open onOpenChange={(open) => !open && closeFlow()}>
@@ -35,17 +33,17 @@ export function PurchaseFlowDialog() {
         {activeFlow.step === "signup" ? (
           <>
             <DialogHeader>
-              <DialogTitle>Create your account</DialogTitle>
+              <DialogTitle>Log in or sign up</DialogTitle>
               <DialogDescription>
-                Signing up for <span className="font-medium text-foreground">{planLabel}</span>{" "}
-                ({priceSummary}).
+                Continuing with <span className="font-medium text-foreground">{planLabel}</span> ({priceSummary}).
+                We'll email you a 6-digit code — no password needed.
               </DialogDescription>
             </DialogHeader>
             <form
               className="space-y-4"
               onSubmit={(e) => {
                 e.preventDefault()
-                completeSignup(email)
+                requestCode(email)
               }}
             >
               <div className="space-y-1.5">
@@ -61,13 +59,49 @@ export function PurchaseFlowDialog() {
                   placeholder="you@example.com"
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 />
-                <p className="text-xs text-muted-foreground">
-                  This is a UI preview — no account is actually created yet.
-                </p>
               </div>
+              {error && <p className="text-sm text-destructive">{error}</p>}
               <DialogFooter>
-                <LiquidButton type="submit" className="w-full">
-                  Continue
+                <LiquidButton type="submit" className="w-full" disabled={busy}>
+                  {busy ? "Sending code…" : "Send code"}
+                </LiquidButton>
+              </DialogFooter>
+            </form>
+          </>
+        ) : null}
+
+        {activeFlow.step === "verify" ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Enter your code</DialogTitle>
+              <DialogDescription>We sent a 6-digit code to {email}.</DialogDescription>
+            </DialogHeader>
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault()
+                verifyCode(email, code)
+              }}
+            >
+              <div className="space-y-1.5">
+                <label htmlFor="verify-code" className="text-sm font-medium text-foreground">
+                  Code
+                </label>
+                <input
+                  id="verify-code"
+                  type="text"
+                  inputMode="numeric"
+                  required
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="123456"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                />
+              </div>
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <DialogFooter>
+                <LiquidButton type="submit" className="w-full" disabled={busy}>
+                  {busy ? "Verifying…" : "Verify"}
                 </LiquidButton>
               </DialogFooter>
             </form>
@@ -82,13 +116,10 @@ export function PurchaseFlowDialog() {
                 {planLabel} — {priceSummary}
               </DialogDescription>
             </DialogHeader>
-            <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-              Payment provider isn't connected yet. In the real flow this is
-              where you'd complete checkout (e.g. via Razorpay for INR).
-            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
             <DialogFooter>
-              <LiquidButton className="w-full" onClick={completePayment}>
-                Simulate successful payment
+              <LiquidButton className="w-full" onClick={completePayment} disabled={busy}>
+                {busy ? "Opening checkout…" : "Continue to payment"}
               </LiquidButton>
             </DialogFooter>
           </>
@@ -102,12 +133,17 @@ export function PurchaseFlowDialog() {
               </div>
               <DialogTitle className="text-center">You're all set</DialogTitle>
               <DialogDescription className="text-center">
-                {planLabel} is ready. Download Smallbird for Windows to get
-                started.
+                {planLabel} is ready. Download Smallbird for Windows to get started.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <LiquidButton className="w-full" onClick={closeFlow}>
+              <LiquidButton
+                className="w-full"
+                onClick={() => {
+                  closeFlow()
+                  router.push("/download")
+                }}
+              >
                 Go to download
               </LiquidButton>
             </DialogFooter>

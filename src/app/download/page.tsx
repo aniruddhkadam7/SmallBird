@@ -1,13 +1,25 @@
-"use client"
-
 import Link from "next/link"
 import { ArrowLeft, Monitor, Apple, Download } from "lucide-react"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
-import { PLAN_LABELS, usePurchaseFlow } from "@/lib/purchase-flow"
+import { createClient } from "@/lib/supabase/server"
+import { DownloadGateButton } from "./download-gate-button"
 
-export default function DownloadPage() {
-  const { canDownload, selectedPlan, startFlow } = usePurchaseFlow()
+// The stable "always points at the newest release" URL — GitHub resolves
+// /releases/latest/download/<asset-name> to whatever the latest tagged
+// release's matching asset is, so this link never needs updating per release.
+const WINDOWS_INSTALLER_URL = "https://github.com/aniruddhkadam7/SmallBird/releases/latest/download/Smallbird-Setup.exe"
+
+// Server Component: the actual gating decision happens here, from the
+// user's real session (via cookies), not from client-only React state that
+// would reset on refresh — every signed-in account has at least the free
+// plan's entitlement (granted automatically on signup), so "logged in" is
+// the real download gate; which plan they're on only affects in-app usage.
+export default async function DownloadPage() {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-16 sm:py-24">
@@ -20,13 +32,9 @@ export default function DownloadPage() {
       </Link>
 
       <div className="mt-10 text-center">
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-          Download Smallbird
-        </h1>
+        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Download Smallbird</h1>
         <p className="mt-4 text-muted-foreground">
-          {canDownload
-            ? `${PLAN_LABELS[selectedPlan!]} plan ready — pick your platform below.`
-            : "Sign in for free, then download and install the desktop app."}
+          {user ? "Pick your platform below." : "Sign in for free, then download and install the desktop app."}
         </p>
       </div>
 
@@ -41,20 +49,16 @@ export default function DownloadPage() {
           </CardHeader>
           <CardContent />
           <CardFooter>
-            <LiquidButton
-              className="w-full"
-              onClick={() => {
-                if (canDownload) {
-                  // TODO: point at the real Windows installer artifact once release builds are published.
-                  window.location.href = "/download"
-                } else {
-                  startFlow("free")
-                }
-              }}
-            >
-              <Download className="h-4 w-4" />
-              Download for Windows
-            </LiquidButton>
+            {user ? (
+              <LiquidButton className="w-full" asChild>
+                <a href={WINDOWS_INSTALLER_URL}>
+                  <Download className="h-4 w-4" />
+                  Download for Windows
+                </a>
+              </LiquidButton>
+            ) : (
+              <DownloadGateButton />
+            )}
           </CardFooter>
         </Card>
 
@@ -77,8 +81,7 @@ export default function DownloadPage() {
       </div>
 
       <p className="mt-10 text-center text-xs text-muted-foreground">
-        After installing, sign in with the email you signed up with to start
-        your first session.
+        After installing, sign in with the email you signed up with to start your first session.
       </p>
     </div>
   )

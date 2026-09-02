@@ -6,63 +6,8 @@ import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import { usePurchaseFlow, type PlanId } from "@/lib/purchase-flow"
-
-type Plan = {
-  id: PlanId
-  name: string
-  price: string
-  cadence: string
-  billingNote: string
-  description: string
-  features: string[]
-  cta: string
-  recommended?: boolean
-}
-
-const plans: Plan[] = [
-  {
-    id: "free",
-    name: "Free",
-    price: "₹0",
-    cadence: "",
-    billingNote: "No card required",
-    description: "Limited usage, suitable for trying Smallbird.",
-    features: ["Limited monthly usage", "Interview Mode", "Meeting Mode", "Basic context upload"],
-    cta: "Start Free",
-  },
-  {
-    id: "interview-pass",
-    name: "Interview Pass",
-    price: "₹199",
-    cadence: "one-time",
-    billingNote: "2 hours of Interview Mode",
-    description: "A one-time pass for a single high-stakes interview.",
-    features: ["2 hours of Interview Mode", "CV + JD context", "Real-time AI assistance", "Valid until used"],
-    cta: "Get Interview Pass",
-  },
-  {
-    id: "pro-monthly",
-    name: "Pro Monthly",
-    price: "₹699",
-    cadence: "/ month",
-    billingNote: "Billed monthly",
-    description: "Full Interview + Meeting assistance with generous usage.",
-    features: ["Interview + Meeting Mode", "Generous monthly usage", "Full context library", "Priority support"],
-    cta: "Start Pro",
-  },
-  {
-    id: "pro-annual",
-    name: "Pro Annual",
-    price: "₹4,999",
-    cadence: "/ year",
-    billingNote: "Billed yearly · best value",
-    description: "Same Pro features as monthly, at the best price.",
-    features: ["Interview + Meeting Mode", "Generous monthly usage", "Full context library", "Priority support"],
-    cta: "Get Pro Annual",
-    recommended: true,
-  },
-]
+import { usePurchaseFlow } from "@/lib/purchase-flow"
+import { PLANS } from "@/lib/plans"
 
 export function Pricing() {
   const { startFlow } = usePurchaseFlow()
@@ -81,7 +26,7 @@ export function Pricing() {
         </div>
 
         <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {plans.map((plan, i) => (
+          {PLANS.map((plan, i) => (
             <motion.div
               key={plan.id}
               initial={{ opacity: 0, y: 16 }}
