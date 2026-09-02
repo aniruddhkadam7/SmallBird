@@ -160,6 +160,7 @@ pub fn run() {
             auth::commands::verify_login_otp,
             auth::commands::logout,
             auth::commands::get_auth_session,
+            auth::commands::get_entitlement,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

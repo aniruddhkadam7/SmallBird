@@ -21,6 +21,14 @@ import {
 } from "./questionCompleteness";
 import { AudioLevelBars, useSttSpeaking } from "./ui";
 import { loadLlmProvider } from "./llmProviderSetting";
+import { getEntitlement } from "./auth";
+
+function formatCountdown(totalSeconds: number): string {
+  const clamped = Math.max(0, Math.floor(totalSeconds));
+  const minutes = Math.floor(clamped / 60);
+  const seconds = clamped % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
 
 interface OverlayCaptureStatus {
   excluded: boolean;
@@ -88,6 +96,14 @@ export function InterviewOverlay() {
   // Shows the opacity percentage in the header for a moment after adjusting.
   const [opacityHint, setOpacityHint] = useState(false);
   const [settings, setSettings] = useState<OverlaySettings>(() => loadOverlaySettings());
+  // Remaining plan balance at the moment this session started, in seconds —
+  // ticked down locally by elapsedSeconds rather than re-fetched every
+  // second, so the display doesn't depend on network latency. The real
+  // enforcement happens server-side (see usage-report/entitlement checks);
+  // this is purely a visible countdown so the user isn't surprised by
+  // running out mid-answer.
+  const [remainingSecondsAtStart, setRemainingSecondsAtStart] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const questionRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -232,6 +248,27 @@ export function InterviewOverlay() {
     };
   }, []);
 
+  // Live countdown: fetch the plan balance once per session (on mount, and
+  // again whenever the reused overlay window resets for a new interview —
+  // see the overlay:reset-session listener below), then tick it down every
+  // second locally.
+  useEffect(() => {
+    let cancelled = false;
+    getEntitlement()
+      .then((info) => !cancelled && setRemainingSecondsAtStart(Math.round(info.remainingMinutes * 60)))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - sessionStartedAtRef.current) / 1000));
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     invoke<OverlayCaptureStatus>("show_interview_overlay")
       .then((status) => setCaptureExcluded(status.excluded))
@@ -287,6 +324,10 @@ export function InterviewOverlay() {
       committedRef.current = "";
       busyRef.current = false;
       sessionStartedAtRef.current = Date.now();
+      setElapsedSeconds(0);
+      getEntitlement()
+        .then((info) => setRemainingSecondsAtStart(Math.round(info.remainingMinutes * 60)))
+        .catch(() => {});
     });
     return () => {
       unlistenReset.then((f) => f());
@@ -555,6 +596,21 @@ export function InterviewOverlay() {
         </div>
 
         <div className="overlay-header-actions">
+          {/* Live plan-balance countdown — ticks down locally from the
+              balance fetched at session start; the server is the actual
+              source of truth (see usage-report), this just keeps the user
+              from being surprised mid-answer. Hidden until the balance
+              loads rather than showing a misleading "0:00" first. */}
+          {remainingSecondsAtStart !== null && (
+            <span
+              className="overlay-title"
+              style={{ opacity: 0.7, fontVariantNumeric: "tabular-nums" }}
+              title="Time remaining on your plan this session"
+            >
+              {formatCountdown(Math.max(0, remainingSecondsAtStart - elapsedSeconds))} left
+            </span>
+          )}
+
           {/* Pauses/resumes audio capture without tearing down the STT
               connection or clearing the transcript-so-far — see
               commands.rs's pause_recording/resume_recording doc comments.

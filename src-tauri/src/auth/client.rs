@@ -139,3 +139,31 @@ pub fn logout() -> Result<(), String> {
 pub fn needs_refresh(session: &AuthSession) -> bool {
     now_unix() >= session.expires_at - 60
 }
+
+#[derive(Deserialize)]
+struct EntitlementRow {
+    plan_id: String,
+    remaining_minutes: f64,
+}
+
+/// Reads the caller's own `entitlements` row via PostgREST, scoped by RLS to
+/// their own `user_id` — same account whether called from the login screen
+/// or the Interview overlay's live minutes display.
+pub async fn get_entitlement(access_token: &str) -> Result<super::commands::EntitlementInfo, String> {
+    let response = client()
+        .get(format!("{SUPABASE_URL}/rest/v1/entitlements?select=plan_id,remaining_minutes"))
+        .header("apikey", SUPABASE_ANON_KEY)
+        .bearer_auth(access_token)
+        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .send()
+        .await
+        .map_err(|e| format!("failed to reach Smallbird's account service: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(parse_auth_error(response).await);
+    }
+
+    let rows: Vec<EntitlementRow> = response.json().await.map_err(|e| format!("unexpected response reading your plan: {e}"))?;
+    let row = rows.into_iter().next().ok_or_else(|| "No plan found for this account".to_string())?;
+    Ok(super::commands::EntitlementInfo { plan_id: row.plan_id, remaining_minutes: row.remaining_minutes })
+}

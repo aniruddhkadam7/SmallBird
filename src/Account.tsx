@@ -1,8 +1,30 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "./ui";
-import { getAuthSession, logout, requestLoginOtp, verifyLoginOtp, type AuthSessionInfo } from "./auth";
+import {
+  getAuthSession,
+  getEntitlement,
+  logout,
+  requestLoginOtp,
+  verifyLoginOtp,
+  type AuthSessionInfo,
+  type EntitlementInfo,
+} from "./auth";
 
 type Step = "LOADING" | "EMAIL" | "CODE" | "LOGGED_IN";
+
+const PLAN_LABELS: Record<string, string> = {
+  free: "Free",
+  "interview-pass": "Interview Pass",
+  "pro-monthly": "Pro Monthly",
+  "pro-annual": "Pro Annual",
+};
+
+function formatMinutes(minutes: number): string {
+  const whole = Math.floor(minutes);
+  const hours = Math.floor(whole / 60);
+  const mins = whole % 60;
+  return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+}
 
 /// Passwordless email-OTP login against the same Supabase account used by
 /// the website — send a code, enter the code, done. Every AI feature
@@ -16,6 +38,7 @@ export function Account({ onClose, onSessionChange }: { onClose: () => void; onS
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loggedInEmail, setLoggedInEmail] = useState<string | null>(null);
+  const [entitlement, setEntitlement] = useState<EntitlementInfo | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,6 +49,9 @@ export function Account({ onClose, onSessionChange }: { onClose: () => void; onS
         if (session.loggedIn) {
           setLoggedInEmail(session.email);
           setStep("LOGGED_IN");
+          getEntitlement()
+            .then((info) => !cancelled && setEntitlement(info))
+            .catch(() => {});
         } else {
           setStep("EMAIL");
         }
@@ -61,6 +87,9 @@ export function Account({ onClose, onSessionChange }: { onClose: () => void; onS
       onSessionChange?.(session);
       setLoggedInEmail(session.email);
       setStep("LOGGED_IN");
+      getEntitlement()
+        .then(setEntitlement)
+        .catch(() => {});
     } catch (err) {
       setError(String(err));
     } finally {
@@ -75,6 +104,7 @@ export function Account({ onClose, onSessionChange }: { onClose: () => void; onS
       await logout();
       onSessionChange?.({ loggedIn: false, email: null });
       setLoggedInEmail(null);
+      setEntitlement(null);
       setEmail("");
       setCode("");
       setStep("EMAIL");
@@ -154,6 +184,19 @@ export function Account({ onClose, onSessionChange }: { onClose: () => void; onS
           {step === "LOGGED_IN" && (
             <>
               <p className="setup-hint">Logged in as {loggedInEmail}.</p>
+              <div className="setup-identity-field" style={{ marginTop: "12px" }}>
+                <label className="setup-section-label">Plan</label>
+                {entitlement ? (
+                  <p className="setup-hint" style={{ margin: 0 }}>
+                    {PLAN_LABELS[entitlement.planId] ?? entitlement.planId} —{" "}
+                    <strong>{formatMinutes(entitlement.remainingMinutes)} remaining</strong>
+                  </p>
+                ) : (
+                  <p className="setup-hint" style={{ margin: 0 }}>
+                    Loading…
+                  </p>
+                )}
+              </div>
               <div style={{ marginTop: "12px" }}>
                 <Button variant="ghost" onClick={handleLogout} disabled={busy}>
                   {busy ? "Logging out…" : "Log out"}

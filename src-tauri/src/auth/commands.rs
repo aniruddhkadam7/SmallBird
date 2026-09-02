@@ -57,3 +57,19 @@ pub async fn get_auth_session(state: State<'_, AppState>) -> Result<AuthSessionI
         None => AuthSessionInfo { logged_in: false, email: None },
     })
 }
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntitlementInfo {
+    pub plan_id: String,
+    pub remaining_minutes: f64,
+}
+
+/// Reads the signed-in user's own `entitlements` row via Supabase's REST API
+/// (PostgREST), scoped by RLS to their own row (see the `entitlements_select_own`
+/// policy) — no separate Edge Function needed for a plain read like this.
+#[tauri::command]
+pub async fn get_entitlement(state: State<'_, AppState>) -> Result<EntitlementInfo, String> {
+    let access_token = crate::auth::current_access_token(&state).await?;
+    client::get_entitlement(&access_token).await
+}

@@ -24,3 +24,12 @@ export function logout(): Promise<void> {
 export function getAuthSession(): Promise<AuthSessionInfo> {
   return invoke<AuthSessionInfo>("get_auth_session");
 }
+
+export interface EntitlementInfo {
+  planId: string;
+  remainingMinutes: number;
+}
+
+export function getEntitlement(): Promise<EntitlementInfo> {
+  return invoke<EntitlementInfo>("get_entitlement");
+}

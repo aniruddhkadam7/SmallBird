@@ -41,3 +41,8 @@ sidecars/
 *.njsproj
 *.sln
 *.sw?
+
+# Supabase CLI local state — created by `supabase link`/`functions deploy`
+# on whichever directory it's run from; not project source.
+**/supabase/.temp/
+/supabase/
