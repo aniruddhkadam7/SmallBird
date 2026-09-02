@@ -2,7 +2,9 @@ use std::sync::Mutex;
 use std::thread::JoinHandle;
 
 use crate::audio::{PauseSignal, StopSignal};
+use crate::auth::AuthSession;
 use crate::rag::RagServiceHandle;
+use crate::stt::SttSession;
 use crate::transcript::{RecordingState, TranscriptManager};
 
 /// Handles for an in-progress recording session, held so Tauri commands can stop it
@@ -37,4 +39,14 @@ pub struct AppState {
     /// commands report a clear "unavailable" error in that case rather than
     /// panicking.
     pub rag_service: Mutex<Option<RagServiceHandle>>,
+    /// The signed-in Supabase session, if any. `None` means logged out — the
+    /// app requires login for every AI feature (no BYOK fallback). Refreshed
+    /// transparently by `auth::current_access_token` when near expiry.
+    pub auth_session: Mutex<Option<AuthSession>>,
+    /// Set by `interview_mode::commands::start_backend_session` (mints a
+    /// scoped Deepgram key + starts an `interview_sessions` row), read by
+    /// `commands::start_capture_inner` to get the key `SttClient::spawn`
+    /// needs, cleared by `end_backend_session` (reports usage, stops the
+    /// heartbeat loop).
+    pub stt_session: Mutex<Option<SttSession>>,
 }

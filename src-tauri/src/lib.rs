@@ -3,6 +3,7 @@ mod analyzer;
 // real capture path when measuring the pipeline, rather than a copy of it that
 // could drift from what actually ships.
 pub mod audio;
+mod auth;
 mod backend;
 mod commands;
 // Public so `src/bin/hw_probe.rs` can reference `PerformanceConfig` without
@@ -155,12 +156,10 @@ pub fn run() {
             hardware::commands::get_performance_mode,
             hardware::commands::set_performance_mode,
             main_window::set_popover_content_height,
-            personal::commands::personal_get_api_key,
-            personal::commands::personal_set_api_key,
-            personal::commands::personal_clear_api_key,
-            stt::commands::stt_get_api_key,
-            stt::commands::stt_set_api_key,
-            stt::commands::stt_clear_api_key,
+            auth::commands::request_login_otp,
+            auth::commands::verify_login_otp,
+            auth::commands::logout,
+            auth::commands::get_auth_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,28 +1,25 @@
-/// The three AI providers a personal build can call directly. Uses the same
-/// wire strings already sent today by `AskRequest.llm_provider`
-/// (see `backend/types.rs`) and stored by
-/// the frontend's `llmProviderSetting.ts` — a personal build reuses that
-/// exact "which provider is active" selector rather than inventing a second
-/// one; this enum only exists so `personal::client`/`personal::api_key_store`
-/// have a small typed value instead of passing raw strings around internally.
+/// The two AI providers `llm-proxy` (see `backend/supabase/functions/`)
+/// supports. Uses the same wire strings already sent today by
+/// `AskRequest.llm_provider` (see `backend/types.rs`) and stored by the
+/// frontend's `llmProviderSetting.ts`. Gemini was dropped when this build
+/// switched from BYOK to backend-metered — `llm-proxy` has no Gemini
+/// support, so it's no longer a selectable provider; re-add here (and to
+/// `llm-proxy`'s `PROVIDER_URLS`) if Gemini support returns later.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LlmProvider {
     OpenAi,
     Anthropic,
-    Gemini,
 }
 
 impl LlmProvider {
     /// Parses the wire strings already used by `AskRequest.llm_provider`
-    /// etc. ("openai" | "anthropic" | "gemini"). "deepseek" and any other
-    /// string return `None` — "deepseek" has no backend implementation
-    /// today (the header dropdown keeps it disabled), so a personal build
-    /// has nothing to call for it either.
+    /// etc. ("openai" | "anthropic"). Any other string (including the
+    /// now-dropped "gemini" and "deepseek", which never had a backend
+    /// implementation) returns `None`.
     pub fn from_wire_str(s: &str) -> Option<Self> {
         match s {
             "openai" => Some(Self::OpenAi),
             "anthropic" => Some(Self::Anthropic),
-            "gemini" => Some(Self::Gemini),
             _ => None,
         }
     }
@@ -31,7 +28,6 @@ impl LlmProvider {
         match self {
             Self::OpenAi => "openai",
             Self::Anthropic => "anthropic",
-            Self::Gemini => "gemini",
         }
     }
 }
@@ -42,7 +38,7 @@ mod tests {
 
     #[test]
     fn round_trips_valid_wire_strings() {
-        for s in ["openai", "anthropic", "gemini"] {
+        for s in ["openai", "anthropic"] {
             let provider = LlmProvider::from_wire_str(s).expect("should parse");
             assert_eq!(provider.as_wire_str(), s);
         }
@@ -50,6 +46,7 @@ mod tests {
 
     #[test]
     fn rejects_unknown_or_unimplemented_providers() {
+        assert_eq!(LlmProvider::from_wire_str("gemini"), None);
         assert_eq!(LlmProvider::from_wire_str("deepseek"), None);
         assert_eq!(LlmProvider::from_wire_str("bogus"), None);
         assert_eq!(LlmProvider::from_wire_str(""), None);

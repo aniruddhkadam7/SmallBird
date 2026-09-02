@@ -236,7 +236,8 @@ pub async fn ask_interview_question(
         first_token_recorder.mark();
         let _ = app_for_events.emit("interview-mode:answer-delta", delta);
     };
-    let answer = crate::personal::DirectLlmClient::new(request.llm_provider.as_deref())?
+    let access_token = crate::auth::current_access_token(&state).await?;
+    let answer = crate::personal::DirectLlmClient::new(request.llm_provider.as_deref(), access_token)
         .ask_stream(&request, on_delta)
         .await?;
 
@@ -273,20 +274,16 @@ fn trim_history(turns: Vec<PriorTurn>) -> Vec<ConversationTurn> {
     history
 }
 
-/// Result of `start_backend_session`, distinguishing "the backend explicitly
-/// said no" (`rejection` set — Start should stop) from every other outcome
-/// (not signed in, credential store unavailable, network unreachable,
-/// backend down — `rejection` is `None` and local recording should proceed
-/// exactly as it always has). This feature has NO business blocking local
-/// STT for any reason other than an actual entitlement decision — collapsing
-/// every failure into one error type is what previously let an unrelated
-/// infrastructure hiccup (e.g. Windows Credential Manager being briefly
-/// unavailable) silently prevent recording from ever starting.
+/// Result of `start_backend_session`. Unlike the old BYOK build (where a
+/// missing/unreachable backend just meant "keep using your own key locally"),
+/// there is no local fallback anymore — the Deepgram key `start_capture_inner`
+/// needs comes from this call, so any failure (no remaining minutes, an
+/// active session already running elsewhere, not logged in, network/backend
+/// unreachable) is a real rejection the frontend must surface and use to
+/// stop Start.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct BackendSessionResult {
-    /// Present only for a genuine backend rejection (no remaining minutes,
-    /// concurrent session limit) — a user-presentable message the frontend
-    /// should surface and use to stop Start.
+    /// A user-presentable message explaining why the session couldn't start.
     pub rejection: Option<String>,
 }
 
@@ -300,21 +297,68 @@ impl BackendSessionResult {
     }
 }
 
-/// This is a personal build: there is no SaaS backend, no Supabase sign-in,
-/// and no entitlement/session-authority system to check in with. These two
-/// commands are kept as permanent no-ops (rather than removed) so the
-/// frontend call sites around Start/Stop Interview — which call them
-/// unconditionally — need no changes.
+/// Mints a short-lived, scoped Deepgram key and starts an
+/// `interview_sessions` row server-side (see `stt::backend_token::mint`),
+/// checking the signed-in user's remaining minutes / concurrent-session
+/// limit in the process. Any failure here — out of minutes, an active
+/// session already running elsewhere, not logged in, or a network problem
+/// reaching the backend — is surfaced as a `rejection`, since (unlike the
+/// old BYOK build) there is no local fallback: the Deepgram key used by
+/// `start_capture_inner` comes from this call, not a stored user key.
 #[tauri::command]
 pub async fn start_backend_session(
-    _state: State<'_, AppState>,
+    state: State<'_, AppState>,
     _stt_mode: String,
 ) -> Result<BackendSessionResult, String> {
-    Ok(BackendSessionResult::ok())
+    let access_token = match crate::auth::current_access_token(&state).await {
+        Ok(token) => token,
+        Err(err) => return Ok(BackendSessionResult::rejected(err)),
+    };
+
+    match crate::stt::backend_token::mint(&access_token).await {
+        Ok(minted) => {
+            let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+            let heartbeat_session_id = minted.session_id.clone();
+            tauri::async_runtime::spawn(crate::stt::backend_token::run_heartbeat_loop(
+                access_token,
+                heartbeat_session_id,
+                cancel_rx,
+            ));
+
+            let mut slot = state.stt_session.lock().map_err(|e| e.to_string())?;
+            *slot = Some(crate::stt::SttSession {
+                session_id: minted.session_id,
+                deepgram_key: minted.key,
+                started_at: std::time::Instant::now(),
+                heartbeat_cancel: Some(cancel_tx),
+            });
+            Ok(BackendSessionResult::ok())
+        }
+        Err(message) => Ok(BackendSessionResult::rejected(message)),
+    }
 }
 
+/// Reports actual session duration to `usage-report` (decrements the user's
+/// minute balance) and stops the heartbeat loop. Best-effort on the network
+/// call — a failure here shouldn't block Stop from completing locally.
 #[tauri::command]
-pub async fn end_backend_session(_state: State<'_, AppState>) -> Result<Option<()>, String> {
+pub async fn end_backend_session(state: State<'_, AppState>) -> Result<Option<()>, String> {
+    let session = {
+        let mut slot = state.stt_session.lock().map_err(|e| e.to_string())?;
+        slot.take()
+    };
+
+    if let Some(mut session) = session {
+        if let Some(cancel) = session.heartbeat_cancel.take() {
+            let _ = cancel.send(());
+        }
+        let elapsed_seconds = session.started_at.elapsed().as_secs_f64();
+        if let Ok(access_token) = crate::auth::current_access_token(&state).await {
+            if let Err(err) = crate::stt::backend_token::report_usage(&access_token, &session.session_id, elapsed_seconds).await {
+                log::warn!("failed to report interview session usage: {err}");
+            }
+        }
+    }
     Ok(None)
 }
 

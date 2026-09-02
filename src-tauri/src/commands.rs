@@ -146,14 +146,15 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
 
     let session_start = crate::hardware::telemetry::Stopwatch::start();
 
-    let api_key = match crate::stt::key_store::load_key() {
-        Ok(Some(key)) => key,
-        Ok(None) => {
-            return Err("Deepgram API key not configured — add it in Settings".to_string());
-        }
-        Err(err) => {
-            return Err(err);
-        }
+    // The Deepgram key comes from `start_backend_session` (called by the
+    // frontend right before this), which mints a short-lived, scoped key and
+    // stashes it here — there's no local fallback if that wasn't called or
+    // failed, since there's no stored user key anymore.
+    let api_key = {
+        let slot = state.stt_session.lock().map_err(|e| e.to_string())?;
+        slot.as_ref()
+            .map(|session| session.deepgram_key.clone())
+            .ok_or_else(|| "No active backend session — please try again".to_string())?
     };
 
     // The Deepgram connection is established BEFORE audio capture starts —
@@ -752,7 +753,8 @@ pub async fn analyze_interview(
     let on_event = move |event: &crate::backend::AnalysisProgressEvent| {
         let _ = app_for_events.emit("analysis:progress", event);
     };
-    crate::personal::DirectLlmClient::new(None)?.analyze_stream(&request, on_event).await
+    let access_token = crate::auth::current_access_token(&state).await?;
+    crate::personal::DirectLlmClient::new(None, access_token).analyze_stream(&request, on_event).await
 }
 
 fn build_analysis_request(
@@ -842,16 +844,17 @@ pub async fn check_rag_connection(state: State<'_, AppState>) -> Result<bool, St
 
 /// New Interview setup page's auto-analysis: summarizes pasted/uploaded CV
 /// and job-description text into a short "Interview Focus" for the setup
-/// page to display, using your own configured AI provider directly —
-/// unlike the commands below it does not require the document extraction
-/// service to be available.
+/// page to display — unlike the commands below it does not require the
+/// document extraction service to be available.
 #[tauri::command]
 pub async fn analyze_setup_context(
+    state: State<'_, AppState>,
     resume_text: Option<String>,
     job_description_text: Option<String>,
 ) -> Result<SetupAnalysisResponse, String> {
     let request = SetupAnalysisRequest { resume_text, job_description_text };
-    crate::personal::DirectLlmClient::new(None)?.analyze_setup(&request).await
+    let access_token = crate::auth::current_access_token(&state).await?;
+    crate::personal::DirectLlmClient::new(None, access_token).analyze_setup(&request).await
 }
 
 #[tauri::command]

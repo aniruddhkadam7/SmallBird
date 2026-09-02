@@ -1,16 +1,15 @@
-//! Direct Anthropic Messages API calls — ports
-//! `apps/backend/app/services/llm/anthropic_provider.py`. Anthropic takes
-//! `system` as a separate top-level field, not a message in the array.
+//! Anthropic Messages API calls, routed through the `llm-proxy` Supabase
+//! Edge Function instead of calling Anthropic directly — see `openai.rs`'s
+//! module doc for why. Anthropic takes `system` as a separate top-level
+//! field, not a message in the array; that request-shaping is unchanged,
+//! only the transport (URL + auth) now goes through `llm-proxy`.
 
 use std::time::Duration;
 
 use futures_util::StreamExt;
 
 use crate::personal::prompts::ChatMessage;
-use super::REQUEST_TIMEOUT_SECS;
-
-const MESSAGES_URL: &str = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_VERSION: &str = "2023-06-01";
+use super::{llm_proxy_url, REQUEST_TIMEOUT_SECS};
 
 /// `settings.llm_model`/`settings.ask_model` default to an OpenAI model
 /// string in the reference backend — if the configured model string isn't a
@@ -39,28 +38,27 @@ fn split_system(messages: &[ChatMessage]) -> (Option<String>, Vec<serde_json::Va
     (system, turns)
 }
 
-pub async fn generate(api_key: &str, model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32) -> Result<String, String> {
+pub async fn generate(access_token: &str, model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32) -> Result<String, String> {
     let client = reqwest::Client::new();
     let (system, turns) = split_system(messages);
-    let mut body = serde_json::json!({
+    let mut payload = serde_json::json!({
         "model": resolve_model(model),
         "messages": turns,
         "temperature": temperature,
         "max_tokens": max_tokens,
     });
     if let Some(system) = system {
-        body["system"] = serde_json::Value::String(system);
+        payload["system"] = serde_json::Value::String(system);
     }
 
     let response = client
-        .post(MESSAGES_URL)
-        .header("x-api-key", api_key)
-        .header("anthropic-version", ANTHROPIC_VERSION)
+        .post(llm_proxy_url())
+        .bearer_auth(access_token)
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .json(&body)
+        .json(&serde_json::json!({ "provider": "anthropic", "payload": payload }))
         .send()
         .await
-        .map_err(|e| format!("failed to reach Anthropic: {e}"))?;
+        .map_err(|e| format!("failed to reach Smallbird's AI service: {e}"))?;
 
     let status = response.status();
     if !status.is_success() {
@@ -78,13 +76,13 @@ pub async fn generate(api_key: &str, model: &str, messages: &[ChatMessage], temp
     Ok(text)
 }
 
-pub async fn stream<F>(api_key: &str, model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32, mut on_delta: F) -> Result<(), String>
+pub async fn stream<F>(access_token: &str, model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32, mut on_delta: F) -> Result<(), String>
 where
     F: FnMut(&str),
 {
     let client = reqwest::Client::new();
     let (system, turns) = split_system(messages);
-    let mut body = serde_json::json!({
+    let mut payload = serde_json::json!({
         "model": resolve_model(model),
         "messages": turns,
         "temperature": temperature,
@@ -92,18 +90,17 @@ where
         "stream": true,
     });
     if let Some(system) = system {
-        body["system"] = serde_json::Value::String(system);
+        payload["system"] = serde_json::Value::String(system);
     }
 
     let response = client
-        .post(MESSAGES_URL)
-        .header("x-api-key", api_key)
-        .header("anthropic-version", ANTHROPIC_VERSION)
+        .post(llm_proxy_url())
+        .bearer_auth(access_token)
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .json(&body)
+        .json(&serde_json::json!({ "provider": "anthropic", "payload": payload }))
         .send()
         .await
-        .map_err(|e| format!("failed to reach Anthropic: {e}"))?;
+        .map_err(|e| format!("failed to reach Smallbird's AI service: {e}"))?;
 
     let status = response.status();
     if !status.is_success() {

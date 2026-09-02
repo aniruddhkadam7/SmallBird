@@ -1,16 +1,17 @@
-//! Direct OpenAI Chat Completions calls — ports
-//! `apps/backend/app/services/llm/openai_provider.py`. OpenAI keeps the
-//! system message inline in the `messages` array (no special-casing needed,
-//! unlike Anthropic/Gemini).
+//! OpenAI Chat Completions calls, routed through the `llm-proxy` Supabase
+//! Edge Function (see `backend/supabase/functions/llm-proxy/`) instead of
+//! calling OpenAI directly — the server holds the real OpenAI key, this
+//! module only needs the signed-in user's access token. Body-building and
+//! SSE-delta-parsing are unchanged from the old direct-call version, since
+//! `llm-proxy` forwards the `payload` verbatim and streams back OpenAI's own
+//! native response shape.
 
 use std::time::Duration;
 
 use futures_util::StreamExt;
 
 use crate::personal::prompts::ChatMessage;
-use super::REQUEST_TIMEOUT_SECS;
-
-const CHAT_COMPLETIONS_URL: &str = "https://api.openai.com/v1/chat/completions";
+use super::{llm_proxy_url, REQUEST_TIMEOUT_SECS};
 
 fn build_request_body(model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32, stream: bool) -> serde_json::Value {
     serde_json::json!({
@@ -22,18 +23,18 @@ fn build_request_body(model: &str, messages: &[ChatMessage], temperature: f32, m
     })
 }
 
-pub async fn generate(api_key: &str, model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32) -> Result<String, String> {
+pub async fn generate(access_token: &str, model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32) -> Result<String, String> {
     let client = reqwest::Client::new();
-    let body = build_request_body(model, messages, temperature, max_tokens, false);
+    let payload = build_request_body(model, messages, temperature, max_tokens, false);
 
     let response = client
-        .post(CHAT_COMPLETIONS_URL)
-        .bearer_auth(api_key)
+        .post(llm_proxy_url())
+        .bearer_auth(access_token)
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .json(&body)
+        .json(&serde_json::json!({ "provider": "openai", "payload": payload }))
         .send()
         .await
-        .map_err(|e| format!("failed to reach OpenAI: {e}"))?;
+        .map_err(|e| format!("failed to reach Smallbird's AI service: {e}"))?;
 
     let status = response.status();
     if !status.is_success() {
@@ -52,21 +53,21 @@ pub async fn generate(api_key: &str, model: &str, messages: &[ChatMessage], temp
         .to_string())
 }
 
-pub async fn stream<F>(api_key: &str, model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32, mut on_delta: F) -> Result<(), String>
+pub async fn stream<F>(access_token: &str, model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32, mut on_delta: F) -> Result<(), String>
 where
     F: FnMut(&str),
 {
     let client = reqwest::Client::new();
-    let body = build_request_body(model, messages, temperature, max_tokens, true);
+    let payload = build_request_body(model, messages, temperature, max_tokens, true);
 
     let response = client
-        .post(CHAT_COMPLETIONS_URL)
-        .bearer_auth(api_key)
+        .post(llm_proxy_url())
+        .bearer_auth(access_token)
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .json(&body)
+        .json(&serde_json::json!({ "provider": "openai", "payload": payload }))
         .send()
         .await
-        .map_err(|e| format!("failed to reach OpenAI: {e}"))?;
+        .map_err(|e| format!("failed to reach Smallbird's AI service: {e}"))?;
 
     let status = response.status();
     if !status.is_success() {

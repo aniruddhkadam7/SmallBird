@@ -10,10 +10,10 @@
 //! whether a piece of text is a "question" or decide when to call an LLM. It
 //! only turns audio into partial/final text events.
 
+pub mod backend_token;
 mod client;
-pub mod commands;
 mod events;
-pub mod key_store;
 
+pub use backend_token::SttSession;
 pub use client::SttClient;
 pub use events::{SttEvent, SttEventKind};
