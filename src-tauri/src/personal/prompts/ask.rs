@@ -321,6 +321,9 @@ fn context_blocks(request: &AskRequest) -> Vec<String> {
     if let Some(ctx) = &request.candidate_context {
         blocks.push(format!("About the candidate:\n{ctx}"));
     }
+    if let Some(extra) = &request.additional_context {
+        blocks.push(format!("Additional context:\n{extra}"));
+    }
 
     blocks
 }
@@ -394,6 +397,7 @@ mod tests {
             candidate_context: None,
             role: None,
             job_description: None,
+            additional_context: None,
             answer_length: "default".to_string(),
             response_style: "natural".to_string(),
             english_level: "simple".to_string(),

@@ -70,7 +70,7 @@ export interface AnalysisProgressEvent {
   result: OverallInterviewAnalysis | null;
 }
 
-export type DocumentType = "RESUME" | "JOB_DESCRIPTION";
+export type DocumentType = "RESUME" | "JOB_DESCRIPTION" | "ADDITIONAL_CONTEXT";
 
 export type DocumentStatus =
   | "UPLOADING"

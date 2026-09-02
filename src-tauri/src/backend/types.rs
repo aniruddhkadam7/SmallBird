@@ -144,6 +144,11 @@ pub struct AskRequest {
     pub role: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub job_description: Option<String>,
+    /// Free-form context the user typed/uploaded themselves in the Context
+    /// popover's "Additional Context" section — anything not covered by the
+    /// resume/job-description fields (company details, specific asks, etc.).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub additional_context: Option<String>,
     /// "brief" | "default" | "detailed" — validated backend-side.
     pub answer_length: String,
     /// "natural" | "technical" | "concise" — validated backend-side.

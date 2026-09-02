@@ -22,8 +22,6 @@ export interface OverlaySettings {
   size: OverlaySize;
   fontSize: number; // px, 12 - 20
   density: OverlayDensity;
-  dragEnabled: boolean;
-  sttSensitivity: number; // 0 - 100, informational — mirrors STT_END_SILENCE_MS intent
   answerLength: AnswerLength;
   responseStyle: ResponseStyle;
   role: string;
@@ -44,8 +42,6 @@ export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
   size: "large",
   fontSize: 14,
   density: "comfortable",
-  dragEnabled: true,
-  sttSensitivity: 50,
   answerLength: "default",
   responseStyle: "natural",
   role: "",

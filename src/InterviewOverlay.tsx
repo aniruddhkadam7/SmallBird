@@ -515,7 +515,10 @@ export function InterviewOverlay() {
     fontSize: `${settings.fontSize}px`,
     // Applied to the panel background rather than the whole element, so text
     // stays fully legible while the window itself reads as translucent.
-    ["--overlay-alpha" as string]: settings.opacity,
+    // Forced fully opaque while the settings panel is open — the opacity
+    // slider is a conversation-legibility knob, not something that should
+    // also make its own controls hard to see while you're adjusting them.
+    ["--overlay-alpha" as string]: settingsOpen ? 1 : settings.opacity,
   };
 
   const hasConversation = turns.length > 0;
@@ -531,10 +534,7 @@ export function InterviewOverlay() {
           which is what a bare attribute means. Safe for the controls on the
           right: Tauri's drag script treats BUTTON/INPUT as clickable and
           blocks dragging for them (tauri/src/window/scripts/drag.js). */}
-      <div
-        className="overlay-header"
-        data-tauri-drag-region={settings.dragEnabled ? "deep" : undefined}
-      >
+      <div className="overlay-header" data-tauri-drag-region="deep">
         <AudioLevelBars active={sttSpeaking && !busy} />
         <div className="overlay-title">
           {/* While adjusting, the title doubles as the readout — the change

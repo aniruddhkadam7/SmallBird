@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useState } from "react";
 import {
   DEFAULT_OVERLAY_SETTINGS,
   SIZE_FRACTIONS,
@@ -23,8 +22,6 @@ interface Props {
 /// dashboard. Renders inline in the same small overlay window (swapped in for
 /// the question/answer body), not a separate window.
 export function OverlaySettingsPanel({ settings, onChange, onClose, captureExcluded }: Props) {
-  const [alwaysOnTop, setAlwaysOnTop] = useState(true);
-
   const set = <K extends keyof OverlaySettings>(key: K, value: OverlaySettings[K]) => {
     onChange({ ...settings, [key]: value });
   };
@@ -37,33 +34,12 @@ export function OverlaySettingsPanel({ settings, onChange, onClose, captureExclu
     });
   };
 
-  const toggleAlwaysOnTop = () => {
-    const next = !alwaysOnTop;
-    setAlwaysOnTop(next);
-    invoke("set_overlay_always_on_top", { enabled: next }).catch(() => {
-      // Best-effort — the window remains on top by default even if this call
-      // fails, so there is nothing actionable to show the user here.
-    });
-  };
-
   const resetDefaults = () => onChange({ ...DEFAULT_OVERLAY_SETTINGS });
 
   return (
     <div className="overlay-body overlay-settings">
       <div className="overlay-settings-section">
         <span className="overlay-settings-label">Appearance</span>
-
-        <label className="overlay-settings-row">
-          <span>Opacity</span>
-          <input
-            type="range"
-            min={0.15}
-            max={1}
-            step={0.02}
-            value={settings.opacity}
-            onChange={(e) => set("opacity", Number(e.target.value))}
-          />
-        </label>
 
         <div className="overlay-settings-row">
           <span>Overlay size</span>
@@ -106,33 +82,10 @@ export function OverlaySettingsPanel({ settings, onChange, onClose, captureExclu
             ]}
           />
         </div>
-
-        <label className="overlay-settings-row overlay-settings-checkbox">
-          <input
-            type="checkbox"
-            checked={settings.dragEnabled}
-            onChange={(e) => set("dragEnabled", e.target.checked)}
-          />
-          <span>Enable drag-to-move on header</span>
-        </label>
-
-        <label className="overlay-settings-row overlay-settings-checkbox">
-          <input type="checkbox" checked={alwaysOnTop} onChange={toggleAlwaysOnTop} />
-          <span>Always on top</span>
-        </label>
       </div>
 
       <div className="overlay-settings-section">
         <span className="overlay-settings-label">Answer</span>
-
-        <label className="overlay-settings-row overlay-settings-checkbox">
-          <input
-            type="checkbox"
-            checked={settings.autoAI}
-            onChange={(e) => set("autoAI", e.target.checked)}
-          />
-          <span>Auto AI — send a question automatically once you stop talking</span>
-        </label>
 
         <div className="overlay-settings-row">
           <span>Answer length</span>
@@ -163,45 +116,6 @@ export function OverlaySettingsPanel({ settings, onChange, onClose, captureExclu
             ]}
           />
         </div>
-
-        <label className="overlay-settings-row overlay-settings-column">
-          <span>Role (optional)</span>
-          <input
-            type="text"
-            value={settings.role}
-            onChange={(e) => set("role", e.target.value)}
-            placeholder="e.g. Senior Backend Engineer"
-          />
-        </label>
-
-        <label className="overlay-settings-row overlay-settings-column">
-          <span>Job description (optional)</span>
-          <textarea
-            value={settings.jobDescription}
-            onChange={(e) => set("jobDescription", e.target.value)}
-            placeholder="Paste relevant job description context…"
-            rows={3}
-          />
-        </label>
-      </div>
-
-      <div className="overlay-settings-section">
-        <span className="overlay-settings-label">Speech Recognition</span>
-
-        <label className="overlay-settings-row">
-          <span>STT sensitivity</span>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={5}
-            value={settings.sttSensitivity}
-            onChange={(e) => set("sttSensitivity", Number(e.target.value))}
-          />
-        </label>
-        <p className="overlay-settings-note">
-          Higher sensitivity finalizes questions sooner after a pause; lower waits longer.
-        </p>
       </div>
 
       <div className="overlay-settings-section">

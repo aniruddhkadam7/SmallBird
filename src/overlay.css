@@ -586,8 +586,25 @@ body.overlay-window #root {
 }
 
 .overlay-settings {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 10px 12px;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.85);
+}
+
+.overlay-settings::-webkit-scrollbar {
+  width: 6px;
+}
+
+.overlay-settings::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 3px;
+}
+
+.overlay-settings::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .overlay-settings-section {

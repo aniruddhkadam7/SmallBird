@@ -24,6 +24,8 @@ pub struct AskOptions {
     pub role: Option<String>,
     #[serde(default)]
     pub job_description: Option<String>,
+    #[serde(default)]
+    pub additional_context: Option<String>,
     #[serde(default = "default_english_level")]
     pub english_level: String,
     #[serde(default = "default_humanization")]
@@ -72,6 +74,7 @@ impl Default for AskOptions {
             response_style: default_response_style(),
             role: None,
             job_description: None,
+            additional_context: None,
             english_level: default_english_level(),
             humanization: default_humanization(),
             llm_provider: None,
@@ -140,7 +143,7 @@ where
 }
 
 /// Fetches the full extracted text of the most recently uploaded document of
-/// `document_type` (RESUME or JOB_DESCRIPTION). CV and job description are
+/// `document_type` (RESUME, JOB_DESCRIPTION, or ADDITIONAL_CONTEXT). These are
 /// short enough to just read in full — sent directly to the LLM as context.
 /// Returns `None` on any failure (extraction service unavailable, no
 /// matching document, still extracting) — this must never fail the ask
@@ -169,12 +172,12 @@ async fn fetch_document_full_text(document_type: &str, service_available: bool) 
 /// Runs the ASK AI flow for a single question: question -> ONE LLM call ->
 /// stream.
 ///
-/// The uploaded CV and job description, if any, are fetched as full text
-/// (see `fetch_document_full_text`) and sent on every question. The two
-/// fetches run truly concurrently via `tokio::join!` — creating a future
-/// (`fetch_document_full_text(...)` bound to a variable) does not start it
-/// running; only polling/awaiting it does, so awaiting them one after
-/// another would needlessly double the latency of two independent
+/// The uploaded CV, job description, and additional context, if any, are
+/// fetched as full text (see `fetch_document_full_text`) and sent on every
+/// question. The three fetches run truly concurrently via `tokio::join!` —
+/// creating a future (`fetch_document_full_text(...)` bound to a variable)
+/// does not start it running; only polling/awaiting it does, so awaiting them
+/// one after another would needlessly multiply the latency of independent
 /// round-trips.
 ///
 /// Streams back as `interview-mode:answer-delta` events, finishing with
@@ -201,9 +204,10 @@ pub async fn ask_interview_question(
     let history = trim_history(history.unwrap_or_default());
 
     let service_available = state.rag_service.lock().map(|slot| slot.is_some()).unwrap_or(false);
-    let (resume_text, uploaded_job_description) = tokio::join!(
+    let (resume_text, uploaded_job_description, uploaded_additional_context) = tokio::join!(
         fetch_document_full_text("RESUME", service_available),
-        fetch_document_full_text("JOB_DESCRIPTION", service_available)
+        fetch_document_full_text("JOB_DESCRIPTION", service_available),
+        fetch_document_full_text("ADDITIONAL_CONTEXT", service_available)
     );
 
     let request = AskRequest {
@@ -216,6 +220,7 @@ pub async fn ask_interview_question(
         // field, so it takes priority; the typed field remains the fallback
         // for users who never uploaded a JD file at all.
         job_description: uploaded_job_description.or(options.job_description),
+        additional_context: uploaded_additional_context.or(options.additional_context),
         answer_length: options.answer_length,
         response_style: options.response_style,
         english_level: options.english_level,
