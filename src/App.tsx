@@ -128,6 +128,12 @@ function App() {
     const unlisten = listen("interview-mode:overlay-closed", () => {
       setSessionState("IDLE");
       setHistoryRefreshKey((k) => k + 1);
+      // Closing the overlay via its own controls (✕ / "Yes, end interview" /
+      // Escape) bypasses handleStop entirely, so this is the only place
+      // that path ends the backend session — without it, the
+      // interview_sessions row stays "active" until the 2-minute stale-
+      // heartbeat sweep clears it, blocking a new session in the meantime.
+      invoke("end_backend_session").catch(() => {});
     });
     return () => {
       unlisten.then((f) => f());
