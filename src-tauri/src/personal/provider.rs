@@ -1,6 +1,6 @@
 /// The three AI providers a personal build can call directly. Uses the same
-/// wire strings already sent today by `AskRequest.llm_provider` /
-/// `MeetingAskRequest.llm_provider` (see `backend/types.rs`) and stored by
+/// wire strings already sent today by `AskRequest.llm_provider`
+/// (see `backend/types.rs`) and stored by
 /// the frontend's `llmProviderSetting.ts` — a personal build reuses that
 /// exact "which provider is active" selector rather than inventing a second
 /// one; this enum only exists so `personal::client`/`personal::api_key_store`

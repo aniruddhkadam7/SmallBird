@@ -201,20 +201,6 @@ body.overlay-window #root {
   color: var(--text);
 }
 
-/* Meeting Mode's overlay renders this button for visual parity with
-   Interview Mode's, but permanently disabled — it has no auto-send
-   behavior to toggle there (see MeetingOverlay.tsx). Kept visibly inert
-   rather than looking identical-but-broken to the working toggle. */
-.overlay-auto-ai-toggle:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.overlay-auto-ai-toggle:disabled:hover {
-  border-color: rgba(255, 255, 255, 0.18);
-  color: var(--muted);
-}
-
 .overlay-auto-ai-toggle .overlay-auto-ai-dot {
   width: 6px;
   height: 6px;

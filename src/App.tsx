@@ -27,18 +27,12 @@ import {
   IconSettings,
 } from "./Icons";
 import { IconAnthropic, IconDeepSeek, IconGemini, IconOpenAI } from "./ProviderIcons";
-import { INTERVIEW_CONTEXT_SECTIONS, MEETING_CONTEXT_SECTIONS } from "./headerPopups";
+import { INTERVIEW_CONTEXT_SECTIONS } from "./headerPopups";
 import { hasStoredLlmProvider, loadLlmProvider, saveLlmProvider, type LlmProvider } from "./llmProviderSetting";
 import { getPersonalApiKey } from "./personalApiKeys";
 
-export type Mode = "INTERVIEW" | "MEETING";
 type SessionState = "IDLE" | "STARTING" | "LISTENING";
-type Popover = "MODE" | "MODEL" | "CONTEXT" | "SETTINGS" | "ACCOUNT" | null;
-
-const MODE_LABELS: Record<Mode, string> = {
-  INTERVIEW: "Interview",
-  MEETING: "Meeting",
-};
+type Popover = "MODEL" | "CONTEXT" | "SETTINGS" | "ACCOUNT" | null;
 
 // Only "openai", "anthropic", and "gemini" have a real backend
 // implementation (see apps/backend/app/services/llm/__init__.py::
@@ -52,7 +46,6 @@ const LLM_PROVIDERS: { value: LlmProvider; label: string; icon: typeof IconOpenA
 ];
 
 function App() {
-  const [mode, setMode] = useState<Mode>("INTERVIEW");
   const [llmProvider, setLlmProvider] = useState<LlmProvider>(() => loadLlmProvider());
 
   // First launch (no provider explicitly chosen yet): auto-select whichever
@@ -87,11 +80,6 @@ function App() {
   const [interviewContext, setInterviewContext] = useState<DocumentContextState>(() =>
     emptyDocumentContextState(INTERVIEW_CONTEXT_SECTIONS),
   );
-  const [meetingContext, setMeetingContext] = useState<DocumentContextState>(() =>
-    emptyDocumentContextState(MEETING_CONTEXT_SECTIONS),
-  );
-  const [meetingTitle, setMeetingTitle] = useState("");
-  const [meetingParticipants, setMeetingParticipants] = useState("");
 
   // Prewarm STT the moment the app launches — the mic model loads while the
   // user is still picking a mode/attaching context, so Start doesn't eat the
@@ -132,7 +120,7 @@ function App() {
     document.body.classList.toggle("compact-transparent", !isMaximized);
   }, [isMaximized]);
 
-  // The overlay window (Interview/Meeting) and this main window are separate
+  // The overlay window (Interview Mode) and this main window are separate
   // webviews with no shared React state — ending a session from inside the
   // overlay (its own ✕ / "Yes, end interview" / Escape) has no way to reset
   // this window's Start/Stop button back to idle on its own. The Rust side
@@ -188,61 +176,35 @@ function App() {
     await invoke("show_interview_overlay");
   }, [interviewContext]);
 
-  const startMeeting = useCallback(async () => {
-    window.localStorage.setItem(
-      "meeting-mode:active-meeting",
-      JSON.stringify({ meetingTitle: meetingTitle.trim(), participants: meetingParticipants.trim() }),
-    );
-
-    uploadDocumentContext(MEETING_CONTEXT_SECTIONS, meetingContext);
-
-    await invoke("clear_meeting_session").catch(() => {});
-    await (prewarmRef.current ??
-      invoke("start_system_audio_capture").catch((e) => {
-        if (String(e) !== "capture already running") throw e;
-      }));
-    await invoke("show_meeting_overlay");
-  }, [meetingContext, meetingTitle, meetingParticipants]);
-
   const handleStart = useCallback(async () => {
     setError(null);
     setSessionState("STARTING");
     closePopover();
     try {
-      if (mode === "INTERVIEW") {
-        await startInterview();
-      } else {
-        await startMeeting();
-      }
+      await startInterview();
       setSessionState("LISTENING");
     } catch (e) {
       setError(String(e));
       setSessionState("IDLE");
     }
-  }, [mode, startInterview, startMeeting, closePopover]);
+  }, [startInterview, closePopover]);
 
   const handleStop = useCallback(async () => {
     try {
-      if (mode === "INTERVIEW") {
-        await invoke("hide_interview_overlay");
-      } else {
-        await invoke("hide_meeting_overlay");
-      }
+      await invoke("hide_interview_overlay");
     } catch (e) {
       setError(String(e));
     } finally {
       setSessionState("IDLE");
       setHistoryRefreshKey((k) => k + 1);
-      if (mode === "INTERVIEW") {
-        // Fire-and-forget: finalizes the backend session (if one was
-        // started) so its minutes get decremented. Never blocks Stop and
-        // never surfaces an error to the user — a network blip here must
-        // not cost the user the interview they just finished. No-ops
-        // silently when the user isn't signed in (see start_backend_session).
-        invoke("end_backend_session").catch(() => {});
-      }
+      // Fire-and-forget: finalizes the backend session (if one was
+      // started) so its minutes get decremented. Never blocks Stop and
+      // never surfaces an error to the user — a network blip here must
+      // not cost the user the interview they just finished. No-ops
+      // silently when the user isn't signed in (see start_backend_session).
+      invoke("end_backend_session").catch(() => {});
     }
-  }, [mode]);
+  }, []);
 
   const startLabel =
     sessionState === "STARTING" ? "Starting…" : sessionState === "LISTENING" ? "Listening" : "Start";
@@ -285,39 +247,6 @@ function App() {
         </div>
 
         <div className="compact-header-controls">
-          <div className="dropdown-anchor">
-            <button
-              className="compact-header-btn"
-              onClick={() => togglePopover("MODE")}
-              disabled={sessionState !== "IDLE"}
-              aria-haspopup="menu"
-              aria-expanded={openPopover === "MODE"}
-            >
-              <span>Mode: {MODE_LABELS[mode]}</span>
-              <IconChevronDown />
-            </button>
-            {openPopover === "MODE" && (
-              <HeaderDropdown onClose={closePopover} className="header-dropdown-menu header-dropdown-mode">
-                <div role="menu">
-                  {(["INTERVIEW", "MEETING"] as Mode[]).map((m) => (
-                    <button
-                      key={m}
-                      role="menuitemradio"
-                      aria-checked={mode === m}
-                      className={`dropdown-item${mode === m ? " active" : ""}`}
-                      onClick={() => {
-                        setMode(m);
-                        closePopover();
-                      }}
-                    >
-                      {MODE_LABELS[m]}
-                    </button>
-                  ))}
-                </div>
-              </HeaderDropdown>
-            )}
-          </div>
-
           <div className="dropdown-anchor">
             <button
               className="compact-header-btn"
@@ -389,34 +318,10 @@ function App() {
                       </button>
                     </div>
                     <div className="popover-body">
-                      {mode === "MEETING" && (
-                        <div className="setup-identity">
-                          <div className="setup-identity-field">
-                            <label htmlFor="meeting-title">Meeting Title</label>
-                            <input
-                              id="meeting-title"
-                              className="setup-input"
-                              value={meetingTitle}
-                              onChange={(e) => setMeetingTitle(e.target.value)}
-                              placeholder="e.g. Q3 Roadmap Review"
-                            />
-                          </div>
-                          <div className="setup-identity-field">
-                            <label htmlFor="meeting-participants">Participants</label>
-                            <input
-                              id="meeting-participants"
-                              className="setup-input"
-                              value={meetingParticipants}
-                              onChange={(e) => setMeetingParticipants(e.target.value)}
-                              placeholder="e.g. Alex, Priya, Sam"
-                            />
-                          </div>
-                        </div>
-                      )}
                       <DocumentContext
-                        sections={mode === "INTERVIEW" ? INTERVIEW_CONTEXT_SECTIONS : MEETING_CONTEXT_SECTIONS}
-                        state={mode === "INTERVIEW" ? interviewContext : meetingContext}
-                        onChange={mode === "INTERVIEW" ? setInterviewContext : setMeetingContext}
+                        sections={INTERVIEW_CONTEXT_SECTIONS}
+                        state={interviewContext}
+                        onChange={setInterviewContext}
                       />
                     </div>
                   </div>
@@ -462,7 +367,6 @@ function App() {
               <HeaderDropdown onClose={closePopover} className="header-dropdown-panel header-dropdown-settings">
                 <SettingsPopover
                   onClose={closePopover}
-                  mode={mode}
                   historyRefreshKey={historyRefreshKey}
                   onApiKeySaved={(provider) => {
                     setLlmProvider(provider);

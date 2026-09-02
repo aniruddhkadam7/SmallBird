@@ -9,19 +9,11 @@ import {
 import { Select } from "./ui";
 
 /// Personalization settings: how AI-generated answers should read (tone,
-/// length, humanization), shared by Interview and Meeting Mode. Lives in
+/// length, humanization) for Interview Mode. Lives in
 /// OverlaySettings/localStorage — the same store the in-overlay Settings
-/// panels (OverlaySettingsPanel/MeetingOverlaySettingsPanel) read and write —
-/// so a change made here from the main window's Settings applies to the very
-/// next question asked, in whichever mode is running, without a separate
-/// personalization store to keep in sync.
-///
-/// englishLevel is intentionally left out — it has no Meeting Mode analogue
-/// server-side (apps/backend/app/schemas/meeting.py has no such field), so
-/// it stays Interview-only rather than showing here as a control that does
-/// nothing in one of the two modes this panel covers. humanization DOES now
-/// apply to both (see prompt_builder_meeting.py's _HUMANIZATION_INSTRUCTIONS
-/// and meeting_mode/commands.rs's MeetingAskOptions).
+/// panel (OverlaySettingsPanel) reads and writes — so a change made here
+/// from the main window's Settings applies to the very next question asked
+/// without a separate personalization store to keep in sync.
 export function PersonalizationPanel() {
   const [settings, setSettings] = useState(() => loadOverlaySettings());
 

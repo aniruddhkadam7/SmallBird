@@ -5,23 +5,6 @@ use crate::audio::{PauseSignal, StopSignal};
 use crate::rag::RagServiceHandle;
 use crate::transcript::{RecordingState, TranscriptManager};
 
-/// One item tracked live during a Meeting session (a key point, decision, or
-/// action item) — just the text; the list it lives in (`MeetingSessionState`)
-/// carries the kind.
-#[derive(Debug, Clone, Default, serde::Serialize)]
-pub struct TrackedItem {
-    pub text: String,
-}
-
-/// In-memory state for the currently-open Meeting session, tracked live from
-/// the overlay. Reset by `clear_meeting_session` when a new meeting starts.
-#[derive(Debug, Default)]
-pub struct MeetingSessionState {
-    pub key_points: Vec<TrackedItem>,
-    pub decisions: Vec<TrackedItem>,
-    pub action_items: Vec<TrackedItem>,
-}
-
 /// Handles for an in-progress recording session, held so Tauri commands can stop it
 /// later. Wrapped in `Mutex` because Tauri commands run on arbitrary threads from
 /// the async runtime.
@@ -54,7 +37,4 @@ pub struct AppState {
     /// commands report a clear "unavailable" error in that case rather than
     /// panicking.
     pub rag_service: Mutex<Option<RagServiceHandle>>,
-    /// Live-tracked key points/decisions/action items for the currently open
-    /// Meeting session. See `meeting_mode::commands`.
-    pub meeting_session: Mutex<MeetingSessionState>,
 }

@@ -1,12 +1,6 @@
 //! Shared frameless/always-on-top overlay window mechanics, parameterized by
-//! window label — used by both Interview Mode (via `interview_mode::window`,
-//! which now just calls through to this module with its own label/title
-//! baked in) and Meeting Mode (`meeting_mode::commands`, directly). Used to
-//! be two near-identical copies of this logic, one hardcoded to Interview
-//! Mode's label and one generic; they had quietly diverged (only the
-//! Interview copy got fixed when the overlay's positioning turned out to be
-//! unreliable), which is exactly the kind of drift keeping one shared
-//! implementation avoids.
+//! window label — used by Interview Mode via `interview_mode::window`, which
+//! just calls through to this module with its own label/title baked in.
 
 use tauri::{
     window::Color, AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindow,
@@ -29,21 +23,18 @@ pub struct OverlayCaptureStatus {
 /// exclusion, shows it, then hides the main window so the overlay is the
 /// only thing visible — hidden LAST, only once the overlay is actually
 /// positioned/shown, so there's no visible gap where the app looks like it
-/// closed. `title` is the OS window title; `label` distinguishes this
-/// overlay from the other mode's overlay (both modes never have an overlay
-/// open at the same time, but each needs its own window identity).
+/// closed. `title` is the OS window title; `label` gives this overlay its
+/// own window identity.
 pub fn show_overlay_window(app: &AppHandle, label: &str, title: &str) -> Result<OverlayCaptureStatus, String> {
     let excluded = if let Some(existing) = app.get_webview_window(label) {
         // Reset the frontend's session-scoped React state before showing a
         // *reused* overlay window (the WebView2 process/DOM is never torn
-        // down between close and reopen — only hidden) — otherwise a
-        // meeting ended (or mid-ending) on the previous close would still
-        // be showing its Summary screen (or stuck "Ending…") the instant
-        // this window reappears for a brand-new meeting, before any of
-        // this new session's events have even arrived. Best-effort: the
-        // webview may not have a listener registered yet on the very first
-        // reuse, which is fine — there's nothing stale to clear at that
-        // point anyway.
+        // down between close and reopen — only hidden) — otherwise stale
+        // state from the previous session could still be showing the
+        // instant this window reappears, before any of this new session's
+        // events have even arrived. Best-effort: the webview may not have a
+        // listener registered yet on the very first reuse, which is fine —
+        // there's nothing stale to clear at that point anyway.
         let _ = existing.emit("overlay:reset-session", ());
         center_overlay_on_screen(&existing, false);
         existing.show().map_err(|e| e.to_string())?;
@@ -80,10 +71,7 @@ pub fn show_overlay_window(app: &AppHandle, label: &str, title: &str) -> Result<
 /// Also emits `interview-mode:overlay-closed` to every window: the overlay
 /// and main window are separate webviews with no shared React state, so the
 /// main window's own session status has no other way to learn the overlay
-/// closed unless it was the one that called this. Reusing the same event
-/// name across both modes (rather than a Meeting-specific one) keeps the
-/// main window's listener a single one covering every mode, since it only
-/// ever has one active overlay/session at a time regardless of mode.
+/// closed unless it was the one that called this.
 pub fn close_overlay_window(app: &AppHandle, label: &str) -> Result<(), String> {
     log::info!("close_overlay_window '{label}': on main thread, hiding");
     if let Some(window) = app.get_webview_window(label) {

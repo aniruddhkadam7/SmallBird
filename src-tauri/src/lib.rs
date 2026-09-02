@@ -11,7 +11,6 @@ pub mod hardware;
 mod history;
 mod interview_mode;
 mod main_window;
-mod meeting_mode;
 mod notes_mode;
 mod overlay_window;
 mod personal;
@@ -70,7 +69,6 @@ pub fn run() {
         )
         .manage(AppState::default())
         .manage(history::HistoryStore::default())
-        .manage(meeting_mode::history::MeetingHistoryStore::default())
         .setup(|app| {
             // Hardware detection + performance mode load first, synchronously
             // — cheap (a few sysinfo/DXGI/IOCTL calls, no network/process
@@ -145,18 +143,6 @@ pub fn run() {
             history::list_interview_history,
             history::archive_interview_session,
             history::delete_interview_history_entry,
-            meeting_mode::commands::show_meeting_overlay,
-            meeting_mode::commands::hide_meeting_overlay,
-            meeting_mode::commands::toggle_meeting_overlay,
-            meeting_mode::commands::set_meeting_overlay_always_on_top,
-            meeting_mode::commands::resize_meeting_overlay,
-            meeting_mode::commands::ask_meeting_question,
-            meeting_mode::commands::track_meeting_item,
-            meeting_mode::commands::clear_meeting_session,
-            meeting_mode::commands::end_meeting,
-            meeting_mode::history::list_meeting_history,
-            meeting_mode::history::archive_meeting,
-            meeting_mode::history::delete_meeting_history_entry,
             notes_mode::store::list_notes,
             notes_mode::store::get_note,
             notes_mode::store::create_note,

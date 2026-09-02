@@ -9,7 +9,7 @@ can be built and modified on its own.
 ## What this is
 
 - A Tauri (Rust + React/TypeScript) desktop app for Windows.
-- Interview Mode, Meeting Mode, Notes, resume/JD setup analysis, and full
+- Interview Mode, Notes, resume/JD setup analysis, and full
   interview scoring — all calling your configured AI provider directly.
 - Speech-to-text via Deepgram Flux (cloud, streaming, low-latency) — audio
   goes only to Deepgram, encrypted, and nowhere else.
@@ -93,19 +93,19 @@ Output:
 3. Paste in your OpenAI, Anthropic, and/or Gemini API key. Each is stored
    independently in Windows Credential Manager.
 4. Also paste in a [Deepgram](https://deepgram.com) API key — required for
-   speech-to-text in Interview Mode and Meeting Mode (get a free-tier key at
+   speech-to-text in Interview Mode (get a free-tier key at
    console.deepgram.com). Stored the same way, in Windows Credential Manager.
 5. Pick which LLM provider to use from the header's model picker (this is
    separate from the API Keys panel — the API Keys panel only manages your
    keys, the header picker decides which one is actually used for a
    request).
-6. Use Interview Mode, Meeting Mode, or Notes as normal.
+6. Use Interview Mode or Notes as normal.
 
 ## Customizing
 
 This is your personal copy — feel free to:
 - Edit the prompts in `src-tauri/src/personal/prompts/` (ask, analysis,
-  meeting, notes, setup).
+  notes, setup).
 - Add/adjust AI provider behavior in `src-tauri/src/personal/providers/`.
 - Change the UI in `src/`.
 

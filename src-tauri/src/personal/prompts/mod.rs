@@ -1,6 +1,5 @@
 pub mod ask;
 pub mod analysis;
-pub mod meeting;
 pub mod notes;
 pub mod setup;
 
@@ -29,7 +28,7 @@ impl ChatMessage {
 /// Strips a JSON object out of a raw LLM response that may be wrapped in
 /// markdown code fences or surrounded by prose — ports
 /// `apps/backend/app/services/analysis_service.py`'s `_extract_json_object`
-/// (shared, in the Python codebase, by analysis/meeting/notes summarize).
+/// (shared, in the Python codebase, by analysis/notes summarize).
 /// Finds the substring from the first `{` to the last `}` after stripping
 /// a leading/trailing ``` fence (with an optional `json` language label).
 pub fn extract_json_object(raw: &str) -> Result<String, String> {

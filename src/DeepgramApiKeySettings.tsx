@@ -5,8 +5,8 @@ import { clearDeepgramApiKey, getDeepgramApiKey, setDeepgramApiKey } from "./dee
 /// Deepgram is STT, not an LLM provider, so this is a small sibling to
 /// `PersonalApiKeySettings.tsx` (single fixed entry instead of a list) rather
 /// than folded into it. Same secure storage mechanism (Windows Credential
-/// Manager via the `keyring` crate). Required for Interview Mode/Meeting
-/// Mode transcription — recording will fail with a clear error until a key
+/// Manager via the `keyring` crate). Required for Interview Mode
+/// transcription — recording will fail with a clear error until a key
 /// is saved here.
 export function DeepgramApiKeySettings() {
   const [key, setKey] = useState("");
@@ -55,7 +55,7 @@ export function DeepgramApiKeySettings() {
   return (
     <div>
       <p className="setup-hint">
-        Speech-to-text (Interview Mode, Meeting Mode) uses Deepgram — audio is sent, encrypted, directly to
+        Speech-to-text (Interview Mode) uses Deepgram — audio is sent, encrypted, directly to
         Deepgram using this key, and nowhere else. Get a free-tier key at console.deepgram.com. Stored
         securely in Windows Credential Manager on this device only.
       </p>

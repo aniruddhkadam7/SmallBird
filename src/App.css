@@ -297,7 +297,7 @@ body.compact-transparent {
 
 /* Custom frameless title bar (see tauri.conf.json's decorations: false) —
    its own slim strip above .compact-header, not sharing that row, so the
-   existing Mode/Model/Context/Start/Settings/Account row and its width
+   existing Model/Context/Start/Settings/Account row and its width
    stay exactly as they were. The whole strip is a drag region except the
    buttons themselves (Tauri excludes interactive elements automatically). */
 .title-bar {
@@ -468,7 +468,7 @@ body.compact-transparent {
   background: var(--surface-alt);
 }
 
-/* Selected item in a dropdown (e.g. the active Mode) — an accent-tinted
+/* Selected item in a dropdown (e.g. the active model provider) — an accent-tinted
    background/text instead of a checkmark glyph, matching how the app marks
    other selected states (.workspace-nav-item.active). */
 .dropdown-item.active {
@@ -615,7 +615,7 @@ body.compact-transparent {
 
 /* Settings needs more width than Account for its two-column nav+content
    layout (.settings-popover-body below) to have room for both. Its Sessions
-   section (past Interview/Meeting history) can run to many entries or a
+   section (past Interview history) can run to many entries or a
    long transcript — .settings-popover-content's max-height below caps how
    tall HeaderDropdown ever grows the OS window, with overflow-y: auto
    scrolling the rest instead of growing without bound the way short
@@ -650,13 +650,8 @@ body.compact-transparent {
   height: auto;
 }
 
-/* Mode's dropdown is just a short list of .dropdown-item options. */
-.header-dropdown-mode {
-  padding: 0.35rem;
-}
-
-/* Model-provider dropdown — same short-list shell as Mode's, just with a
-   logo per row (see .dropdown-item-icon below). */
+/* Model-provider dropdown — a short list of .dropdown-item options, each
+   with a logo per row (see .dropdown-item-icon below). */
 .header-dropdown-model {
   padding: 0.35rem;
 }

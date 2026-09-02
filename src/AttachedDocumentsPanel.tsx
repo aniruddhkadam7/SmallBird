@@ -25,7 +25,7 @@ function formatBytes(bytes: number) {
 /// the header's Context (📎) picker with no way to see what had actually
 /// been attached. A file picked in that popover only uploads once a session
 /// is started (see App.tsx's uploadDocumentContext calls in
-/// startInterview/startMeeting), so this list can lag behind a file picked
+/// startInterview), so this list can lag behind a file picked
 /// moments ago until Start is pressed — polling picks that up shortly after
 /// rather than needing a manual refresh.
 export function AttachedDocumentsPanel() {

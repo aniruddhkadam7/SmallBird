@@ -3,15 +3,14 @@ import ReactDOM from "react-dom/client";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import App from "./App";
 import { InterviewOverlay } from "./InterviewOverlay";
-import { MeetingOverlay } from "./MeetingOverlay";
 import "./tailwind.css";
 import "./overlay.css";
 
-// The overlay windows load the exact same index.html/bundle as the main
+// The overlay window loads the exact same index.html/bundle as the main
 // window (Tauri's WebviewUrl::App points both at "index.html") — which root
-// component renders is decided here by the window's label, set when each
+// component renders is decided here by the window's label, set when the
 // overlay is created in Rust.
-const FIXED_OVERLAY_LABELS = new Set(["interview-overlay", "meeting-overlay"]);
+const FIXED_OVERLAY_LABELS = new Set(["interview-overlay"]);
 
 const label = getCurrentWebviewWindow().label;
 const isOverlay = FIXED_OVERLAY_LABELS.has(label);
@@ -28,7 +27,6 @@ if (isOverlay) {
 
 function Root() {
   if (label === "interview-overlay") return <InterviewOverlay />;
-  if (label === "meeting-overlay") return <MeetingOverlay />;
   return <App />;
 }
 

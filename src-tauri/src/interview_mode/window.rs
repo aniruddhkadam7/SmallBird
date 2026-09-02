@@ -1,10 +1,6 @@
 //! Interview Mode's overlay window — thin wrapper over the shared
-//! `overlay_window` module (used by Meeting Mode too) with Interview
-//! Mode's own window label/title baked in. Used to be its own
-//! near-duplicate implementation of every function below; that's gone now
-//! in favor of one shared implementation both modes call into, so a fix to
-//! one (e.g. the overlay's on-screen positioning) can't quietly apply to
-//! only one mode's overlay while the other keeps the old behavior.
+//! `overlay_window` module with Interview Mode's own window label/title
+//! baked in.
 
 use tauri::AppHandle;
 

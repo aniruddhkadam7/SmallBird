@@ -3,11 +3,9 @@ import { PerformancePanel } from "./PerformancePanel";
 import { PersonalizationPanel } from "./PersonalizationPanel";
 import { AttachedDocumentsPanel } from "./AttachedDocumentsPanel";
 import { InterviewHistory } from "./InterviewHistory";
-import { MeetingHistory } from "./MeetingHistory";
 import { PersonalApiKeySettings } from "./PersonalApiKeySettings";
 import { DeepgramApiKeySettings } from "./DeepgramApiKeySettings";
 import type { PersonalLlmProvider } from "./personalApiKeys";
-import type { Mode } from "./App";
 
 type SettingsSection = "SESSIONS" | "PERSONALIZATION" | "PERFORMANCE" | "CONTEXT" | "API_KEYS" | "PRIVACY" | "ABOUT";
 
@@ -23,7 +21,6 @@ const SECTIONS: { key: SettingsSection; label: string }[] = [
 
 interface Props {
   onClose: () => void;
-  mode: Mode;
   historyRefreshKey: number;
   onApiKeySaved?: (provider: PersonalLlmProvider) => void;
 }
@@ -34,11 +31,11 @@ interface Props {
 /// for its own separate shell, which hid the nav entirely with no way back
 /// to another section except closing and reopening Settings. Only sections
 /// with real content are listed here — General/Audio/Notifications were
-/// placeholder stubs and have been dropped. Sessions (past Interview/
-/// Meeting history) and Personalization (answer tone/length/style) live
+/// placeholder stubs and have been dropped. Sessions (past Interview
+/// history) and Personalization (answer tone/length/style) live
 /// here rather than as separate header buttons, alongside the app's other
 /// settings.
-export function SettingsPopover({ onClose, mode, historyRefreshKey, onApiKeySaved }: Props) {
+export function SettingsPopover({ onClose, historyRefreshKey, onApiKeySaved }: Props) {
   const [section, setSection] = useState<SettingsSection>("SESSIONS");
 
   return (
@@ -65,12 +62,7 @@ export function SettingsPopover({ onClose, mode, historyRefreshKey, onApiKeySave
           </div>
 
           <div className="settings-popover-content">
-            {section === "SESSIONS" &&
-              (mode === "INTERVIEW" ? (
-                <InterviewHistory refreshKey={historyRefreshKey} />
-              ) : (
-                <MeetingHistory refreshKey={historyRefreshKey} />
-              ))}
+            {section === "SESSIONS" && <InterviewHistory refreshKey={historyRefreshKey} />}
             {section === "PERSONALIZATION" && <PersonalizationPanel />}
             {section === "PERFORMANCE" && <PerformancePanel />}
             {section === "CONTEXT" && <AttachedDocumentsPanel />}

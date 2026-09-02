@@ -59,7 +59,7 @@ pub fn build_messages(request: &SetupAnalysisRequest) -> Option<Vec<ChatMessage>
 /// (matches Python's `_extract_json`'s `re.search(r"\{.*\}", ..., re.DOTALL)`
 /// — same greedy-to-the-end behavior as `prompts::extract_json_object`, kept
 /// as a separate function so this module doesn't take on a dependency on
-/// analysis/meeting/notes' shared extractor for what is, in the Python
+/// analysis/notes' shared extractor for what is, in the Python
 /// source, a genuinely separate (if equivalent) implementation).
 fn extract_json(text: &str) -> Result<String, String> {
     let trimmed = text.trim();

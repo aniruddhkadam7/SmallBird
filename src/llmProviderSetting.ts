@@ -1,8 +1,7 @@
 // The user's chosen AI model provider, set from the main header's dropdown
-// (App.tsx) and read by the overlay windows when they send an ask request —
-// same cross-window handoff pattern as meeting-mode:active-meeting /
-// sales-mode:active-call (a plain localStorage key, since the main window
-// and overlay are separate webviews with no shared React state).
+// (App.tsx) and read by the overlay window when it sends an ask request —
+// a plain localStorage key, since the main window and overlay are separate
+// webviews with no shared React state.
 
 export type LlmProvider = "anthropic" | "openai" | "gemini" | "deepseek";
 
