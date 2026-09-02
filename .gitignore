@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Leftover local build artifacts from the desktop app (this branch is
+# website-only; these don't belong here and shouldn't be committed).
+/dist
+/models/
+/sidecars/
+/src-tauri/
