@@ -334,33 +334,6 @@ function App() {
     getCurrentWindow().close();
   }, []);
 
-  // Replaces the whole window the moment an update is found — nothing else
-  // renders underneath, and there's no click-through to the rest of the app
-  // while this is up. The app process itself gets replaced by relaunch()
-  // once installUpdate finishes, so this screen's only job is covering the
-  // few seconds that takes with something smaller/calmer than the full
-  // toolbar+chat UI suddenly vanishing mid-render.
-  if (updateState === "updating") {
-    return (
-      <main className="app-shell app-shell-compact">
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "12px",
-            padding: "2rem",
-            minHeight: "140px",
-          }}
-        >
-          <Spinner />
-          <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Updating Smallbird…</span>
-        </div>
-      </main>
-    );
-  }
-
   return (
     <main className={`app-shell ${isMaximized ? "" : "app-shell-compact"}`}>
       <div className="title-bar" data-tauri-drag-region>
@@ -386,6 +359,22 @@ function App() {
         <div className="compact-header-brand">
           <img className="header-logo" src={smallbirdLogo} alt="Smallbird" />
           <span className="header-product">SmallBird</span>
+          {/* The only visible sign an update is happening — everything else
+              (Start, Ask AI once in a session, etc.) keeps working normally
+              while this downloads/installs in the background. The app
+              process itself gets replaced the moment installUpdate's
+              relaunch() call fires, so this never needs a "done" state of
+              its own — it just disappears along with everything else when
+              the new version's window comes up. */}
+          {updateState === "updating" && (
+            <span
+              style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginLeft: "4px" }}
+              title="Downloading and installing the latest version"
+            >
+              <Spinner className="on-light" />
+              <span style={{ color: "var(--text-muted)", fontSize: "0.72rem" }}>Updating…</span>
+            </span>
+          )}
         </div>
 
         <div className="compact-header-controls">
