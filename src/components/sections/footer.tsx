@@ -58,7 +58,7 @@ export function Footer() {
         </div>
 
         <div className="mt-12 border-t border-border pt-6 text-sm text-muted-foreground">
-          © {new Date().getFullYear()} Smallbird. All rights reserved.
+          SmallBird™ is a trademark of Smallbird. © {new Date().getFullYear()} Smallbird. All rights reserved.
         </div>
       </div>
     </footer>
