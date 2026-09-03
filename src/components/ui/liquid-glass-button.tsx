@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Slot } from "@radix-ui/react-slot"
+import { Slot, Slottable } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
@@ -69,9 +69,23 @@ function LiquidButton({
           style={{ backdropFilter: 'url("#container-glass")' }}
         />
 
-        <div className="pointer-events-none relative z-10 flex items-center justify-center gap-2">
-          {children}
-        </div>
+        {/* Slottable marks `children` (the caller's real target element when
+            asChild is used, e.g. the <a> in the download page's Windows
+            button) as what Slot should clone its props onto — the two
+            decorative divs above become additional children merged into
+            that same element rather than separate siblings, which is the
+            only shape Slot accepts. This used to wrap children in an extra
+            <div>, which gave Slot three top-level children instead of one
+            and crashed with "Slot failed to slot onto its children" any
+            time asChild was used (silently fine otherwise, since a plain
+            "button" element has no such constraint) — see the download
+            page's signed-in Windows button, the only asChild caller. The
+            outer classes' own `inline-flex items-center justify-center
+            gap-2` (from liquidbuttonVariants) still center this content;
+            this wrapper only ever added pointer-events-none/z-10, which
+            isn't needed since the decorative divs already stack behind
+            normal content by DOM order. */}
+        <Slottable>{children}</Slottable>
       </Comp>
     </>
   )
