@@ -4,6 +4,18 @@ import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { usePurchaseFlow } from "@/lib/purchase-flow"
 
+// Deterministic hue per user so every account gets a distinct, stable
+// avatar color instead of everyone sharing the same black circle.
+function colorForUser(seed: string) {
+  let hash = 0
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash << 5) - hash + seed.charCodeAt(i)
+    hash |= 0
+  }
+  const hue = Math.abs(hash) % 360
+  return `hsl(${hue}, 65%, 45%)`
+}
+
 // Adobe/most-SaaS-header pattern: an initial-letter avatar in the top-right
 // once signed in, opening a small menu with the account email and sign out
 // — replaces the "Get Started" CTA for a returning user, since asking them
@@ -28,6 +40,7 @@ export function AccountMenu() {
   if (!signedUp || !email) return null
 
   const initial = email.charAt(0).toUpperCase()
+  const avatarColor = colorForUser(email)
 
   return (
     <div className="relative" ref={containerRef}>
@@ -36,7 +49,8 @@ export function AccountMenu() {
         onClick={() => setOpen((v) => !v)}
         aria-label="Account menu"
         aria-expanded={open}
-        className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-sm font-medium text-background transition-opacity hover:opacity-80"
+        style={{ backgroundColor: avatarColor }}
+        className="flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium text-white transition-opacity hover:opacity-80"
       >
         {initial}
       </button>

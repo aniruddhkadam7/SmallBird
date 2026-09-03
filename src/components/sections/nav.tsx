@@ -48,8 +48,13 @@ export function Nav() {
               </a>
             ))}
           </nav>
-          <div className="flex items-center gap-3">
-            <LiquidButton size="sm" variant="outline" onClick={() => router.push("/download")}>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <LiquidButton
+              size="sm"
+              variant="outline"
+              onClick={() => router.push("/download")}
+              className="hidden sm:inline-flex"
+            >
               <Download className="h-3.5 w-3.5" />
               Download
             </LiquidButton>
@@ -57,7 +62,12 @@ export function Nav() {
               <AccountMenu />
             ) : (
               <>
-                <LiquidButton size="sm" variant="outline" onClick={() => startFlow("free")}>
+                <LiquidButton
+                  size="sm"
+                  variant="outline"
+                  onClick={() => startFlow("free")}
+                  className="hidden sm:inline-flex"
+                >
                   Log in
                 </LiquidButton>
                 <LiquidButton size="sm" onClick={() => startFlow("free")}>
