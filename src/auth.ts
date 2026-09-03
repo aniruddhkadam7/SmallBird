@@ -28,6 +28,7 @@ export function getAuthSession(): Promise<AuthSessionInfo> {
 export interface EntitlementInfo {
   planId: string;
   remainingMinutes: number;
+  interviewPassCount: number;
 }
 
 export function getEntitlement(): Promise<EntitlementInfo> {

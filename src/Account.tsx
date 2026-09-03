@@ -187,10 +187,17 @@ export function Account({ onClose, onSessionChange }: { onClose: () => void; onS
               <div className="setup-identity-field" style={{ marginTop: "12px" }}>
                 <label className="setup-section-label">Plan</label>
                 {entitlement ? (
-                  <p className="setup-hint" style={{ margin: 0 }}>
-                    {PLAN_LABELS[entitlement.planId] ?? entitlement.planId} —{" "}
-                    <strong>{formatMinutes(entitlement.remainingMinutes)} remaining</strong>
-                  </p>
+                  <>
+                    <p className="setup-hint" style={{ margin: 0 }}>
+                      {PLAN_LABELS[entitlement.planId] ?? entitlement.planId} —{" "}
+                      <strong>{formatMinutes(entitlement.remainingMinutes)} remaining</strong>
+                    </p>
+                    {entitlement.interviewPassCount > 0 && (
+                      <p className="setup-hint" style={{ margin: 0 }}>
+                        {entitlement.interviewPassCount} Interview Pass{entitlement.interviewPassCount === 1 ? "" : "es"} purchased
+                      </p>
+                    )}
+                  </>
                 ) : (
                   <p className="setup-hint" style={{ margin: 0 }}>
                     Loading…

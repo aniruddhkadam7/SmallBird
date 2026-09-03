@@ -63,6 +63,7 @@ pub async fn get_auth_session(state: State<'_, AppState>) -> Result<AuthSessionI
 pub struct EntitlementInfo {
     pub plan_id: String,
     pub remaining_minutes: f64,
+    pub interview_pass_count: u32,
 }
 
 /// Reads the signed-in user's own `entitlements` row via Supabase's REST API

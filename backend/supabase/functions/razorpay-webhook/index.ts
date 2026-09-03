@@ -84,6 +84,15 @@ Deno.serve(async (req) => {
         const minutes = await getPlanMinutes(planId);
         await admin.rpc("increment_entitlement_minutes", { p_user_id: userId, p_minutes: minutes });
 
+        // Logged so "how many Interview Passes has this user bought" is a
+        // real query, not something inferred from the minute balance.
+        await admin.from("purchases").insert({
+          user_id: userId,
+          plan_id: planId,
+          amount_paise: order.amount,
+          razorpay_order_id: order.id,
+        });
+
         // A paying customer's row shouldn't just read "free" — reflect the
         // one-time pack they bought. Only overwrites plan_id while it's
         // still "free", so this never downgrades someone with an active

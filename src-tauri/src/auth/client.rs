@@ -165,5 +165,32 @@ pub async fn get_entitlement(access_token: &str) -> Result<super::commands::Enti
 
     let rows: Vec<EntitlementRow> = response.json().await.map_err(|e| format!("unexpected response reading your plan: {e}"))?;
     let row = rows.into_iter().next().ok_or_else(|| "No plan found for this account".to_string())?;
-    Ok(super::commands::EntitlementInfo { plan_id: row.plan_id, remaining_minutes: row.remaining_minutes })
+
+    let interview_pass_count = count_interview_pass_purchases(access_token).await.unwrap_or(0);
+
+    Ok(super::commands::EntitlementInfo {
+        plan_id: row.plan_id,
+        remaining_minutes: row.remaining_minutes,
+        interview_pass_count,
+    })
+}
+
+/// Best-effort: a failure here shouldn't block the rest of the Account panel
+/// from rendering, so callers fall back to 0 rather than propagating an
+/// error (see `.unwrap_or(0)` above).
+async fn count_interview_pass_purchases(access_token: &str) -> Result<u32, String> {
+    let response = client()
+        .get(format!("{SUPABASE_URL}/rest/v1/purchases?select=id&plan_id=eq.interview-pass"))
+        .header("apikey", SUPABASE_ANON_KEY)
+        .bearer_auth(access_token)
+        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!("purchases lookup returned {}", response.status()));
+    }
+    let rows: Vec<serde_json::Value> = response.json().await.map_err(|e| e.to_string())?;
+    Ok(rows.len() as u32)
 }
