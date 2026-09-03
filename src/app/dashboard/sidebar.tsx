@@ -7,6 +7,7 @@ import { AudioLines, Gift, LogOut, Moon, MonitorSmartphone, Sun } from "lucide-r
 import logo from "@/assets/smallbird-logo.png"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { usePurchaseFlow } from "@/lib/purchase-flow"
+import { PlansView } from "./plans-view"
 
 type Theme = "dark" | "light"
 const THEME_STORAGE_KEY = "smallbird-dashboard-theme"
@@ -58,8 +59,10 @@ export function DashboardSidebar({
   children: React.ReactNode
 }) {
   const router = useRouter()
-  const { logout, startFlow } = usePurchaseFlow()
+  const { logout } = usePurchaseFlow()
   const [theme, setTheme] = useTheme()
+  const [view, setView] = useState<"interviews" | "plans">("interviews")
+  const [confirmingLogout, setConfirmingLogout] = useState(false)
   const initial = email.charAt(0).toUpperCase()
   const avatarColor = colorForUser(email)
   const name = email.split("@")[0]
@@ -81,7 +84,10 @@ export function DashboardSidebar({
           <div className="px-2 pb-1 text-xs font-semibold text-muted-foreground">Workspace</div>
           <button
             type="button"
-            className="flex items-center gap-2.5 rounded-md bg-foreground/10 px-3 py-2 text-left text-sm font-medium text-foreground"
+            onClick={() => setView("interviews")}
+            className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
+              view === "interviews" ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5"
+            }`}
           >
             <AudioLines className="h-4 w-4" />
             Interviews
@@ -102,7 +108,7 @@ export function DashboardSidebar({
                 : "Sign in to see your plan."}
             </p>
             {(plan?.isFree ?? true) && (
-              <LiquidButton size="sm" className="mt-3 w-full" onClick={() => startFlow("pro-monthly")}>
+              <LiquidButton size="sm" className="mt-3 w-full" onClick={() => setView("plans")}>
                 Upgrade
               </LiquidButton>
             )}
@@ -130,7 +136,7 @@ export function DashboardSidebar({
             </button>
             <button
               type="button"
-              onClick={() => logout()}
+              onClick={() => setConfirmingLogout(true)}
               className="flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-foreground/10"
             >
               <LogOut className="h-4 w-4" />
@@ -153,7 +159,41 @@ export function DashboardSidebar({
         </div>
       </aside>
 
-      <div className="flex-1 overflow-y-auto">{children}</div>
+      <div className="flex-1 overflow-y-auto">{view === "plans" ? <PlansView /> : children}</div>
+
+      {confirmingLogout && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onMouseDown={(e) => e.target === e.currentTarget && setConfirmingLogout(false)}
+        >
+          <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-xl border border-border bg-card p-6 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-foreground/10">
+              <LogOut className="h-5 w-5 text-foreground" />
+            </span>
+            <div>
+              <div className="font-semibold text-foreground">Log out?</div>
+              <p className="mt-1 text-sm text-muted-foreground">You&apos;ll need to sign in again to access your dashboard.</p>
+            </div>
+            <div className="flex w-full gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmingLogout(false)}
+                className="flex-1 rounded-md border border-border py-2 text-sm font-medium text-foreground transition-colors hover:bg-foreground/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => logout()}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-foreground py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Log Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
