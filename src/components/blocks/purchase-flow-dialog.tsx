@@ -87,21 +87,24 @@ export function PurchaseFlowDialog() {
                 />
               </div>
               {error && <p className="text-sm text-destructive">{error}</p>}
-              <div className="flex items-center gap-2">
-                <LiquidButton type="submit" size="default" className="min-w-0 flex-1 shrink px-3" disabled={busy}>
+              <div className="flex flex-col gap-3">
+                <LiquidButton type="submit" size="default" className="w-full" disabled={busy}>
                   {busy ? "Sending code…" : "Send code"}
                 </LiquidButton>
-                <span className="shrink-0 text-xs text-muted-foreground">or</span>
+                <div className="relative py-1 text-center text-xs text-muted-foreground">
+                  <span className="relative bg-popover px-2">or</span>
+                  <div className="absolute inset-x-0 top-1/2 -z-10 border-t border-border" />
+                </div>
                 <LiquidButton
                   type="button"
                   variant="outline"
                   size="default"
-                  className="min-w-0 flex-1 shrink px-3"
+                  className="w-full"
                   onClick={signInWithGoogle}
                   disabled={busy}
                 >
                   <GoogleIcon />
-                  <span className="truncate">Continue with Google</span>
+                  Continue with Google
                 </LiquidButton>
               </div>
             </form>
