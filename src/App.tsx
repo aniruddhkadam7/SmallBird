@@ -30,6 +30,8 @@ import { IconAnthropic, IconDeepSeek, IconOpenAI } from "./ProviderIcons";
 import { INTERVIEW_CONTEXT_SECTIONS } from "./headerPopups";
 import { loadLlmProvider, saveLlmProvider, type LlmProvider } from "./llmProviderSetting";
 import { getAuthSession, type AuthSessionInfo } from "./auth";
+import { checkForUpdate, installUpdate } from "./autoUpdate";
+import type { Update } from "@tauri-apps/plugin-updater";
 
 type SessionState = "IDLE" | "STARTING" | "LISTENING";
 type Popover = "MODEL" | "CONTEXT" | "SETTINGS" | "ACCOUNT" | null;
@@ -70,6 +72,35 @@ function App() {
   const [interviewContext, setInterviewContext] = useState<DocumentContextState>(() =>
     emptyDocumentContextState(INTERVIEW_CONTEXT_SECTIONS),
   );
+
+  const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
+  const [updateState, setUpdateState] = useState<"idle" | "installing">("idle");
+
+  // Checked once per launch, in the background — never blocks startup on a
+  // slow/offline network. A found update sits in `pendingUpdate` until the
+  // user chooses to install (never silently auto-installed: that would
+  // restart the app — and interrupt anything in progress like an active
+  // interview — with no warning).
+  useEffect(() => {
+    let cancelled = false;
+    checkForUpdate().then((update) => {
+      if (!cancelled && update) setPendingUpdate(update);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleInstallUpdate = useCallback(async () => {
+    if (!pendingUpdate) return;
+    setUpdateState("installing");
+    try {
+      await installUpdate(pendingUpdate);
+    } catch (err) {
+      setError(`Update failed: ${err}`);
+      setUpdateState("idle");
+    }
+  }, [pendingUpdate]);
 
   // Every AI feature requires a signed-in session now (no BYOK fallback) —
   // check once at startup and, if nothing is signed in, open the Account
@@ -496,6 +527,32 @@ function App() {
           </div>
         </div>
       </header>
+
+      {pendingUpdate && (
+        <div
+          className="compact-header-error"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            flexWrap: "wrap",
+            padding: "0.5rem 0.8rem",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--accent-soft)",
+            color: "var(--text)",
+          }}
+        >
+          <span>Smallbird {pendingUpdate.version} is available.</span>
+          <Button variant="primary" onClick={handleInstallUpdate} disabled={updateState === "installing"}>
+            {updateState === "installing" ? "Updating…" : "Restart & update"}
+          </Button>
+          {updateState !== "installing" && (
+            <Button variant="ghost" onClick={() => setPendingUpdate(null)}>
+              Later
+            </Button>
+          )}
+        </div>
+      )}
 
       {activeElsewhereMessage ? (
         <div className="error compact-header-error" style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
