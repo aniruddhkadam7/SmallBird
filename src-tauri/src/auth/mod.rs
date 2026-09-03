@@ -5,6 +5,7 @@
 
 pub mod client;
 pub mod commands;
+pub mod oauth;
 pub mod session_store;
 
 pub use client::AuthSession;

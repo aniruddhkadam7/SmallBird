@@ -17,6 +17,13 @@ export function verifyLoginOtp(email: string, code: string): Promise<AuthSession
   return invoke<AuthSessionInfo>("verify_login_otp", { email, code });
 }
 
+// Opens the system browser for Google sign-in and resolves once it
+// completes — see auth/oauth.rs for the local-loopback-listener mechanism a
+// desktop app needs instead of the website's plain page redirect.
+export function loginWithGoogle(): Promise<AuthSessionInfo> {
+  return invoke<AuthSessionInfo>("login_with_google");
+}
+
 export function logout(): Promise<void> {
   return invoke<void>("logout");
 }

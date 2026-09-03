@@ -45,6 +45,19 @@ const LLM_PROVIDERS: { value: LlmProvider; label: string; icon: typeof IconOpenA
   { value: "deepseek", label: "DeepSeek", icon: IconDeepSeek, available: false },
 ];
 
+// Deterministic hash-to-hue so the same email always gets the same avatar
+// color across sessions — mirrors the website's account-menu.tsx pattern so
+// the two surfaces feel like the same product.
+function colorForEmail(email: string): string {
+  let hash = 0;
+  for (let i = 0; i < email.length; i++) {
+    hash = (hash << 5) - hash + email.charCodeAt(i);
+    hash |= 0;
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 65%, 45%)`;
+}
+
 function App() {
   const [llmProvider, setLlmProvider] = useState<LlmProvider>(() => loadLlmProvider());
   const [authSession, setAuthSession] = useState<AuthSessionInfo | null>(null);
@@ -439,12 +452,33 @@ function App() {
             <button
               className="compact-header-btn icon"
               onClick={() => togglePopover("ACCOUNT")}
-              title="Account"
+              title={authSession?.loggedIn && authSession.email ? authSession.email : "Account"}
               aria-label="Account"
               aria-haspopup="dialog"
               aria-expanded={openPopover === "ACCOUNT"}
             >
-              <IconAccount />
+              {authSession?.loggedIn && authSession.email ? (
+                <span
+                  aria-hidden="true"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: "18px",
+                    height: "18px",
+                    borderRadius: "50%",
+                    background: colorForEmail(authSession.email),
+                    color: "#fff",
+                    fontSize: "10px",
+                    fontWeight: 600,
+                    lineHeight: 1,
+                  }}
+                >
+                  {authSession.email.charAt(0).toUpperCase()}
+                </span>
+              ) : (
+                <IconAccount />
+              )}
             </button>
             {openPopover === "ACCOUNT" && (
               <HeaderDropdown onClose={closePopover} className="header-dropdown-panel">

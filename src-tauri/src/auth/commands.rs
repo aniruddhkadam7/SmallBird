@@ -1,8 +1,9 @@
 //! Tauri commands for the login screen (`Account.tsx`).
 
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use super::client::{self, AuthSession};
+use super::oauth;
 use crate::state::AppState;
 
 #[tauri::command]
@@ -13,6 +14,19 @@ pub async fn request_login_otp(email: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn verify_login_otp(state: State<'_, AppState>, email: String, code: String) -> Result<AuthSessionInfo, String> {
     let session = client::verify_otp(&email, &code).await?;
+    let info = AuthSessionInfo::from(&session);
+    let mut guard = state.auth_session.lock().map_err(|_| "session lock poisoned".to_string())?;
+    *guard = Some(session);
+    Ok(info)
+}
+
+/// Opens the system browser for Google sign-in and blocks until it
+/// completes (see `oauth::login_with_google` for the full mechanism — a
+/// local loopback listener catching the PKCE redirect, since a desktop app
+/// has no page of its own for Supabase to redirect back to).
+#[tauri::command]
+pub async fn login_with_google(app: AppHandle, state: State<'_, AppState>) -> Result<AuthSessionInfo, String> {
+    let session = oauth::login_with_google(app).await?;
     let info = AuthSessionInfo::from(&session);
     let mut guard = state.auth_session.lock().map_err(|_| "session lock poisoned".to_string())?;
     *guard = Some(session);

@@ -13,8 +13,8 @@ use super::session_store;
 /// client-safe identifiers (not secrets) — the same ones the website uses as
 /// NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY. Find them in the
 /// Supabase dashboard: Project Settings -> API.
-const SUPABASE_URL: &str = "https://xubbwgrjvvsbfvxcuzav.supabase.co";
-const SUPABASE_ANON_KEY: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh1YmJ3Z3JqdnZzYmZ2eGN1emF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4NzQ5NjAsImV4cCI6MjEwMjQ1MDk2MH0.ZBkDqETqfJFcrmx68wQCqE2RsfvDwyy_k7uJvlY3vJo";
+pub(super) const SUPABASE_URL: &str = "https://xubbwgrjvvsbfvxcuzav.supabase.co";
+pub(super) const SUPABASE_ANON_KEY: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh1YmJ3Z3JqdnZzYmZ2eGN1emF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4NzQ5NjAsImV4cCI6MjEwMjQ1MDk2MH0.ZBkDqETqfJFcrmx68wQCqE2RsfvDwyy_k7uJvlY3vJo";
 
 const REQUEST_TIMEOUT_SECS: u64 = 15;
 
@@ -29,27 +29,27 @@ pub struct AuthSession {
 }
 
 #[derive(Deserialize)]
-struct TokenResponse {
-    access_token: String,
-    refresh_token: String,
-    expires_in: i64,
-    user: TokenUser,
+pub(super) struct TokenResponse {
+    pub(super) access_token: String,
+    pub(super) refresh_token: String,
+    pub(super) expires_in: i64,
+    pub(super) user: TokenUser,
 }
 
 #[derive(Deserialize)]
-struct TokenUser {
-    email: Option<String>,
+pub(super) struct TokenUser {
+    pub(super) email: Option<String>,
 }
 
-fn now_unix() -> i64 {
+pub(super) fn now_unix() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
-fn client() -> reqwest::Client {
+pub(super) fn client() -> reqwest::Client {
     reqwest::Client::new()
 }
 
-async fn parse_auth_error(response: reqwest::Response) -> String {
+pub(super) async fn parse_auth_error(response: reqwest::Response) -> String {
     let status = response.status();
     let text = response.text().await.unwrap_or_default();
     let message = serde_json::from_str::<serde_json::Value>(&text)

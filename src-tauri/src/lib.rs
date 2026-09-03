@@ -158,6 +158,7 @@ pub fn run() {
             main_window::set_popover_content_height,
             auth::commands::request_login_otp,
             auth::commands::verify_login_otp,
+            auth::commands::login_with_google,
             auth::commands::logout,
             auth::commands::get_auth_session,
             auth::commands::get_entitlement,
