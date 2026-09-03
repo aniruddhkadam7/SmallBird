@@ -1,6 +1,5 @@
 ---
-name: security-audit
-description: Deep, Smallbird-specific security review covering concurrent-session/account-sharing abuse, API key and secret handling, Supabase database and RLS security, payment/webhook integrity, the desktop app's attack surface, and crash resilience. Use when the user asks for a security check, security audit, vulnerability review, or asks whether the app/backend/database is safe or hardened.
+description: Deep, Smallbird-specific security review covering concurrent-session/account-sharing abuse, API key and secret handling, Supabase database and RLS security, payment/webhook integrity, the desktop app's attack surface, and crash resilience.
 ---
 
 # Smallbird security audit
@@ -15,9 +14,13 @@ references a file, function, or table that no longer exists or has moved, that's
 a signal the app changed since this was written, not that the check no longer
 matters. Re-locate the equivalent code and check the same underlying property.
 
-Run `mcp__supabase__get_advisors` (both `security` and `performance` types) as a
-first pass — it catches missing-RLS and other Supabase-detectable issues
-automatically before the manual checks below.
+If the Supabase MCP tools (`mcp__supabase__*`) are connected this session, run
+`get_advisors` (both `security` and `performance` types) as a first pass — it
+catches missing-RLS and other Supabase-detectable issues automatically before
+the manual checks below. If they're not connected, note that to the user and
+fall back to asking them to check the Supabase Dashboard's own Advisors page
+(Project → Advisors) for the same automated checks, or run the equivalent SQL
+queries below yourself through whatever database access is available.
 
 ## A. Multi-account / concurrent-session abuse
 
@@ -85,15 +88,14 @@ process memory aren't something this check can fully rule out.
 
 ## C. Database and RLS security
 
-Query `pg_policies` directly (via `mcp__supabase__execute_sql`) for every table
-in `public` and confirm: every table holding user data (`entitlements`,
-`interview_sessions`, `purchases`, `usage_costs`, `usage_events`) has RLS
-*enabled* (`rowsecurity = true` in `pg_tables`), and every `SELECT`/`UPDATE`
-policy scopes by `auth.uid() = user_id` (or an equivalent ownership check) —
-never a bare `USING (true)` on a table with per-user data. A table with RLS
-enabled but zero policies is fail-closed (safe but broken); a table with RLS
-*disabled* is the actual danger — anyone with the anon key (i.e. everyone) can
-read or write every row.
+Query `pg_policies` directly for every table in `public` and confirm: every
+table holding user data (`entitlements`, `interview_sessions`, `purchases`,
+`usage_costs`, `usage_events`) has RLS *enabled* (`rowsecurity = true` in
+`pg_tables`), and every `SELECT`/`UPDATE` policy scopes by `auth.uid() =
+user_id` (or an equivalent ownership check) — never a bare `USING (true)` on a
+table with per-user data. A table with RLS enabled but zero policies is
+fail-closed (safe but broken); a table with RLS *disabled* is the actual danger
+— anyone with the anon key (i.e. everyone) can read or write every row.
 
 Every Edge Function's `admin` client (built with the service role key) bypasses
 RLS entirely by design — confirm each one only ever reads/writes rows it has

@@ -1,6 +1,5 @@
 ---
-name: release-update
-description: Build, sign, and publish a new Smallbird desktop app release end-to-end (version bump, signed Windows installer, update manifest, GitHub release with assets uploaded via API) so existing installs auto-update. Use when the user asks to release/ship/publish/push a new version or update of the Smallbird desktop app.
+description: Build, sign, and publish a new Smallbird desktop app release end-to-end (version bump, signed Windows installer, update manifest, GitHub release with assets uploaded via API) so existing installs auto-update.
 ---
 
 # Releasing a Smallbird desktop update
@@ -39,6 +38,14 @@ assets 404 for anyone without repo access.
 2. Bump the version (pick the next patch/minor number) in all three places — they
    must match: `src-tauri/tauri.conf.json`'s top-level version field,
    `package.json`'s version field, and `src-tauri/Cargo.toml`'s version field.
+   **Never reuse a version number that was already tagged/published once** —
+   even if the first attempt had a bug and never went out, a second build under
+   the same tag leaves the git tag pointing at whichever commit was tagged
+   first. If a rebuild is needed after a tag already exists, bump to a new
+   version instead of reusing the old one (this exact mistake once left an
+   already-installed build permanently unable to update, because its own
+   compiled-in endpoint URL differed from what the reused tag's later rebuild
+   actually used).
 
 3. Verify it compiles before building anything: a TypeScript no-emit check on the
    frontend, and a cargo check in `src-tauri` for the backend.
