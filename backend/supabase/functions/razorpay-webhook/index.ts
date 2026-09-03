@@ -83,6 +83,15 @@ Deno.serve(async (req) => {
 
         const minutes = await getPlanMinutes(planId);
         await admin.rpc("increment_entitlement_minutes", { p_user_id: userId, p_minutes: minutes });
+
+        // A paying customer's row shouldn't just read "free" — reflect the
+        // one-time pack they bought. Only overwrites plan_id while it's
+        // still "free", so this never downgrades someone with an active
+        // Pro subscription who also buys a pass on top.
+        const { data: current } = await admin.from("entitlements").select("plan_id").eq("user_id", userId).single();
+        if (current?.plan_id === "free") {
+          await admin.from("entitlements").update({ plan_id: planId }).eq("user_id", userId);
+        }
         break;
       }
 
