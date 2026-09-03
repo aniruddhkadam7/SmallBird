@@ -611,21 +611,6 @@ export function InterviewOverlay() {
             </span>
           )}
 
-          {/* Pauses/resumes audio capture without tearing down the STT
-              connection or clearing the transcript-so-far — see
-              commands.rs's pause_recording/resume_recording doc comments.
-              Disabled until capture is actually confirmed active, matching
-              the backend's own state-machine requirement. */}
-          <button
-            type="button"
-            className={`overlay-icon-button${muted ? " on" : ""}`}
-            onClick={toggleMute}
-            disabled={!captureActive || muteBusy}
-            title={muted ? "Unmute — resume transcribing" : "Mute — pause transcribing"}
-          >
-            {muted ? "🔇" : "🎤"}
-          </button>
-
           {/* A <button>, not a checkbox+<label>: Tauri's drag script already
               treats BUTTON as clickable and blocks dragging for it (see the
               comment on the opacity slider below), and a bare button avoids
@@ -754,6 +739,23 @@ export function InterviewOverlay() {
               placeholder={hasConversation ? "Next question…" : "Waiting for the interviewer to speak…"}
               rows={1}
             />
+            {/* Pauses/resumes audio capture without tearing down the STT
+                connection or clearing the transcript-so-far — see
+                commands.rs's pause_recording/resume_recording doc comments.
+                Disabled until capture is actually confirmed active, matching
+                the backend's own state-machine requirement. Placed beside
+                Ask AI rather than up in the header — the same reach as the
+                button someone's about to click next, rather than a separate
+                trip to the top bar. */}
+            <button
+              type="button"
+              className={`overlay-icon-button${muted ? " on" : ""}`}
+              onClick={toggleMute}
+              disabled={!captureActive || muteBusy}
+              title={muted ? "Unmute — resume transcribing" : "Mute — pause transcribing"}
+            >
+              {muted ? "🔇" : "🎤"}
+            </button>
             <button
               className="overlay-ask-button"
               onClick={askAI}
