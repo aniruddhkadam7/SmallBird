@@ -10,7 +10,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
+
+use crate::auth::client::{SUPABASE_ANON_KEY, SUPABASE_URL};
+use crate::state::AppState;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HistoryTurn {
@@ -95,10 +98,19 @@ pub fn list_interview_history(
 /// closes the overlay and confirms the interview is over — an empty `turns`
 /// list (nothing was ever asked) is skipped so idle opens don't clutter
 /// history.
+///
+/// Also best-effort mirrors the entry to Supabase (`interview_transcripts`)
+/// so the website can show it — this only ever happens going forward from
+/// when this shipped, never backfilling whatever's already sitting in the
+/// local JSON file from before. Sync runs in the background after the local
+/// save/return, on its own tokio task: a slow or failed network call must
+/// never delay archiving locally (which always has to succeed, session or
+/// no) or surface as an error the user has no way to act on.
 #[tauri::command]
-pub fn archive_interview_session(
+pub async fn archive_interview_session(
     app: AppHandle,
     store: tauri::State<'_, HistoryStore>,
+    state: State<'_, AppState>,
     started_at_ms: u64,
     role: Option<String>,
     company: Option<String>,
@@ -116,13 +128,59 @@ pub fn archive_interview_session(
         turns,
     };
 
-    let mut guard = store.0.lock().unwrap();
-    if guard.is_empty() {
-        *guard = load(&app);
+    {
+        let mut guard = store.0.lock().unwrap();
+        if guard.is_empty() {
+            *guard = load(&app);
+        }
+        guard.push(entry.clone());
+        save(&app, &guard)?;
     }
-    guard.push(entry.clone());
-    save(&app, &guard)?;
+
+    if let Ok(access_token) = crate::auth::current_access_token(&state).await {
+        let entry_for_sync = entry.clone();
+        tokio::spawn(async move {
+            if let Err(err) = sync_to_backend(&access_token, &entry_for_sync).await {
+                log::warn!("failed to sync interview transcript to backend: {err}");
+            }
+        });
+    }
+
     Ok(Some(entry))
+}
+
+/// Mirrors one history entry into `public.interview_transcripts` via
+/// PostgREST directly (same pattern as `auth::client::get_entitlement` —
+/// no dedicated Edge Function needed for a plain authenticated insert).
+/// `user_id` is never sent explicitly: the column defaults to `auth.uid()`
+/// in the migration, derived from the same verified JWT this bearer token
+/// carries, so there's no client-suppliable field an attacker could use to
+/// write into someone else's row.
+async fn sync_to_backend(access_token: &str, entry: &InterviewHistoryEntry) -> Result<(), String> {
+    let body = serde_json::json!({
+        "started_at_ms": entry.started_at_ms,
+        "ended_at_ms": entry.ended_at_ms,
+        "role": entry.role,
+        "company": entry.company,
+        "turns": entry.turns,
+    });
+
+    let response = reqwest::Client::new()
+        .post(format!("{SUPABASE_URL}/rest/v1/interview_transcripts"))
+        .header("apikey", SUPABASE_ANON_KEY)
+        .bearer_auth(access_token)
+        .header("Prefer", "return=minimal")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("{status}: {text}"));
+    }
+    Ok(())
 }
 
 #[tauri::command]
