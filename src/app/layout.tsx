@@ -2,8 +2,6 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { GlassFilter } from "@/components/ui/liquid-glass-button";
-import { Nav } from "@/components/sections/nav";
-import { Footer } from "@/components/sections/footer";
 import { PurchaseFlowDialog } from "@/components/blocks/purchase-flow-dialog";
 import { PurchaseFlowProvider } from "@/lib/purchase-flow";
 
@@ -45,9 +43,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <PurchaseFlowProvider>
           <div id="top" className="relative">
             <GlassFilter />
-            <Nav />
-            <main>{children}</main>
-            <Footer />
+            {children}
             <PurchaseFlowDialog />
           </div>
         </PurchaseFlowProvider>

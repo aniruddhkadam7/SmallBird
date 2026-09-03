@@ -42,20 +42,33 @@ function InterviewCard({ transcript }: { transcript: Transcript }) {
   return (
     <Card>
       <CardHeader>
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="flex w-full items-center justify-between gap-4 text-left"
-        >
+        <div className="flex w-full items-center justify-between gap-4">
           <div>
-            <div className="font-semibold text-foreground">{title}</div>
-            <div className="mt-1 text-sm text-muted-foreground">
-              {formatWhen(transcript.started_at_ms)} · {formatDuration(transcript.started_at_ms, transcript.ended_at_ms)} ·{" "}
-              {transcript.turns.length} question{transcript.turns.length === 1 ? "" : "s"}
+            <div className="text-xs text-muted-foreground">{formatWhen(transcript.started_at_ms)}</div>
+            <div className="mt-1 font-semibold text-foreground">{title}</div>
+            <div className="mt-2 flex items-center gap-1.5">
+              <span className="rounded-full bg-foreground/5 px-2 py-0.5 text-xs font-medium text-foreground">
+                Interview
+              </span>
+              <span className="rounded-full bg-foreground/5 px-2 py-0.5 text-xs font-medium text-foreground">
+                {transcript.turns.length} question{transcript.turns.length === 1 ? "" : "s"}
+              </span>
             </div>
           </div>
-          <span className="shrink-0 text-sm text-muted-foreground">{expanded ? "Hide" : "View"}</span>
-        </button>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+              Ended · {formatDuration(transcript.started_at_ms, transcript.ended_at_ms)}
+            </div>
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-foreground/5"
+            >
+              {expanded ? "Hide Transcript" : "View Transcript"}
+            </button>
+          </div>
+        </div>
       </CardHeader>
 
       {expanded && (

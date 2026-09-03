@@ -59,7 +59,17 @@ export function Nav() {
               Download
             </LiquidButton>
             {signedUp ? (
-              <AccountMenu />
+              <>
+                <LiquidButton
+                  size="sm"
+                  variant="outline"
+                  onClick={() => router.push("/dashboard")}
+                  className="hidden sm:inline-flex"
+                >
+                  Dashboard
+                </LiquidButton>
+                <AccountMenu />
+              </>
             ) : (
               <>
                 <LiquidButton
