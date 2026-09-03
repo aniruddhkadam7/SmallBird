@@ -63,6 +63,16 @@ export function AccountMenu() {
             type="button"
             onClick={() => {
               setOpen(false)
+              router.push("/interviews")
+            }}
+            className="w-full rounded-md px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-foreground/5"
+          >
+            My Interviews
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false)
               router.push("/download")
             }}
             className="w-full rounded-md px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-foreground/5"
