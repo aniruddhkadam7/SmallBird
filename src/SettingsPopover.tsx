@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { PerformancePanel } from "./PerformancePanel";
 import { PersonalizationPanel } from "./PersonalizationPanel";
 import { AttachedDocumentsPanel } from "./AttachedDocumentsPanel";
@@ -33,6 +34,13 @@ interface Props {
 /// now that the app requires login rather than a locally-stored key.
 export function SettingsPopover({ onClose, historyRefreshKey }: Props) {
   const [section, setSection] = useState<SettingsSection>("SESSIONS");
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    getVersion()
+      .then(setAppVersion)
+      .catch(() => {});
+  }, []);
 
   return (
     <div className="popover-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -72,9 +80,15 @@ export function SettingsPopover({ onClose, historyRefreshKey }: Props) {
               </p>
             )}
             {section === "ABOUT" && (
-              <p className="setup-hint">
-                Smallbird — version 0.1.0
-              </p>
+              <>
+                <p className="setup-hint" style={{ margin: 0 }}>
+                  Smallbird — version {appVersion ?? "…"}
+                </p>
+                <p className="setup-hint" style={{ margin: "6px 0 0" }}>
+                  SmallBird™ is a trademark of Smallbird. © {new Date().getFullYear()} Smallbird. All rights
+                  reserved.
+                </p>
+              </>
             )}
           </div>
         </div>

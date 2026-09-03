@@ -358,7 +358,10 @@ function App() {
       <header className="compact-header">
         <div className="compact-header-brand">
           <img className="header-logo" src={smallbirdLogo} alt="Smallbird" />
-          <span className="header-product">SmallBird</span>
+          <span className="header-product">
+            SmallBird
+            <sup style={{ fontSize: "0.55em", fontWeight: 400, marginLeft: "1px" }}>™</sup>
+          </span>
           {/* The only visible sign an update is happening — everything else
               (Start, Ask AI once in a session, etc.) keeps working normally
               while this downloads/installs in the background. The app

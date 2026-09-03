@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { Button } from "./ui";
 import {
   getAuthSession,
@@ -63,6 +64,13 @@ export function Account({ onClose, onSessionChange }: { onClose: () => void; onS
   const [error, setError] = useState<string | null>(null);
   const [loggedInEmail, setLoggedInEmail] = useState<string | null>(null);
   const [entitlement, setEntitlement] = useState<EntitlementInfo | null>(null);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    getVersion()
+      .then(setAppVersion)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -216,17 +224,18 @@ export function Account({ onClose, onSessionChange }: { onClose: () => void; onS
 
           {step === "CODE" && (
             <>
-              <p className="setup-hint">Enter the 6-digit code we sent to {email}.</p>
+              <p className="setup-hint">Enter the 4-digit code we sent to {email}.</p>
               <div className="setup-identity-field" style={{ marginTop: "12px" }}>
                 <label className="setup-section-label">Code</label>
                 <input
                   className="setup-input"
                   type="text"
                   inputMode="numeric"
-                  aria-label="6-digit code"
-                  placeholder="123456"
+                  maxLength={4}
+                  aria-label="4-digit code"
+                  placeholder="1234"
                   value={code}
-                  onChange={(e) => setCode(e.target.value)}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
                   onKeyDown={(e) => e.key === "Enter" && handleVerify()}
                 />
                 <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
@@ -280,7 +289,10 @@ export function Account({ onClose, onSessionChange }: { onClose: () => void; onS
             </p>
           )}
 
-          <div className="popover-footer">
+          <div className="popover-footer" style={{ justifyContent: "space-between" }}>
+            {appVersion && (
+              <span style={{ color: "var(--text-faint)", fontSize: "0.72rem" }}>Smallbird v{appVersion}</span>
+            )}
             <Button variant="ghost" onClick={onClose}>
               Close
             </Button>
