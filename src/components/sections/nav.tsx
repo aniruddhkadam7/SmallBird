@@ -60,13 +60,8 @@ export function Nav() {
                 <LiquidButton size="sm" variant="outline" onClick={() => startFlow("free")}>
                   Log in
                 </LiquidButton>
-                <LiquidButton
-                  size="sm"
-                  onClick={() => {
-                    window.location.href = "/#pricing"
-                  }}
-                >
-                  Get Started
+                <LiquidButton size="sm" onClick={() => startFlow("free")}>
+                  Register
                 </LiquidButton>
               </>
             )}
