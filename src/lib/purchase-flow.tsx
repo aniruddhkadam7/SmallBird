@@ -192,6 +192,7 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
       const checkout = new window.Razorpay!({
         key: data.keyId,
         name: "Smallbird",
+        image: `${window.location.origin}/smallbird-logo.png`,
         description: PLAN_LABELS[plan],
         ...(isSubscription ? { subscription_id: data.subscriptionId } : { order_id: data.orderId, amount: data.amount, currency: data.currency }),
         prefill: email ? { email } : undefined,
