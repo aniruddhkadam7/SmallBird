@@ -162,44 +162,92 @@ function App() {
 
   const closePopover = useCallback(() => setOpenPopover(null), []);
 
-  const startInterview = useCallback(async () => {
-    const overlaySettings = loadOverlaySettings();
-    saveOverlaySettings({ ...overlaySettings, ...answerStyleToOverlayFields(overlaySettings.answerStyle) });
+  // Set only for the specific "you have an active session on another
+  // device" case — distinct from `error` because it's a resolvable choice
+  // (offer to end that session and continue here) rather than a dead end.
+  const [activeElsewhereMessage, setActiveElsewhereMessage] = useState<string | null>(null);
 
-    uploadDocumentContext(INTERVIEW_CONTEXT_SECTIONS, interviewContext);
+  const startInterview = useCallback(
+    async (force = false) => {
+      const overlaySettings = loadOverlaySettings();
+      saveOverlaySettings({ ...overlaySettings, ...answerStyleToOverlayFields(overlaySettings.answerStyle) });
 
-    // Mints the session's Deepgram key and starts the metered
-    // interview_sessions row server-side. Any rejection here (not logged
-    // in, no remaining minutes, a session already active elsewhere, or a
-    // network problem reaching the backend) genuinely blocks Start — there
-    // is no local fallback anymore. See start_backend_session's Rust-side
-    // doc (BackendSessionResult) for the full contract.
-    const sessionResult = await invoke<{ rejection: string | null }>("start_backend_session", {
-      sttMode: "local",
-    });
-    if (sessionResult.rejection) {
-      throw new Error(sessionResult.rejection);
-    }
+      uploadDocumentContext(INTERVIEW_CONTEXT_SECTIONS, interviewContext);
 
-    await invoke("start_system_audio_capture").catch((e) => {
-      if (String(e) !== "capture already running") throw e;
-    });
-    await invoke("clear_transcript").catch(() => {});
-    await invoke("show_interview_overlay");
-  }, [interviewContext]);
+      // Mints the session's Deepgram key and starts the metered
+      // interview_sessions row server-side. Any rejection here (not logged
+      // in, no remaining minutes, a network problem reaching the backend)
+      // genuinely blocks Start — there is no local fallback anymore. An
+      // active-session-elsewhere rejection is handled separately below
+      // rather than thrown, since it's resolvable (see
+      // activeElsewhereMessage). See start_backend_session's Rust-side doc
+      // (BackendSessionResult) for the full contract.
+      const sessionResult = await invoke<{ rejection: string | null; activeElsewhere: boolean }>(
+        "start_backend_session",
+        { sttMode: "local", force },
+      );
+      if (sessionResult.activeElsewhere) {
+        setActiveElsewhereMessage(sessionResult.rejection);
+        return false;
+      }
+      if (sessionResult.rejection) {
+        throw new Error(sessionResult.rejection);
+      }
+
+      await invoke("start_system_audio_capture").catch((e) => {
+        if (String(e) !== "capture already running") throw e;
+      });
+      await invoke("clear_transcript").catch(() => {});
+      await invoke("show_interview_overlay");
+      return true;
+    },
+    [interviewContext],
+  );
 
   const handleStart = useCallback(async () => {
     setError(null);
+    setActiveElsewhereMessage(null);
     setSessionState("STARTING");
     closePopover();
     try {
-      await startInterview();
-      setSessionState("LISTENING");
+      const started = await startInterview();
+      setSessionState(started ? "LISTENING" : "IDLE");
     } catch (e) {
       setError(String(e));
       setSessionState("IDLE");
     }
   }, [startInterview, closePopover]);
+
+  // "End other session & continue" from the activeElsewhereMessage banner.
+  const handleForceStart = useCallback(async () => {
+    setActiveElsewhereMessage(null);
+    setError(null);
+    setSessionState("STARTING");
+    try {
+      await startInterview(true);
+      setSessionState("LISTENING");
+    } catch (e) {
+      setError(String(e));
+      setSessionState("IDLE");
+    }
+  }, [startInterview]);
+
+  // The backend force-ended this device's session because the same account
+  // logged in and started a new one elsewhere (see start_backend_session's
+  // `force` option) — without this listener the local UI would just sit on
+  // "Listening" indefinitely while Deepgram itself eventually drops the now-
+  // revoked connection, with no explanation shown.
+  useEffect(() => {
+    const unlisten = listen<string>("stt:session-ended-elsewhere", (event) => {
+      setError(event.payload);
+      setSessionState("IDLE");
+      invoke("stop_audio_capture").catch(() => {});
+      invoke("hide_interview_overlay").catch(() => {});
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
 
   const handleStop = useCallback(async () => {
     try {
@@ -407,7 +455,19 @@ function App() {
         </div>
       </header>
 
-      {error && <p className="error compact-header-error">{error}</p>}
+      {activeElsewhereMessage ? (
+        <div className="error compact-header-error" style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          <span>{activeElsewhereMessage}</span>
+          <Button variant="danger" onClick={handleForceStart}>
+            End other session &amp; continue
+          </Button>
+          <Button variant="ghost" onClick={() => setActiveElsewhereMessage(null)}>
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        error && <p className="error compact-header-error">{error}</p>
+      )}
 
       {isMaximized && (
         <div className="expanded-content">

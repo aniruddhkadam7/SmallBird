@@ -282,18 +282,28 @@ fn trim_history(turns: Vec<PriorTurn>) -> Vec<ConversationTurn> {
 /// unreachable) is a real rejection the frontend must surface and use to
 /// stop Start.
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BackendSessionResult {
     /// A user-presentable message explaining why the session couldn't start.
     pub rejection: Option<String>,
+    /// True when `rejection` is specifically "you have an active session on
+    /// another device" — a resolvable choice, not a dead end. The frontend
+    /// should offer to retry with `force: true` (which ends that other
+    /// session) rather than just showing this as a plain error.
+    pub active_elsewhere: bool,
 }
 
 impl BackendSessionResult {
     fn ok() -> Self {
-        Self { rejection: None }
+        Self { rejection: None, active_elsewhere: false }
     }
 
     fn rejected(message: String) -> Self {
-        Self { rejection: Some(message) }
+        Self { rejection: Some(message), active_elsewhere: false }
+    }
+
+    fn active_elsewhere(message: String) -> Self {
+        Self { rejection: Some(message), active_elsewhere: true }
     }
 }
 
@@ -305,21 +315,31 @@ impl BackendSessionResult {
 /// reaching the backend — is surfaced as a `rejection`, since (unlike the
 /// old BYOK build) there is no local fallback: the Deepgram key used by
 /// `start_capture_inner` comes from this call, not a stored user key.
+///
+/// `force`: when the previous attempt came back with `active_elsewhere` and
+/// the user confirmed they want to continue anyway, the frontend calls this
+/// again with `force: true` — that other session gets ended server-side
+/// (see stt-token's `force` option) and this one takes its place. The
+/// device that lost its session finds out via its own heartbeat call (see
+/// `run_heartbeat_loop`'s "stt:session-ended-elsewhere" event).
 #[tauri::command]
 pub async fn start_backend_session(
+    app: AppHandle,
     state: State<'_, AppState>,
     _stt_mode: String,
+    force: Option<bool>,
 ) -> Result<BackendSessionResult, String> {
     let access_token = match crate::auth::current_access_token(&state).await {
         Ok(token) => token,
         Err(err) => return Ok(BackendSessionResult::rejected(err)),
     };
 
-    match crate::stt::backend_token::mint(&access_token).await {
+    match crate::stt::backend_token::mint(&access_token, force.unwrap_or(false)).await {
         Ok(minted) => {
             let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
             let heartbeat_session_id = minted.session_id.clone();
             tauri::async_runtime::spawn(crate::stt::backend_token::run_heartbeat_loop(
+                app,
                 access_token,
                 heartbeat_session_id,
                 cancel_rx,
@@ -334,7 +354,8 @@ pub async fn start_backend_session(
             });
             Ok(BackendSessionResult::ok())
         }
-        Err(message) => Ok(BackendSessionResult::rejected(message)),
+        Err(err) if err.is_active_elsewhere() => Ok(BackendSessionResult::active_elsewhere(err.message)),
+        Err(err) => Ok(BackendSessionResult::rejected(err.message)),
     }
 }
 

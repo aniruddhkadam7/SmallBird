@@ -3,6 +3,12 @@
 // through our server). The session row is what the DB's unique partial
 // index (interview_sessions_one_active_per_user) uses to block a second
 // concurrent session for the same user.
+//
+// Request body: { force?: boolean } — when true and an active session
+// already exists for this user, that session is marked "terminated" and a
+// new one starts in its place, instead of failing with 409. The device that
+// held the old session finds out via session-heartbeat (see that function's
+// doc comment) rather than being left silently hanging.
 
 import { entitlementErrorResponse, requireEntitlement } from "../_shared/entitlement.ts";
 
@@ -15,6 +21,7 @@ Deno.serve(async (req) => {
 
   try {
     const entitlement = await requireEntitlement(req);
+    const { force } = await req.json().catch(() => ({ force: false }));
 
     if (entitlement.remainingMinutes <= 0) {
       return new Response(
@@ -28,28 +35,48 @@ Deno.serve(async (req) => {
       MAX_SESSION_SECONDS,
     );
 
-    const { data: session, error: sessionErr } = await entitlement.admin
-      .from("interview_sessions")
-      .insert({
-        user_id: entitlement.userId,
-        plan_id: entitlement.planId,
-        authorized_max_duration_seconds: authorizedSeconds,
-        stt_mode: "cloud",
-        cloud_stt_provider: "deepgram",
-        status: "active",
-      })
-      .select("id")
-      .single();
+    const insertSession = () =>
+      entitlement.admin
+        .from("interview_sessions")
+        .insert({
+          user_id: entitlement.userId,
+          plan_id: entitlement.planId,
+          authorized_max_duration_seconds: authorizedSeconds,
+          stt_mode: "cloud",
+          cloud_stt_provider: "deepgram",
+          status: "active",
+        })
+        .select("id")
+        .single();
 
-    if (sessionErr) {
-      // Unique violation on interview_sessions_one_active_per_user
-      if (sessionErr.code === "23505") {
+    let { data: session, error: sessionErr } = await insertSession();
+
+    if (sessionErr?.code === "23505") {
+      // Unique violation on interview_sessions_one_active_per_user.
+      if (!force) {
         return new Response(
-          JSON.stringify({ error: "You already have an active session. End it before starting another." }),
+          JSON.stringify({
+            error: "You already have an active session on another device.",
+            code: "ACTIVE_SESSION_ELSEWHERE",
+          }),
           { status: 409, headers: { "content-type": "application/json" } },
         );
       }
-      throw sessionErr;
+
+      // Force: end the other session, then retry the insert now that the
+      // unique slot is free. The other device's next heartbeat call will
+      // see its row is no longer "active" and surface this to that user.
+      await entitlement.admin
+        .from("interview_sessions")
+        .update({ status: "terminated", termination_reason: "force_ended_by_new_login", ended_at: new Date().toISOString() })
+        .eq("user_id", entitlement.userId)
+        .eq("status", "active");
+
+      ({ data: session, error: sessionErr } = await insertSession());
+    }
+
+    if (sessionErr || !session) {
+      throw sessionErr ?? new Error("Failed to create interview session");
     }
 
     const projectId = Deno.env.get("DEEPGRAM_PROJECT_ID")!;
