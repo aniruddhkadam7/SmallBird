@@ -903,3 +903,15 @@ pub async fn delete_document(state: State<'_, AppState>, document_id: String) ->
     let client = RagClient::new();
     client.delete_document(&document_id).await
 }
+
+/// Terminates the whole process, not just the calling window. The Interview
+/// Mode overlay window is built once and only ever hidden/shown after that
+/// (see `overlay_window.rs`) — it's never destroyed — so once a session has
+/// opened it at least once, a plain `mainWindow.destroy()` from the title
+/// bar's close button leaves that hidden, `skip_taskbar` window alive and
+/// the process running invisibly in the background instead of actually
+/// quitting. `app.exit(0)` tears down every window unconditionally.
+#[tauri::command]
+pub fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}

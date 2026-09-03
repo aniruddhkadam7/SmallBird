@@ -11,7 +11,7 @@ use std::time::Duration;
 use futures_util::StreamExt;
 
 use crate::personal::prompts::ChatMessage;
-use super::{llm_proxy_url, REQUEST_TIMEOUT_SECS};
+use super::{llm_proxy_url, shared_client, REQUEST_TIMEOUT_SECS};
 
 fn build_request_body(model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32, stream: bool) -> serde_json::Value {
     serde_json::json!({
@@ -24,7 +24,7 @@ fn build_request_body(model: &str, messages: &[ChatMessage], temperature: f32, m
 }
 
 pub async fn generate(access_token: &str, model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32) -> Result<String, String> {
-    let client = reqwest::Client::new();
+    let client = shared_client();
     let payload = build_request_body(model, messages, temperature, max_tokens, false);
 
     let response = client
@@ -57,7 +57,7 @@ pub async fn stream<F>(access_token: &str, model: &str, messages: &[ChatMessage]
 where
     F: FnMut(&str),
 {
-    let client = reqwest::Client::new();
+    let client = shared_client();
     let payload = build_request_body(model, messages, temperature, max_tokens, true);
 
     let response = client

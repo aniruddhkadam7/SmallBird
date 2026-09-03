@@ -30,8 +30,11 @@
   --border: #e3e5e9;
   --border-strong: #d3d6dc;
   --text: #17181c;
-  --text-muted: #6b7280;
-  --text-faint: #9aa0a9;
+  /* Darkened from the original #6b7280/#9aa0a9 — at the small sizes used for
+     secondary text (timestamps, previews, nav labels) those read as barely
+     visible rather than intentionally muted. */
+  --text-muted: #4b5563;
+  --text-faint: #6b7280;
   --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow-md: 0 4px 14px rgba(16, 24, 40, 0.08);
   --radius-sm: 6px;
@@ -376,36 +379,33 @@ body.compact-transparent {
   flex-shrink: 0;
 }
 
-/* .btn.primary's (Start's) exact recipe, line for line — same color-mix
-   lightened-top-stop technique, same 3-stop 0%/55%/100% gradient shape,
-   same two-layer inset shadow (top highlight + bottom lowlight) plus
-   ambient drop shadow, same border-color-matches-darkest-stop pattern —
-   just with white/--border-strong standing in for --accent/--accent-hover
-   so these read as genuinely white/silver rather than Start's blue,
-   while still having the same visible depth Start has (the earlier
-   #ffffff/--surface/--surface-alt version was too close to a flat white
-   to read as a gradient at all). */
+/* Frosted-glass toolbar pills — same recipe as the shared .btn base further
+   down this file (see the comment there), so the header toolbar and every
+   other button in the app read as one consistent glass theme. */
 .compact-header-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
   padding: 0.48rem 0.85rem;
   border-radius: 999px;
-  border: 1px solid var(--border-strong);
-  background: linear-gradient(180deg, #ffffff 0%, #ffffff 55%, var(--border-strong) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.45) 55%, rgba(211, 214, 220, 0.55) 100%);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
   color: var(--text);
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  box-shadow: 0 2px 6px rgba(16, 24, 40, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 1px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(16, 24, 40, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 1px rgba(0, 0, 0, 0.05);
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, transform 0.1s ease;
 }
 
 .compact-header-btn:hover {
-  background: linear-gradient(180deg, #ffffff 0%, var(--surface-alt) 55%, var(--border-strong) 100%);
-  border-color: var(--text-faint);
-  box-shadow: 0 3px 10px rgba(16, 24, 40, 0.22), inset 0 1px 0 rgba(255, 255, 255, 1), inset 0 -1px 1px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.6) 55%, rgba(211, 214, 220, 0.65) 100%);
+  border-color: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.18), inset 0 1px 0 rgba(255, 255, 255, 1), inset 0 -1px 1px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
 }
 
 .compact-header-btn:active {
@@ -1984,23 +1984,34 @@ body.compact-transparent {
 
 /* ---------- Buttons ---------- */
 
+/* Every button in the app — one frosted-glass pill recipe matching the
+   website's button theme: rounded-full shape, a translucent layered fill,
+   backdrop blur+saturate so it reads as glass rather than flat, and a
+   bright inset top edge simulating light on curved glass. Variants below
+   (.primary/.danger) just retint this same recipe; .secondary is this base
+   as-is. */
 .btn {
-  border-radius: var(--radius-md);
-  border: 1px solid transparent;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
   padding: 0.62em 1.3em;
   font-size: 0.88em;
   font-weight: 600;
   font-family: inherit;
   letter-spacing: 0.01em;
   cursor: pointer;
-  transition: border-color 0.15s, background-color 0.15s, background 0.15s, box-shadow 0.15s, transform 0.05s, opacity 0.15s, filter 0.15s;
-  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s, background-color 0.15s, background 0.15s, box-shadow 0.15s, transform 0.1s, opacity 0.15s, filter 0.15s;
   color: var(--text);
-  background-color: var(--surface);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.45) 55%, rgba(211, 214, 220, 0.55) 100%);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  box-shadow: 0 2px 8px rgba(16, 24, 40, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 1px rgba(0, 0, 0, 0.05);
 }
 
 .btn:hover:not(:disabled) {
-  filter: brightness(1.02);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.6) 55%, rgba(211, 214, 220, 0.65) 100%);
+  border-color: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.18), inset 0 1px 0 rgba(255, 255, 255, 1), inset 0 -1px 1px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
 }
 
 .btn:active {
@@ -2048,46 +2059,63 @@ body.compact-transparent {
 
 .btn.primary {
   color: #ffffff;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 100%, #fff 12%) 0%, var(--accent) 55%, var(--accent-hover) 100%);
-  border-color: var(--accent-hover);
-  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -1px 1px rgba(0, 0, 0, 0.08);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 78%, transparent) 0%,
+    color-mix(in srgb, var(--accent) 88%, transparent) 55%,
+    color-mix(in srgb, var(--accent-hover) 92%, transparent) 100%
+  );
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -1px 1px rgba(0, 0, 0, 0.08);
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-hover) 100%, #fff 12%) 0%, var(--accent-hover) 55%, var(--accent-hover) 100%);
-  border-color: var(--accent-hover);
-  box-shadow: 0 3px 10px rgba(59, 130, 246, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 1px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-hover) 82%, transparent) 0%,
+    color-mix(in srgb, var(--accent-hover) 92%, transparent) 55%,
+    color-mix(in srgb, var(--accent-hover) 96%, transparent) 100%
+  );
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 1px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
 }
 
 .btn.danger {
   color: #ffffff;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--danger) 100%, #fff 12%) 0%, var(--danger) 55%, var(--danger-hover) 100%);
-  border-color: var(--danger-hover);
-  box-shadow: 0 2px 6px rgba(229, 72, 77, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -1px 1px rgba(0, 0, 0, 0.08);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--danger) 78%, transparent) 0%,
+    color-mix(in srgb, var(--danger) 88%, transparent) 55%,
+    color-mix(in srgb, var(--danger-hover) 92%, transparent) 100%
+  );
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 2px 8px rgba(229, 72, 77, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -1px 1px rgba(0, 0, 0, 0.08);
 }
 
 .btn.danger:hover:not(:disabled) {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--danger-hover) 100%, #fff 12%) 0%, var(--danger-hover) 55%, var(--danger-hover) 100%);
-  border-color: var(--danger-hover);
-  box-shadow: 0 3px 10px rgba(229, 72, 77, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 1px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--danger-hover) 82%, transparent) 0%,
+    color-mix(in srgb, var(--danger-hover) 92%, transparent) 55%,
+    color-mix(in srgb, var(--danger-hover) 96%, transparent) 100%
+  );
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 4px 14px rgba(229, 72, 77, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 1px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
 }
 
-.btn.secondary {
-  color: var(--text);
-  background: linear-gradient(180deg, #ffffff 0%, var(--surface) 55%, var(--surface-alt) 100%);
-  border-color: var(--border-strong);
-  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.6);
-}
-
-.btn.secondary:hover:not(:disabled) {
-  background: linear-gradient(180deg, #ffffff 0%, var(--surface-alt) 55%, var(--surface-alt) 100%);
-  border-color: var(--text-faint);
-  box-shadow: 0 2px 6px rgba(16, 24, 40, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.7);
-}
+/* .secondary is the base .btn glass recipe as-is — no override needed. */
 
 .btn.ghost {
   color: var(--text-muted);
   background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border-color: transparent;
   box-shadow: none;
 }

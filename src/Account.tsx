@@ -243,17 +243,19 @@ export function Account({ onClose, onSessionChange }: { onClose: () => void; onS
 
           {step === "LOGGED_IN" && (
             <>
-              <p className="setup-hint">Logged in as {loggedInEmail}.</p>
+              <p style={{ margin: 0, color: "var(--text)", fontSize: "0.85rem" }}>
+                Logged in as <strong>{loggedInEmail}</strong>.
+              </p>
               <div className="setup-identity-field" style={{ marginTop: "12px" }}>
                 <label className="setup-section-label">Plan</label>
                 {entitlement ? (
                   <>
-                    <p className="setup-hint" style={{ margin: 0 }}>
+                    <p style={{ margin: 0, color: "var(--text)", fontSize: "0.85rem" }}>
                       {PLAN_LABELS[entitlement.planId] ?? entitlement.planId} —{" "}
                       <strong>{formatMinutes(entitlement.remainingMinutes)} remaining</strong>
                     </p>
                     {entitlement.interviewPassCount > 0 && (
-                      <p className="setup-hint" style={{ margin: 0 }}>
+                      <p style={{ margin: 0, color: "var(--text)", fontSize: "0.85rem" }}>
                         {entitlement.interviewPassCount} Interview Pass{entitlement.interviewPassCount === 1 ? "" : "es"} purchased
                       </p>
                     )}

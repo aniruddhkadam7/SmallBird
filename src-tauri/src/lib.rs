@@ -133,6 +133,7 @@ pub fn run() {
             commands::get_document_text,
             commands::list_documents,
             commands::delete_document,
+            commands::quit_app,
             interview_mode::commands::show_interview_overlay,
             interview_mode::commands::hide_interview_overlay,
             interview_mode::commands::toggle_interview_overlay,

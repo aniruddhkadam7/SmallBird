@@ -113,6 +113,14 @@ function App() {
   // call even when no session is active — see end_backend_session's Rust
   // doc) before actually closing. A true crash/force-kill still can't run
   // this; that's what the backend's stale-session sweep is for.
+  //
+  // Ends with quit_app (Rust-side app.exit(0)) rather than
+  // appWindow.destroy(): once Interview Mode's overlay window has been
+  // opened at least once this session, it's only ever hidden afterward,
+  // never destroyed (see overlay_window.rs) — destroying just the main
+  // window left that hidden, skip_taskbar window alive and the whole
+  // process running invisibly in the background instead of actually
+  // quitting, which read as "the close button doesn't do anything."
   useEffect(() => {
     const appWindow = getCurrentWindow();
     const unlistenPromise = appWindow.onCloseRequested(async (event) => {
@@ -122,7 +130,7 @@ function App() {
       } catch {
         // Best-effort — never block the app from closing over this.
       } finally {
-        await appWindow.destroy();
+        await invoke("quit_app");
       }
     });
     return () => {

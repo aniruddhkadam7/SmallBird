@@ -9,7 +9,7 @@ use std::time::Duration;
 use futures_util::StreamExt;
 
 use crate::personal::prompts::ChatMessage;
-use super::{llm_proxy_url, REQUEST_TIMEOUT_SECS};
+use super::{llm_proxy_url, shared_client, REQUEST_TIMEOUT_SECS};
 
 /// `settings.llm_model`/`settings.ask_model` default to an OpenAI model
 /// string in the reference backend — if the configured model string isn't a
@@ -39,7 +39,7 @@ fn split_system(messages: &[ChatMessage]) -> (Option<String>, Vec<serde_json::Va
 }
 
 pub async fn generate(access_token: &str, model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32) -> Result<String, String> {
-    let client = reqwest::Client::new();
+    let client = shared_client();
     let (system, turns) = split_system(messages);
     let mut payload = serde_json::json!({
         "model": resolve_model(model),
@@ -80,7 +80,7 @@ pub async fn stream<F>(access_token: &str, model: &str, messages: &[ChatMessage]
 where
     F: FnMut(&str),
 {
-    let client = reqwest::Client::new();
+    let client = shared_client();
     let (system, turns) = split_system(messages);
     let mut payload = serde_json::json!({
         "model": resolve_model(model),
