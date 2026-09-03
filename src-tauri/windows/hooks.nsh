@@ -18,12 +18,18 @@
 ; taskkill's exit code is deliberately ignored (nothing to do differently
 ; whether or not each process was actually running) — this only ever needs
 ; to be best-effort cleanup before extraction, never a hard failure gate.
+;
+; nsExec::ExecToLog runs the command the same way ExecWait does, but through
+; NSIS's bundled helper plugin, which hides the child console window instead
+; of letting it flash on screen — taskkill.exe is a console-subsystem
+; program, so a plain ExecWait briefly pops a visible terminal every install/
+; uninstall/reinstall.
 !macro NSIS_HOOK_PREINSTALL
-  ExecWait 'taskkill /F /IM "desktop.exe" /T'
-  ExecWait 'taskkill /F /IM "rag-lite.exe" /T'
+  nsExec::ExecToLog 'taskkill /F /IM "desktop.exe" /T'
+  nsExec::ExecToLog 'taskkill /F /IM "rag-lite.exe" /T'
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
-  ExecWait 'taskkill /F /IM "desktop.exe" /T'
-  ExecWait 'taskkill /F /IM "rag-lite.exe" /T'
+  nsExec::ExecToLog 'taskkill /F /IM "desktop.exe" /T'
+  nsExec::ExecToLog 'taskkill /F /IM "rag-lite.exe" /T'
 !macroend
