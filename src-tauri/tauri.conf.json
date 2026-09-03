@@ -54,7 +54,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE5QkQ0QjBBOURFQzk3QTIKUldTaWwreWRDa3U5R1hVZlROK1ZQTUp5WkoyL2xlTEVieTM2MnFtL21XMmJpWWpId3pvQktrQkMK",
       "endpoints": [
-        "https://github.com/aniruddhkadam7/SmallBird/releases/latest/download/latest.json"
+        "https://github.com/aniruddhkadam7/SmallBird-releases/releases/latest/download/latest.json"
       ]
     }
   }
