@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { useMemo, useState } from "react"
+import { Briefcase, LayoutGrid, List, MessageSquareText, Search, X } from "lucide-react"
+import { LiquidButton } from "@/components/ui/liquid-glass-button"
 
 interface Turn {
   question: string
@@ -17,14 +18,8 @@ interface Transcript {
   turns: Turn[]
 }
 
-function formatWhen(ms: number) {
-  return new Date(ms).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  })
+function formatDate(ms: number) {
+  return new Date(ms).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()
 }
 
 function formatDuration(startedMs: number, endedMs: number) {
@@ -35,44 +30,28 @@ function formatDuration(startedMs: number, endedMs: number) {
   return `${minutes}m ${seconds}s`
 }
 
-function InterviewCard({ transcript }: { transcript: Transcript }) {
-  const [expanded, setExpanded] = useState(false)
+function TranscriptModal({ transcript, onClose }: { transcript: Transcript; onClose: () => void }) {
   const title = [transcript.role, transcript.company].filter(Boolean).join(" · ") || "Interview"
-
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex w-full items-center justify-between gap-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-card">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div>
-            <div className="text-xs text-muted-foreground">{formatWhen(transcript.started_at_ms)}</div>
-            <div className="mt-1 font-semibold text-foreground">{title}</div>
-            <div className="mt-2 flex items-center gap-1.5">
-              <span className="rounded-full bg-foreground/5 px-2 py-0.5 text-xs font-medium text-foreground">
-                Interview
-              </span>
-              <span className="rounded-full bg-foreground/5 px-2 py-0.5 text-xs font-medium text-foreground">
-                {transcript.turns.length} question{transcript.turns.length === 1 ? "" : "s"}
-              </span>
-            </div>
+            <div className="font-semibold text-foreground">{title}</div>
+            <div className="text-xs text-muted-foreground">{formatDate(transcript.started_at_ms)}</div>
           </div>
-          <div className="flex shrink-0 flex-col items-end gap-2">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
-              Ended · {formatDuration(transcript.started_at_ms, transcript.ended_at_ms)}
-            </div>
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-foreground/5"
-            >
-              {expanded ? "Hide Transcript" : "View Transcript"}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
-      </CardHeader>
-
-      {expanded && (
-        <CardContent className="flex flex-col gap-5 px-6">
+        <div className="flex flex-col gap-5 overflow-y-auto px-5 py-5">
           {transcript.turns.map((turn, i) => (
             <div key={i} className="flex flex-col gap-2 border-t border-border pt-4 first:border-t-0 first:pt-0">
               <div>
@@ -85,26 +64,138 @@ function InterviewCard({ transcript }: { transcript: Transcript }) {
               </div>
             </div>
           ))}
-        </CardContent>
-      )}
-    </Card>
+        </div>
+      </div>
+    </div>
   )
 }
 
-export function InterviewsList({ transcripts }: { transcripts: Transcript[] }) {
-  if (transcripts.length === 0) {
-    return (
-      <p className="mt-12 text-center text-sm text-muted-foreground">
-        No interviews yet. Once you complete a session in the desktop app while signed in, it'll show up here.
-      </p>
-    )
-  }
+function InterviewCard({ transcript, onView }: { transcript: Transcript; onView: () => void }) {
+  const title = [transcript.role, transcript.company].filter(Boolean).join(" · ") || "Interview"
 
   return (
-    <div className="mt-10 flex flex-col gap-4">
-      {transcripts.map((t) => (
-        <InterviewCard key={t.id} transcript={t} />
-      ))}
+    <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+      <div className="text-xs text-muted-foreground">{formatDate(transcript.started_at_ms)}</div>
+      <div className="font-semibold text-foreground">{title}</div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="flex items-center gap-1 rounded-full bg-foreground/10 px-2 py-1 text-xs font-medium text-foreground">
+          <Briefcase className="h-3 w-3" />
+          Interview
+        </span>
+        <span className="flex items-center gap-1 rounded-full bg-foreground/10 px-2 py-1 text-xs font-medium text-foreground">
+          <MessageSquareText className="h-3 w-3" />
+          {transcript.turns.length} question{transcript.turns.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <div className="mt-1 flex items-center justify-between gap-3 border-t border-border pt-3">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
+          Ended · {formatDuration(transcript.started_at_ms, transcript.ended_at_ms)}
+        </div>
+        <button
+          type="button"
+          onClick={onView}
+          className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-foreground/10"
+        >
+          View Transcript
+        </button>
+      </div>
+    </div>
+  )
+}
+
+type Tab = "all" | "active" | "ended"
+
+export function InterviewsList({ transcripts }: { transcripts: Transcript[] }) {
+  const [tab, setTab] = useState<Tab>("all")
+  const [query, setQuery] = useState("")
+  const [view, setView] = useState<"grid" | "list">("grid")
+  const [viewing, setViewing] = useState<Transcript | null>(null)
+
+  const filtered = useMemo(() => {
+    if (tab === "active") return []
+    const q = query.trim().toLowerCase()
+    if (!q) return transcripts
+    return transcripts.filter((t) => `${t.role ?? ""} ${t.company ?? ""}`.toLowerCase().includes(q))
+  }, [transcripts, tab, query])
+
+  return (
+    <div className="mx-auto max-w-5xl px-8 py-10">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Interviews</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Prepare for interviews and review past sessions.</p>
+        </div>
+        <LiquidButton size="sm" onClick={() => (window.location.href = "/download")}>
+          Open Desktop App
+        </LiquidButton>
+      </div>
+
+      <div className="mt-8 flex items-center justify-between border-b border-border">
+        <div className="flex gap-6">
+          {(["all", "active", "ended"] as Tab[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={`border-b-2 pb-3 text-sm font-medium capitalize transition-colors ${
+                tab === t ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <div className="pb-3 text-xs text-muted-foreground">
+          {filtered.length} Session{filtered.length === 1 ? "" : "s"}
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by role or company"
+            className="w-full rounded-md border border-border bg-card py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+          />
+        </div>
+        <div className="flex rounded-md border border-border">
+          <button
+            type="button"
+            onClick={() => setView("grid")}
+            aria-label="Grid view"
+            className={`p-2 ${view === "grid" ? "bg-foreground/10 text-foreground" : "text-muted-foreground"}`}
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("list")}
+            aria-label="List view"
+            className={`border-l border-border p-2 ${view === "list" ? "bg-foreground/10 text-foreground" : "text-muted-foreground"}`}
+          >
+            <List className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="mt-16 text-center text-sm text-muted-foreground">
+          {tab === "active"
+            ? "Nothing in progress — interviews only appear here once completed in the desktop app."
+            : "No interviews yet. Once you complete a session in the desktop app while signed in, it'll show up here."}
+        </p>
+      ) : (
+        <div className={`mt-6 grid gap-4 ${view === "grid" ? "sm:grid-cols-2" : "grid-cols-1"}`}>
+          {filtered.map((t) => (
+            <InterviewCard key={t.id} transcript={t} onView={() => setViewing(t)} />
+          ))}
+        </div>
+      )}
+
+      {viewing && <TranscriptModal transcript={viewing} onClose={() => setViewing(null)} />}
     </div>
   )
 }
