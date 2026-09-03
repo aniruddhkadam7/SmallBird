@@ -2,8 +2,6 @@ import Link from "next/link"
 import { ArrowLeft, Download } from "lucide-react"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
-import { createClient } from "@/lib/supabase/server"
-import { DownloadGateButton } from "./download-gate-button"
 
 // Real platform marks (Microsoft's four-pane flag, Apple's silhouette)
 // rather than generic lucide stand-ins (a plain monitor outline read as
@@ -36,17 +34,14 @@ function AppleLogo() {
 // anyone without repo access, so a public download link can't point there.
 const WINDOWS_INSTALLER_URL = "https://github.com/aniruddhkadam7/SmallBird-releases/releases/latest/download/Smallbird-Setup.exe"
 
-// Server Component: the actual gating decision happens here, from the
-// user's real session (via cookies), not from client-only React state that
-// would reset on refresh — every signed-in account has at least the free
-// plan's entitlement (granted automatically on signup), so "logged in" is
-// the real download gate; which plan they're on only affects in-app usage.
-export default async function DownloadPage() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
+// The download itself is free and ungated — no login required. The app
+// still requires signing in for any AI feature (Interview Mode, Notes),
+// enforced server-side on the desktop app's own session start, so gating
+// the download too was pure friction with no real security purpose: every
+// account gets the free plan's entitlement automatically anyway, so
+// "logged in" was never actually a paywall, just an extra step before
+// someone could even try the app.
+export default function DownloadPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-16 sm:py-24">
       <Link
@@ -59,9 +54,7 @@ export default async function DownloadPage() {
 
       <div className="mt-10 text-center">
         <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Download Smallbird</h1>
-        <p className="mt-4 text-muted-foreground">
-          {user ? "Pick your platform below." : "Sign in for free, then download and install the desktop app."}
-        </p>
+        <p className="mt-4 text-muted-foreground">Free to download. Pick your platform below.</p>
       </div>
 
       <div className="mt-12 grid gap-6 sm:grid-cols-2">
@@ -75,16 +68,12 @@ export default async function DownloadPage() {
           </CardHeader>
           <CardContent />
           <CardFooter>
-            {user ? (
-              <LiquidButton className="w-full" asChild>
-                <a href={WINDOWS_INSTALLER_URL}>
-                  <Download className="h-4 w-4" />
-                  Download for Windows
-                </a>
-              </LiquidButton>
-            ) : (
-              <DownloadGateButton />
-            )}
+            <LiquidButton className="w-full" asChild>
+              <a href={WINDOWS_INSTALLER_URL}>
+                <Download className="h-4 w-4" />
+                Free Download
+              </a>
+            </LiquidButton>
           </CardFooter>
         </Card>
 
@@ -107,7 +96,7 @@ export default async function DownloadPage() {
       </div>
 
       <p className="mt-10 text-center text-xs text-muted-foreground">
-        After installing, sign in with the email you signed up with to start your first session.
+        After installing, sign in (or create a free account) to start your first session.
       </p>
     </div>
   )
