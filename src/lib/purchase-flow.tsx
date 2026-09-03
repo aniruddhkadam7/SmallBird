@@ -151,7 +151,14 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
       const supabase = createClient()
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${window.location.origin}/auth/callback` },
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          // Without this, Google silently reuses whichever account is
+          // already signed into the device's browser instead of showing
+          // the account picker - most noticeable on mobile, where a
+          // browser usually only has one Google session active anyway.
+          queryParams: { prompt: "select_account" },
+        },
       })
       if (oauthError) throw oauthError
       // On success the browser navigates away immediately; busy/error state
