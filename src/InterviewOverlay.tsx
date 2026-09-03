@@ -118,6 +118,19 @@ export function InterviewOverlay() {
   // everything before the pause replaced by the few words after it. So finals
   // accumulate here and are only cleared by an explicit user action.
   const committedRef = useRef("");
+  // Id of the transcript segment currently mid-utterance (a partial has been
+  // seen but its final hasn't landed yet). STT finalizes a segment shortly
+  // after speech ends, which can race the user tapping Ask AI: the partial's
+  // text is already reflected in `question` (and thus in what gets sent),
+  // but the final for that same segment can still arrive afterward. Without
+  // tracking this, that late final would land in the freshly-cleared buffer
+  // and make the just-asked question reappear in the field.
+  const pendingPartialIdRef = useRef<string | null>(null);
+  // Segment id whose upcoming final_text should be dropped rather than
+  // appended, because it was already folded into a question that was just
+  // sent (see askAI). Cleared once that final arrives (or a new question
+  // starts).
+  const suppressFinalIdRef = useRef<string | null>(null);
   const sessionStartedAtRef = useRef(Date.now());
   // Mirrors `busy` for the event listeners, which close over stale state
   // otherwise. Answer deltas must keep landing regardless of re-renders.
@@ -202,10 +215,20 @@ export function InterviewOverlay() {
       // interviewer may already be asking the next question. They land in the
       // field, not in the answer that's still arriving.
       if (segment.final_text) {
+        if (suppressFinalIdRef.current === segment.id) {
+          // This final belongs to the utterance that was already sent as
+          // part of the previous question (via its partial text) — drop it
+          // instead of letting it repopulate the now-cleared field.
+          suppressFinalIdRef.current = null;
+          if (pendingPartialIdRef.current === segment.id) pendingPartialIdRef.current = null;
+          return;
+        }
+        if (pendingPartialIdRef.current === segment.id) pendingPartialIdRef.current = null;
         committedRef.current = joinSpeech(committedRef.current, segment.final_text);
         setQuestion(committedRef.current);
         armAutoAiTimer();
       } else if (segment.partial_text) {
+        pendingPartialIdRef.current = segment.id;
         setQuestion(joinSpeech(committedRef.current, segment.partial_text));
         // Still speaking — any timer counting down from an earlier final must
         // not fire mid-sentence.
@@ -322,6 +345,8 @@ export function InterviewOverlay() {
       setSettingsOpen(false);
       setMuted(false);
       committedRef.current = "";
+      pendingPartialIdRef.current = null;
+      suppressFinalIdRef.current = null;
       busyRef.current = false;
       sessionStartedAtRef.current = Date.now();
       setElapsedSeconds(0);
@@ -357,6 +382,11 @@ export function InterviewOverlay() {
     setTurns((prev) => [...prev, turn]);
     setQuestion("");
     committedRef.current = "";
+    // If the interviewer was still mid-utterance when Ask AI was pressed,
+    // its text already made it into `trimmed` via the live partial — the
+    // final that STT emits for that same segment a moment later must be
+    // dropped, not appended to the fresh buffer for the next question.
+    suppressFinalIdRef.current = pendingPartialIdRef.current;
     busyRef.current = true;
     setBusy(true);
 
@@ -438,6 +468,8 @@ export function InterviewOverlay() {
       autoAiTimerRef.current = null;
     }
     committedRef.current = "";
+    pendingPartialIdRef.current = null;
+    suppressFinalIdRef.current = null;
     sessionStartedAtRef.current = Date.now();
     setTurns([]);
     setQuestion("");
