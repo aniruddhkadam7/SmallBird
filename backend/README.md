@@ -22,6 +22,8 @@ backend/supabase/
     session-heartbeat/     -- client pings every ~30-90s to keep a session's last_heartbeat_at fresh
     usage-report/          -- client reports actual session duration when it ends
     razorpay-webhook/       -- keeps subscriptions + entitlements in sync with Razorpay
+    request-otp/            -- sends a 4-digit login code (replaces Supabase's fixed-length /auth/v1/otp)
+    verify-otp/              -- checks the code, mints a real Supabase session
     _shared/entitlement.ts -- auth + plan/balance check shared by the above
 ```
 
@@ -75,6 +77,7 @@ supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
 supabase secrets set DEEPGRAM_API_KEY=<a Deepgram key with project key-management scope>
 supabase secrets set DEEPGRAM_PROJECT_ID=<your Deepgram project id>
 supabase secrets set RAZORPAY_WEBHOOK_SECRET=<shown when you create the webhook in Razorpay's dashboard>
+supabase secrets set RESEND_API_KEY=<from resend.com/api-keys — must be able to send from smallbird.in>
 ```
 
 `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` are injected
@@ -90,6 +93,8 @@ supabase functions deploy stt-token
 supabase functions deploy session-heartbeat
 supabase functions deploy usage-report
 supabase functions deploy razorpay-webhook
+supabase functions deploy request-otp
+supabase functions deploy verify-otp
 ```
 
 ## Razorpay setup checklist

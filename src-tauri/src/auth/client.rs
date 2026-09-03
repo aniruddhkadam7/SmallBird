@@ -13,8 +13,8 @@ use super::session_store;
 /// client-safe identifiers (not secrets) — the same ones the website uses as
 /// NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY. Find them in the
 /// Supabase dashboard: Project Settings -> API.
-pub(super) const SUPABASE_URL: &str = "https://xubbwgrjvvsbfvxcuzav.supabase.co";
-pub(super) const SUPABASE_ANON_KEY: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh1YmJ3Z3JqdnZzYmZ2eGN1emF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4NzQ5NjAsImV4cCI6MjEwMjQ1MDk2MH0.ZBkDqETqfJFcrmx68wQCqE2RsfvDwyy_k7uJvlY3vJo";
+pub(crate) const SUPABASE_URL: &str = "https://xubbwgrjvvsbfvxcuzav.supabase.co";
+pub(crate) const SUPABASE_ANON_KEY: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh1YmJ3Z3JqdnZzYmZ2eGN1emF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4NzQ5NjAsImV4cCI6MjEwMjQ1MDk2MH0.ZBkDqETqfJFcrmx68wQCqE2RsfvDwyy_k7uJvlY3vJo";
 
 const REQUEST_TIMEOUT_SECS: u64 = 15;
 
@@ -54,19 +54,27 @@ pub(super) async fn parse_auth_error(response: reqwest::Response) -> String {
     let text = response.text().await.unwrap_or_default();
     let message = serde_json::from_str::<serde_json::Value>(&text)
         .ok()
-        .and_then(|v| v.get("msg").or_else(|| v.get("error_description")).and_then(|m| m.as_str()).map(str::to_string));
+        .and_then(|v| {
+            v.get("msg")
+                .or_else(|| v.get("error_description"))
+                .or_else(|| v.get("error"))
+                .and_then(|m| m.as_str())
+                .map(str::to_string)
+        });
     message.unwrap_or_else(|| format!("Supabase auth returned {status}"))
 }
 
-/// Sends a 6-digit one-time code to `email`. `create_user: true` lets a
-/// brand-new email address sign up the same way an existing one logs in —
-/// there is no separate "sign up" step.
+/// Sends a 4-digit one-time code to `email` via the `request-otp` Edge
+/// Function (backend/supabase/functions/request-otp). Supabase's built-in
+/// `/auth/v1/otp` is fixed at 6+ digits with no length setting, so this
+/// replaces it. A brand-new email address signs up the same way an
+/// existing one logs in — there is no separate "sign up" step.
 pub async fn request_otp(email: &str) -> Result<(), String> {
     let response = client()
-        .post(format!("{SUPABASE_URL}/auth/v1/otp"))
+        .post(format!("{SUPABASE_URL}/functions/v1/request-otp"))
         .header("apikey", SUPABASE_ANON_KEY)
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .json(&serde_json::json!({ "email": email, "create_user": true }))
+        .json(&serde_json::json!({ "email": email }))
         .send()
         .await
         .map_err(|e| format!("failed to reach Smallbird's auth service: {e}"))?;
@@ -77,12 +85,15 @@ pub async fn request_otp(email: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Verifies the 4-digit code via the `verify-otp` Edge Function
+/// (backend/supabase/functions/verify-otp), which mints a real Supabase
+/// session server-side once the code checks out.
 pub async fn verify_otp(email: &str, code: &str) -> Result<AuthSession, String> {
     let response = client()
-        .post(format!("{SUPABASE_URL}/auth/v1/verify"))
+        .post(format!("{SUPABASE_URL}/functions/v1/verify-otp"))
         .header("apikey", SUPABASE_ANON_KEY)
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .json(&serde_json::json!({ "email": email, "token": code, "type": "email" }))
+        .json(&serde_json::json!({ "email": email, "code": code }))
         .send()
         .await
         .map_err(|e| format!("failed to reach Smallbird's auth service: {e}"))?;
