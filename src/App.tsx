@@ -31,7 +31,6 @@ import { INTERVIEW_CONTEXT_SECTIONS } from "./headerPopups";
 import { loadLlmProvider, saveLlmProvider, type LlmProvider } from "./llmProviderSetting";
 import { getAuthSession, type AuthSessionInfo } from "./auth";
 import { checkForUpdate, installUpdate } from "./autoUpdate";
-import type { Update } from "@tauri-apps/plugin-updater";
 
 type SessionState = "IDLE" | "STARTING" | "LISTENING";
 type Popover = "MODEL" | "CONTEXT" | "SETTINGS" | "ACCOUNT" | null;
@@ -73,34 +72,38 @@ function App() {
     emptyDocumentContextState(INTERVIEW_CONTEXT_SECTIONS),
   );
 
-  const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
-  const [updateState, setUpdateState] = useState<"idle" | "installing">("idle");
+  // "updating" replaces the entire window with a small "Updating…" screen
+  // (see the early return in the JSX below) — no banner, no button, no
+  // installer window: found means installed, automatically. Tauri's
+  // updater runs the NSIS installer silently on Windows and this only ever
+  // needs to call relaunch() after, never showing that installer's own UI.
+  // "failed" is the one visible outcome: a real problem (corrupt download,
+  // disk full) falls through to the normal app rather than wedging the
+  // user on a screen with no way forward, since Ask AI etc. still work
+  // fine on the version already installed.
+  const [updateState, setUpdateState] = useState<"idle" | "updating" | "failed">("idle");
 
-  // Checked once per launch, in the background — never blocks startup on a
-  // slow/offline network. A found update sits in `pendingUpdate` until the
-  // user chooses to install (never silently auto-installed: that would
-  // restart the app — and interrupt anything in progress like an active
-  // interview — with no warning).
+  // Checked once per launch. A found update installs immediately with no
+  // confirmation step — see the state doc above for why this is safe to do
+  // silently rather than asking first.
   useEffect(() => {
     let cancelled = false;
-    checkForUpdate().then((update) => {
-      if (!cancelled && update) setPendingUpdate(update);
+    checkForUpdate().then(async (update) => {
+      if (cancelled || !update) return;
+      setUpdateState("updating");
+      try {
+        await installUpdate(update);
+      } catch (err) {
+        if (!cancelled) {
+          console.error("auto-update failed:", err);
+          setUpdateState("failed");
+        }
+      }
     });
     return () => {
       cancelled = true;
     };
   }, []);
-
-  const handleInstallUpdate = useCallback(async () => {
-    if (!pendingUpdate) return;
-    setUpdateState("installing");
-    try {
-      await installUpdate(pendingUpdate);
-    } catch (err) {
-      setError(`Update failed: ${err}`);
-      setUpdateState("idle");
-    }
-  }, [pendingUpdate]);
 
   // Every AI feature requires a signed-in session now (no BYOK fallback) —
   // check once at startup and, if nothing is signed in, open the Account
@@ -331,6 +334,33 @@ function App() {
     getCurrentWindow().close();
   }, []);
 
+  // Replaces the whole window the moment an update is found — nothing else
+  // renders underneath, and there's no click-through to the rest of the app
+  // while this is up. The app process itself gets replaced by relaunch()
+  // once installUpdate finishes, so this screen's only job is covering the
+  // few seconds that takes with something smaller/calmer than the full
+  // toolbar+chat UI suddenly vanishing mid-render.
+  if (updateState === "updating") {
+    return (
+      <main className="app-shell app-shell-compact">
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "12px",
+            padding: "2rem",
+            minHeight: "140px",
+          }}
+        >
+          <Spinner />
+          <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Updating Smallbird…</span>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className={`app-shell ${isMaximized ? "" : "app-shell-compact"}`}>
       <div className="title-bar" data-tauri-drag-region>
@@ -527,32 +557,6 @@ function App() {
           </div>
         </div>
       </header>
-
-      {pendingUpdate && (
-        <div
-          className="compact-header-error"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            flexWrap: "wrap",
-            padding: "0.5rem 0.8rem",
-            borderRadius: "var(--radius-sm)",
-            background: "var(--accent-soft)",
-            color: "var(--text)",
-          }}
-        >
-          <span>Smallbird {pendingUpdate.version} is available.</span>
-          <Button variant="primary" onClick={handleInstallUpdate} disabled={updateState === "installing"}>
-            {updateState === "installing" ? "Updating…" : "Restart & update"}
-          </Button>
-          {updateState !== "installing" && (
-            <Button variant="ghost" onClick={() => setPendingUpdate(null)}>
-              Later
-            </Button>
-          )}
-        </div>
-      )}
 
       {activeElsewhereMessage ? (
         <div className="error compact-header-error" style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
