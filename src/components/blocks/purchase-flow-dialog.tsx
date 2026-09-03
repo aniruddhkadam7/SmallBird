@@ -83,24 +83,28 @@ export function PurchaseFlowDialog() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 />
               </div>
               {error && <p className="text-sm text-destructive">{error}</p>}
-              <DialogFooter>
-                <LiquidButton type="submit" className="w-full" disabled={busy}>
+              <div className="flex items-center gap-2">
+                <LiquidButton type="submit" size="default" className="min-w-0 flex-1 shrink px-3" disabled={busy}>
                   {busy ? "Sending code…" : "Send code"}
                 </LiquidButton>
-              </DialogFooter>
+                <span className="shrink-0 text-xs text-muted-foreground">or</span>
+                <LiquidButton
+                  type="button"
+                  variant="outline"
+                  size="default"
+                  className="min-w-0 flex-1 shrink px-3"
+                  onClick={signInWithGoogle}
+                  disabled={busy}
+                >
+                  <GoogleIcon />
+                  <span className="truncate">Continue with Google</span>
+                </LiquidButton>
+              </div>
             </form>
-            <div className="relative py-1 text-center text-xs text-muted-foreground">
-              <span className="relative bg-background px-2">or</span>
-              <div className="absolute inset-x-0 top-1/2 -z-10 border-t border-border" />
-            </div>
-            <LiquidButton variant="outline" className="w-full" onClick={signInWithGoogle} disabled={busy}>
-              <GoogleIcon />
-              Continue with Google
-            </LiquidButton>
           </>
         ) : null}
 
