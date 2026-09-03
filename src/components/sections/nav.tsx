@@ -7,16 +7,19 @@ import logo from "@/assets/smallbird-logo.png"
 import { cn } from "@/lib/utils"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { LiquidGlassContainer } from "@/components/ui/liquid-glass-container"
+import { AccountMenu } from "@/components/blocks/account-menu"
+import { usePurchaseFlow } from "@/lib/purchase-flow"
 
 const links = [
   { label: "Product", href: "/#product-demo" },
-  { label: "Modes", href: "/#modes" },
+  { label: "Interview Mode", href: "/#modes" },
   { label: "Pricing", href: "/#pricing" },
   { label: "Privacy", href: "/#privacy" },
 ]
 
 export function Nav() {
   const router = useRouter()
+  const { signedUp, startFlow } = usePurchaseFlow()
 
   return (
     <header className="sticky top-4 z-50 flex justify-center px-4">
@@ -45,19 +48,28 @@ export function Nav() {
               </a>
             ))}
           </nav>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <LiquidButton size="sm" variant="outline" onClick={() => router.push("/download")}>
               <Download className="h-3.5 w-3.5" />
               Download
             </LiquidButton>
-            <LiquidButton
-              size="sm"
-              onClick={() => {
-                window.location.href = "/#pricing"
-              }}
-            >
-              Get Started
-            </LiquidButton>
+            {signedUp ? (
+              <AccountMenu />
+            ) : (
+              <>
+                <LiquidButton size="sm" variant="outline" onClick={() => startFlow("free")}>
+                  Log in
+                </LiquidButton>
+                <LiquidButton
+                  size="sm"
+                  onClick={() => {
+                    window.location.href = "/#pricing"
+                  }}
+                >
+                  Get Started
+                </LiquidButton>
+              </>
+            )}
           </div>
         </div>
       </LiquidGlassContainer>

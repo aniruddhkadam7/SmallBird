@@ -8,7 +8,7 @@ const steps = [
   {
     number: "01",
     title: "Context",
-    description: "Your CV, job description, or meeting documents are loaded in.",
+    description: "Your CV and the job description are loaded in.",
     preview: (
       <div className="glass-subtle flex w-full flex-col items-center justify-center gap-2 rounded-lg p-4">
         <FolderOpen className="h-6 w-6 text-primary" />

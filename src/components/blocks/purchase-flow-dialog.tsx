@@ -16,7 +16,7 @@ import { PLAN_LABELS, usePurchaseFlow } from "@/lib/purchase-flow"
 import { getPlan } from "@/lib/plans"
 
 export function PurchaseFlowDialog() {
-  const { activeFlow, closeFlow, requestCode, verifyCode, completePayment, busy, error } = usePurchaseFlow()
+  const { activeFlow, closeFlow, requestCode, verifyCode, signInWithGoogle, completePayment, busy, error } = usePurchaseFlow()
   const [email, setEmail] = useState("")
   const [code, setCode] = useState("")
   const router = useRouter()
@@ -67,6 +67,13 @@ export function PurchaseFlowDialog() {
                 </LiquidButton>
               </DialogFooter>
             </form>
+            <div className="relative py-1 text-center text-xs text-muted-foreground">
+              <span className="relative bg-background px-2">or</span>
+              <div className="absolute inset-x-0 top-1/2 -z-10 border-t border-border" />
+            </div>
+            <LiquidButton variant="outline" className="w-full" onClick={signInWithGoogle} disabled={busy}>
+              Continue with Google
+            </LiquidButton>
           </>
         ) : null}
 

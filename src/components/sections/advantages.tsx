@@ -41,9 +41,9 @@ export function Advantages() {
                 CV, job description, and document context
               </h3>
               <p className="text-sm text-muted-foreground">
-                Load your resume and the job description before an interview,
-                or bring in meeting documents beforehand — Smallbird grounds
-                its assistance in what you actually gave it.
+                Load your resume and the job description before an interview
+                — Smallbird grounds its assistance in what you actually gave
+                it.
               </p>
             </div>
             <div className="flex items-center justify-center bg-foreground/[0.02] p-6">

@@ -27,7 +27,7 @@ const points = [
   {
     number: "03",
     title: "You control what context you share",
-    description: "CV, job description, and meeting documents are only used to help Smallbird understand your session — you choose what to upload.",
+    description: "CV and job description are only used to help Smallbird understand your session — you choose what to upload.",
     proof: <UploadControlIllustration />,
     proofLabel: "Only what you add gets used",
   },

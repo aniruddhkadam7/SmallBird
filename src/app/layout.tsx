@@ -25,7 +25,7 @@ const playfairDisplay = Playfair_Display({
 export const metadata: Metadata = {
   title: "Smallbird — AI Assistant",
   description:
-    "Smallbird gives you real-time AI assistance during interviews and meetings — with context from your CV, job description, and meeting documents.",
+    "Smallbird gives you real-time AI assistance during interviews — with context from your CV and the job description.",
   icons: {
     icon: "/smallbird-logo.png",
     shortcut: "/smallbird-logo.png",

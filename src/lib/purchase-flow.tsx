@@ -27,9 +27,11 @@ interface PurchaseFlowState {
   startFlow: (plan: PlanId) => void
   requestCode: (email: string) => Promise<void>
   verifyCode: (email: string, code: string) => Promise<void>
+  signInWithGoogle: () => Promise<void>
   completePayment: () => Promise<void>
   closeFlow: () => void
   reset: () => void
+  logout: () => Promise<void>
 }
 
 const PurchaseFlowContext = createContext<PurchaseFlowState | null>(null)
@@ -60,15 +62,27 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null)
   const [activeFlow, setActiveFlow] = useState<{ plan: PlanId; step: FlowStep } | null>(null)
 
-  // Picks up an already-existing session (e.g. a returning user, or one who
-  // verified their code and is continuing) so the flow doesn't ask someone
-  // to log in twice.
+  // Picks up an already-existing session (e.g. a returning user, one who
+  // verified their code, or one who just came back from Google OAuth) so
+  // the flow doesn't ask someone to log in twice. If a plan was mid-checkout
+  // before an OAuth redirect (see signInWithGoogle), resume it here rather
+  // than losing that context across the full-page navigation.
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user?.email) {
-        setSignedUp(true)
-        setEmail(data.user.email)
+      if (!data.user?.email) return
+      setSignedUp(true)
+      setEmail(data.user.email)
+
+      const pendingPlan = sessionStorage.getItem("smallbird:pending-plan") as PlanId | null
+      if (pendingPlan) {
+        sessionStorage.removeItem("smallbird:pending-plan")
+        setSelectedPlan(pendingPlan)
+        if (PAID_PLAN_IDS.has(pendingPlan)) {
+          setActiveFlow({ plan: pendingPlan, step: "payment" })
+        } else {
+          setPurchased(true)
+        }
       }
     })
   }, [])
@@ -121,6 +135,40 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  const PENDING_PLAN_KEY = "smallbird:pending-plan"
+
+  const signInWithGoogle = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      // OAuth is a full-page redirect, so anything about which plan the
+      // user was mid-checkout for would otherwise be lost — stashed here
+      // and picked back up by the mount effect once they land back on
+      // this page as a signed-in user.
+      if (activeFlow) sessionStorage.setItem(PENDING_PLAN_KEY, activeFlow.plan)
+      const supabase = createClient()
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${window.location.origin}/auth/callback` },
+      })
+      if (oauthError) throw oauthError
+      // On success the browser navigates away immediately; busy/error state
+      // here is only ever seen if signInWithOAuth itself failed to start.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setBusy(false)
+    }
+  }
+
+  const logout = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    setSignedUp(false)
+    setEmail(null)
+    setPurchased(false)
+    setSelectedPlan(null)
   }
 
   const completePayment = async () => {
@@ -194,9 +242,11 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
         startFlow,
         requestCode,
         verifyCode,
+        signInWithGoogle,
         completePayment,
         closeFlow,
         reset,
+        logout,
       }}
     >
       {children}

@@ -1,9 +1,6 @@
 "use client"
 
-import { useState } from "react"
-import { SegmentedToggle } from "@/components/ui/segmented-toggle"
 import { AppMockupInterview } from "@/components/blocks/app-mockup-interview"
-import { AppMockupMeeting } from "@/components/blocks/app-mockup-meeting"
 
 const interviewSteps = [
   { title: "Start the session", detail: "Select Interview Mode and hit Start." },
@@ -12,21 +9,7 @@ const interviewSteps = [
   { title: "Get a relevant answer", detail: "When a question comes in, Smallbird surfaces a response." },
 ]
 
-const meetingSteps = [
-  { title: "Start the session", detail: "Select Meeting Mode and hit Start." },
-  { title: "Smallbird listens", detail: "It follows the conversation as it happens." },
-  { title: "Context is ready", detail: "Your meeting documents are already loaded in." },
-  { title: "Get relevant context", detail: "Smallbird surfaces what matters, in real time." },
-]
-
-const modeOptions = [
-  { value: "interview", label: "Interview Mode" },
-  { value: "meeting", label: "Meeting Mode" },
-]
-
 export function ProductDemo() {
-  const [mode, setMode] = useState("interview")
-
   return (
     <section id="product-demo" className="border-t border-border py-20 px-4 sm:py-28">
       <div className="mx-auto max-w-5xl">
@@ -35,21 +18,12 @@ export function ProductDemo() {
             See how Smallbird works
           </h2>
           <p className="mt-4 text-muted-foreground">
-            One workflow, two modes. Start a session, and Smallbird listens,
-            understands, and assists — in real time.
+            Start a session, and Smallbird listens, understands, and assists — in real time.
           </p>
         </div>
 
-        <div className="mt-10 flex justify-center">
-          <SegmentedToggle options={modeOptions} value={mode} onChange={setMode} />
-        </div>
-
         <div className="mt-10">
-          {mode === "interview" ? (
-            <DemoLayout steps={interviewSteps} mockup={<AppMockupInterview />} />
-          ) : (
-            <DemoLayout steps={meetingSteps} mockup={<AppMockupMeeting />} />
-          )}
+          <DemoLayout steps={interviewSteps} mockup={<AppMockupInterview />} />
         </div>
       </div>
     </section>
