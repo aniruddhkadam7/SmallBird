@@ -57,59 +57,61 @@ export function PovCompare({ className, compact = false }: { className?: string;
     updateFromClientX(e.clientX)
   }
 
-  const labelClass = compact
-    ? "absolute top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white"
-    : "absolute top-4 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white"
-
   const handleSize = compact ? "h-7 w-7" : "h-10 w-10"
+  const captionClass = compact ? "text-xs" : "text-sm"
 
   return (
-    <div
-      ref={containerRef}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={() => setDragging(false)}
-      onPointerLeave={() => setDragging(false)}
-      className={cn(
-        "relative aspect-[1616/973] w-full cursor-ew-resize touch-none select-none overflow-hidden rounded-2xl",
-        className,
-      )}
-    >
-      {/* Base layer: what the interviewer sees */}
-      <Image
-        src={interviewerView}
-        alt="What your interviewer sees"
-        fill
-        sizes="(min-width: 768px) 768px, 100vw"
-        className="pointer-events-none object-cover"
-      />
-      <span className={cn(labelClass, "right-2")}>What they see</span>
+    <div className="flex flex-col gap-2.5">
+      <div
+        ref={containerRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={() => setDragging(false)}
+        onPointerLeave={() => setDragging(false)}
+        className={cn(
+          "relative aspect-[1616/973] w-full cursor-ew-resize touch-none select-none overflow-hidden rounded-2xl",
+          className,
+        )}
+      >
+        {/* Base layer: interviewer's view */}
+        <Image
+          src={interviewerView}
+          alt="Interviewer view of the call"
+          fill
+          sizes="(min-width: 768px) 768px, 100vw"
+          className="pointer-events-none object-cover"
+        />
 
-      {/* Clipped top layer: what the candidate sees */}
-      <div className="absolute inset-0 overflow-hidden" style={{ width: `${position}%` }}>
-        <div className="absolute inset-y-0 left-0" style={{ width: containerWidth || 2000 }}>
-          <Image
-            src={candidateView}
-            alt="What you see"
-            fill
-            sizes="(min-width: 768px) 768px, 100vw"
-            className="pointer-events-none object-cover"
-          />
+        {/* Clipped top layer: candidate's view */}
+        <div className="absolute inset-0 overflow-hidden" style={{ width: `${position}%` }}>
+          <div className="absolute inset-y-0 left-0" style={{ width: containerWidth || 2000 }}>
+            <Image
+              src={candidateView}
+              alt="Candidate view of the call"
+              fill
+              sizes="(min-width: 768px) 768px, 100vw"
+              className="pointer-events-none object-cover"
+            />
+          </div>
         </div>
-        <span className={cn(labelClass, "left-2")}>What you see</span>
+
+        {/* Divider handle */}
+        <div className="pointer-events-none absolute inset-y-0 z-10" style={{ left: `${position}%` }}>
+          <div className="animate-divider-glow absolute inset-y-0 -translate-x-1/2 border-l-2 border-white/90" />
+          <div
+            className={cn(
+              "animate-divider-glow absolute top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center rounded-full bg-white text-neutral-900",
+              handleSize,
+            )}
+          >
+            <MoveHorizontal className={compact ? "h-3 w-3" : "h-4 w-4"} />
+          </div>
+        </div>
       </div>
 
-      {/* Divider handle */}
-      <div className="pointer-events-none absolute inset-y-0 z-10" style={{ left: `${position}%` }}>
-        <div className="animate-divider-glow absolute inset-y-0 -translate-x-1/2 border-l-2 border-white/90" />
-        <div
-          className={cn(
-            "animate-divider-glow absolute top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center rounded-full bg-white text-neutral-900",
-            handleSize,
-          )}
-        >
-          <MoveHorizontal className={compact ? "h-3 w-3" : "h-4 w-4"} />
-        </div>
+      <div className={cn("flex items-center justify-between px-0.5 font-medium text-muted-foreground", captionClass)}>
+        <span>Candidate view</span>
+        <span>Interviewer view</span>
       </div>
     </div>
   )

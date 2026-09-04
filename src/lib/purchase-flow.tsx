@@ -25,6 +25,7 @@ interface PurchaseFlowState {
   error: string | null
   activeFlow: { plan: PlanId; step: FlowStep } | null
   startFlow: (plan: PlanId) => void
+  requestDashboardAccess: () => void
   requestCode: (email: string) => Promise<void>
   verifyCode: (email: string, code: string) => Promise<void>
   signInWithGoogle: () => Promise<void>
@@ -62,6 +63,8 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null)
   const [activeFlow, setActiveFlow] = useState<{ plan: PlanId; step: FlowStep } | null>(null)
 
+  const PENDING_REDIRECT_KEY = "smallbird:post-auth-redirect"
+
   // Picks up an already-existing session (e.g. a returning user, one who
   // verified their code, or one who just came back from Google OAuth) so
   // the flow doesn't ask someone to log in twice. If a plan was mid-checkout
@@ -73,6 +76,13 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
       if (!data.user?.email) return
       setSignedUp(true)
       setEmail(data.user.email)
+
+      const pendingRedirect = sessionStorage.getItem(PENDING_REDIRECT_KEY)
+      if (pendingRedirect) {
+        sessionStorage.removeItem(PENDING_REDIRECT_KEY)
+        window.location.href = pendingRedirect
+        return
+      }
 
       const pendingPlan = sessionStorage.getItem("smallbird:pending-plan") as PlanId | null
       if (pendingPlan) {
@@ -93,6 +103,19 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
     const step: FlowStep = signedUp ? (PAID_PLAN_IDS.has(plan) ? "payment" : "done") : "signup"
     if (step === "done") setPurchased(true)
     setActiveFlow({ plan, step })
+  }
+
+  // Used by CTAs that link straight to a gated page (e.g. the hero's
+  // "Dashboard" button) -- signed-in visitors go straight there, signed-out
+  // ones get the sign-in dialog instead of bouncing off the page's own
+  // server-side auth redirect with no explanation.
+  const requestDashboardAccess = () => {
+    if (signedUp) {
+      window.location.href = "/dashboard"
+      return
+    }
+    sessionStorage.setItem(PENDING_REDIRECT_KEY, "/dashboard")
+    startFlow("free")
   }
 
   const requestCode = async (rawEmail: string) => {
@@ -123,6 +146,14 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
       if (verifyError) throw verifyError
       setSignedUp(true)
       setEmail(rawEmail)
+
+      const pendingRedirect = sessionStorage.getItem(PENDING_REDIRECT_KEY)
+      if (pendingRedirect) {
+        sessionStorage.removeItem(PENDING_REDIRECT_KEY)
+        window.location.href = pendingRedirect
+        return
+      }
+
       if (!activeFlow) return
       if (PAID_PLAN_IDS.has(activeFlow.plan)) {
         setActiveFlow({ plan: activeFlow.plan, step: "payment" })
@@ -255,6 +286,7 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
         error,
         activeFlow,
         startFlow,
+        requestDashboardAccess,
         requestCode,
         verifyCode,
         signInWithGoogle,

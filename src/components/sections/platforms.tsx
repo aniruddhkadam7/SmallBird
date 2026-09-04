@@ -22,6 +22,29 @@ const platforms = [
   { name: "GoToMeeting", color: `#${siGotomeeting.hex}`, icon: siGotomeeting },
 ]
 
+function PlatformCard({ platform: p }: { platform: (typeof platforms)[number] }) {
+  return (
+    <div className="flex w-36 shrink-0 flex-col items-center gap-2.5 rounded-xl border border-border bg-card px-4 py-5 transition-transform hover:-translate-y-0.5">
+      <div className="flex h-12 items-center justify-center">
+        {p.image ? (
+          <Image src={p.image} alt={p.name} className="h-12 w-auto object-contain" />
+        ) : (
+          <svg viewBox="0 0 24 24" className="h-10 w-10" fill={p.color} aria-hidden="true">
+            <path d={p.icon!.path} />
+          </svg>
+        )}
+      </div>
+      <div className="text-center">
+        <div className="text-sm font-medium text-foreground">{p.name}</div>
+        <div className="mt-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+          <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+          Works with
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Platforms() {
   return (
     <section className="border-t border-border py-14 px-4 sm:py-20">
@@ -34,29 +57,25 @@ export function Platforms() {
           Works quietly on the video calls you already use
         </div>
 
-        <div className="mt-10 flex gap-3 overflow-x-auto px-1 pb-2 sm:justify-center sm:overflow-visible">
+        {/* Mobile: auto-scrolling marquee (list duplicated once for a seamless loop) */}
+        <div
+          className="relative mt-10 overflow-hidden sm:hidden"
+          style={{
+            maskImage: "linear-gradient(to right, transparent, black 5%, black 95%, transparent)",
+            WebkitMaskImage: "linear-gradient(to right, transparent, black 5%, black 95%, transparent)",
+          }}
+        >
+          <div className="animate-marquee flex w-max gap-3">
+            {[...platforms, ...platforms].map((p, i) => (
+              <PlatformCard key={`${p.name}-${i}`} platform={p} />
+            ))}
+          </div>
+        </div>
+
+        {/* Desktop: static centered row, everything already fits without scrolling */}
+        <div className="mt-10 hidden gap-3 sm:flex sm:flex-wrap sm:justify-center">
           {platforms.map((p) => (
-            <div
-              key={p.name}
-              className="flex w-36 shrink-0 flex-col items-center gap-2.5 rounded-xl border border-border bg-card px-4 py-5 transition-transform hover:-translate-y-0.5"
-            >
-              <div className="flex h-12 items-center justify-center">
-                {p.image ? (
-                  <Image src={p.image} alt={p.name} className="h-12 w-auto object-contain" />
-                ) : (
-                  <svg viewBox="0 0 24 24" className="h-10 w-10" fill={p.color} aria-hidden="true">
-                    <path d={p.icon!.path} />
-                  </svg>
-                )}
-              </div>
-              <div className="text-center">
-                <div className="text-sm font-medium text-foreground">{p.name}</div>
-                <div className="mt-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-                  <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                  Works with
-                </div>
-              </div>
-            </div>
+            <PlatformCard key={p.name} platform={p} />
           ))}
         </div>
 

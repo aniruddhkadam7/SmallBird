@@ -15,7 +15,7 @@ const points = [
     icon: Eye,
     title: "Invisible on screen share",
     description: "Smallbird's assistance appears in its own window on your screen — separate from the call itself. If you share your screen or someone watches you present, they see a normal call, never your overlay.",
-    proof: <PovCompare compact className="w-full max-w-md" />,
+    proof: <PovCompare compact className="w-full max-w-sm" />,
     proofLabel: "Drag to compare — what you see vs. what they see",
     ownsLabel: true,
   },

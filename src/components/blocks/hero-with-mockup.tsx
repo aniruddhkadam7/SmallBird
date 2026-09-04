@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Glow } from "@/components/ui/glow"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
+import { usePurchaseFlow } from "@/lib/purchase-flow"
 
 interface HeroWithMockupProps {
   eyebrow?: string
@@ -32,6 +33,8 @@ export function HeroWithMockup({
   mockup,
   className,
 }: HeroWithMockupProps) {
+  const { requestDashboardAccess } = usePurchaseFlow()
+
   return (
     <section
       className={cn(
@@ -79,7 +82,11 @@ export function HeroWithMockup({
                 size="lg"
                 className="bg-green-200 hover:bg-green-300"
                 onClick={() => {
-                  window.location.href = primaryCta.href
+                  if (primaryCta.href === "/dashboard") {
+                    requestDashboardAccess()
+                  } else {
+                    window.location.href = primaryCta.href
+                  }
                 }}
               >
                 {primaryCta.text}
