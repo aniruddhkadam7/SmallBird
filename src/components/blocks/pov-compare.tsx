@@ -7,7 +7,20 @@ import { cn } from "@/lib/utils"
 import candidateView from "@/assets/pov-candidate.png"
 import interviewerView from "@/assets/pov-interviewer.png"
 
-export function PovCompare({ className, compact = false }: { className?: string; compact?: boolean }) {
+export function PovCompare({
+  className,
+  compact = false,
+  fill = false,
+}: {
+  className?: string
+  compact?: boolean
+  // Fills the parent box completely (flex-grow after the label row) instead
+  // of sizing itself off the image's own aspect ratio — for a fixed-height
+  // box like privacy.tsx's MockupFrame, where the aspect-ratio-driven
+  // default left most of the box as empty black space around a small image.
+  // The homepage hero's usage doesn't pass this, so its sizing is untouched.
+  fill?: boolean
+}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState(50)
   const [dragging, setDragging] = useState(false)
@@ -61,7 +74,7 @@ export function PovCompare({ className, compact = false }: { className?: string;
   const captionClass = compact ? "text-xs" : "text-sm"
 
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className={cn("flex flex-col gap-2.5", fill && "h-full w-full")}>
       <div className={cn("flex items-center justify-between px-0.5 font-medium text-muted-foreground", captionClass)}>
         <span>Candidate view</span>
         <span>Interviewer view</span>
@@ -74,7 +87,8 @@ export function PovCompare({ className, compact = false }: { className?: string;
         onPointerUp={() => setDragging(false)}
         onPointerLeave={() => setDragging(false)}
         className={cn(
-          "relative aspect-[1616/973] w-full cursor-ew-resize touch-none select-none overflow-hidden rounded-2xl",
+          "relative w-full cursor-ew-resize touch-none select-none overflow-hidden rounded-2xl",
+          fill ? "min-h-0 flex-1" : "aspect-[1616/973]",
           className,
         )}
       >
