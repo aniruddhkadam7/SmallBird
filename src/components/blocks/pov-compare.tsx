@@ -75,12 +75,12 @@ export function PovCompare({
   }
 
   const handleSize = compact ? "h-7 w-7" : "h-10 w-10"
-  const captionClass = compact ? "text-xs" : "text-sm"
+  const captionClass = compact ? "text-sm" : "text-base"
 
   return (
     <div className={cn("flex flex-col gap-2.5", fill && "h-full w-full")}>
       {!hideLabels && (
-        <div className={cn("flex items-center justify-between px-0.5 font-medium text-muted-foreground", captionClass)}>
+        <div className={cn("flex items-center justify-between px-0.5 font-semibold text-foreground", captionClass)}>
           <span>Candidate view</span>
           <span>Interviewer view</span>
         </div>
