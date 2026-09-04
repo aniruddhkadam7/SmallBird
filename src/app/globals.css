@@ -8,21 +8,38 @@
   --radius: 0.65rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  /* Was oklch(1 0 0) — identical to --background, so a card had zero visual
+     separation from the page behind it aside from the (also too-faint,
+     see --border below) outline. Dark mode doesn't have this problem: its
+     --card (0.205) is a real step above --background (0.145), which is what
+     makes cards read as raised surfaces there. Matching that same ~0.02
+     step in light mode (card slightly *darker* than the white page, since
+     light mode goes the other direction) gives cards actual visible
+     elevation instead of relying on the border line alone. */
+  --card: oklch(0.98 0 0);
   --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
+  --popover: oklch(0.98 0 0);
   --popover-foreground: oklch(0.145 0 0);
   --primary: oklch(0.205 0 0);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  /* Was oklch(0.556 0 0) — the same low-contrast issue as --border above:
+     borderline-legible gray-on-white for every secondary label (dates,
+     "Ended" dot, badge text, search placeholder). Darkened for real
+     readability in light mode. */
+  --muted-foreground: oklch(0.46 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
+  /* Was oklch(0.922 0 0) — nearly invisible against the oklch(1 0 0) light
+     background/card (card borders, the dashboard's divider line, etc. read
+     as missing rather than subtle). Darkened for real contrast in light
+     mode; dark mode's border (white at 10% opacity over a dark card) already
+     reads fine and is untouched. */
+  --border: oklch(0.87 0 0);
+  --input: oklch(0.87 0 0);
   --ring: oklch(0.708 0 0);
 }
 

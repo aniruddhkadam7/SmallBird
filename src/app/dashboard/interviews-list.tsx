@@ -1,9 +1,10 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { Briefcase, Download, LayoutGrid, List, MessageSquareText, Search, X } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { Briefcase, Download, FileText, LayoutGrid, List, MoreVertical, Search, X } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
+import { logoUrlForDomain, resolveCompanyDomain } from "@/lib/company-logo"
 
 interface Turn {
   question: string
@@ -117,27 +118,78 @@ function TranscriptModal({ transcript, onClose }: { transcript: Transcript; onCl
   )
 }
 
-function InterviewCard({ transcript, onView }: { transcript: Transcript; onView: () => void }) {
-  const title = [transcript.role, transcript.company].filter(Boolean).join(" · ") || "Interview"
+/// Small square company logo (logo.dev's own images already come as a
+/// padded square badge, e.g. EY's black-and-yellow mark — a circular crop
+/// would cut into that), falling back to the company's initial when no known
+/// domain resolves (a free-typed company name not in COMPANIES) or the image
+/// itself fails to load (network hiccup, no logo for that domain).
+function CompanyLogo({ company }: { company: string | null }) {
+  const domain = resolveCompanyDomain(company)
+  const [failed, setFailed] = useState(false)
 
+  useEffect(() => setFailed(false), [domain])
+
+  if (domain && !failed) {
+    // eslint-disable-next-line @next/next/no-img-element -- external logo CDN, not a local/optimizable asset
+    return (
+      <img
+        src={logoUrlForDomain(domain, 32)}
+        alt=""
+        className="h-6 w-6 shrink-0 rounded-md border border-border object-contain"
+        onError={() => setFailed(true)}
+      />
+    )
+  }
+  if (!company) return null
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
-      <div className="text-xs text-muted-foreground">{formatDate(transcript.started_at_ms)}</div>
-      <div className="font-semibold text-foreground">{title}</div>
+    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border bg-foreground/10 text-xs font-semibold text-muted-foreground">
+      {company.trim().charAt(0).toUpperCase()}
+    </span>
+  )
+}
+
+function InterviewCard({ transcript, onView }: { transcript: Transcript; onView: () => void }) {
+  return (
+    <div className="relative flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-xs text-muted-foreground">{formatDate(transcript.started_at_ms)}</div>
+        <button
+          type="button"
+          aria-label="More options"
+          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+        >
+          <MoreVertical className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <CompanyLogo company={transcript.company} />
+        <div className="flex flex-col">
+          <span className="font-semibold text-foreground">{transcript.company ?? "Interview"}</span>
+          {transcript.role && <span className="text-sm text-blue-600 dark:text-blue-400">{transcript.role}</span>}
+        </div>
+      </div>
+
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="flex items-center gap-1 rounded-full bg-foreground/10 px-2 py-1 text-xs font-medium text-foreground">
           <Briefcase className="h-3 w-3" />
           Interview
         </span>
         <span className="flex items-center gap-1 rounded-full bg-foreground/10 px-2 py-1 text-xs font-medium text-foreground">
-          <MessageSquareText className="h-3 w-3" />
-          {transcript.turns.length} question{transcript.turns.length === 1 ? "" : "s"}
+          <FileText className="h-3 w-3" />
+          Transcript
         </span>
       </div>
-      <div className="mt-1 flex items-center justify-between gap-3 border-t border-border pt-3">
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
-          Ended · {formatDuration(transcript.started_at_ms, transcript.ended_at_ms)}
+
+      <div className="mt-1 flex items-end justify-between gap-3 border-t border-border pt-3">
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+            Ended
+          </div>
+          <div className="text-xs text-blue-600 dark:text-blue-400">
+            {formatDuration(transcript.started_at_ms, transcript.ended_at_ms)} · Free Session
+          </div>
         </div>
         <button
           type="button"
