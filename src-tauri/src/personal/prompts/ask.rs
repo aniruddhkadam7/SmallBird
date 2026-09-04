@@ -355,6 +355,9 @@ fn context_blocks(request: &AskRequest) -> Vec<String> {
     if let Some(role) = &request.role {
         blocks.push(format!("Role being interviewed for: {role}"));
     }
+    if let Some(company) = &request.company {
+        blocks.push(format!("Company: {company}"));
+    }
     if let Some(jd) = &request.job_description {
         blocks.push(format!("Job context:\n{jd}"));
     }
@@ -458,6 +461,7 @@ mod tests {
             conversation_history: vec![],
             candidate_context: None,
             role: None,
+            company: None,
             job_description: None,
             additional_context: None,
             answer_length: "default".to_string(),

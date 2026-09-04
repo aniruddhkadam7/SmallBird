@@ -143,6 +143,8 @@ pub struct AskRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub company: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub job_description: Option<String>,
     /// Free-form context the user typed/uploaded themselves in the Context
     /// popover's "Additional Context" section — anything not covered by the

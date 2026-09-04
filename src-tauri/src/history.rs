@@ -16,9 +16,15 @@ use crate::auth::client::{SUPABASE_ANON_KEY, SUPABASE_URL};
 use crate::state::AppState;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HistoryTurn {
     pub question: String,
     pub answer: String,
+    /// When this question was asked, as `Date.now()` in the overlay —
+    /// `None` for entries archived before this field existed. Local-only,
+    /// shown as a per-message timestamp in the History transcript view.
+    #[serde(default)]
+    pub asked_at_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

@@ -68,6 +68,46 @@ body.overlay-window #root {
   user-select: none;
 }
 
+/* Custom in-page tooltips, replacing the native `title=` attribute
+   everywhere in this overlay. The browser's native title tooltip is drawn
+   as a separate OS-level popup outside this window's own composited
+   content — it does NOT inherit SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)
+   from the overlay window, so hovering a button during a screen share could
+   flash real button-label text (e.g. "Analyze what's on my screen") to
+   whoever's watching the share, even while the overlay itself is correctly
+   hidden. Rendering the tooltip as ordinary DOM content instead — a ::after
+   pseudo-element inside this same webview — keeps it covered by the same
+   capture exclusion as everything else here. */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 6px;
+  padding: 4px 8px;
+  max-width: 220px;
+  width: max-content;
+  background: rgba(15, 15, 18, 0.97);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-align: center;
+  text-shadow: none;
+  white-space: normal;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  z-index: 50;
+}
+
 /* Shared "floating island" treatment — every top-level surface (action bar,
    transcript bar, the main panel, settings/confirm-close) gets the same
    border/shadow language so they read as one consistent design even though

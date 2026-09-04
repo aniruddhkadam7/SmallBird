@@ -46,6 +46,7 @@ mod tests {
             conversation_history: vec![],
             candidate_context: None,
             role: None,
+            company: None,
             job_description: None,
             additional_context: None,
             answer_length: "default".to_string(),

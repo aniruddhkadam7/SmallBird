@@ -162,6 +162,30 @@ pub fn set_overlay_always_on_top(app: &AppHandle, label: &str, enabled: bool) ->
     Ok(())
 }
 
+/// Toggles `WDA_EXCLUDEFROMCAPTURE` on/off — the Settings panel's "Screen
+/// Capture Protection" row was previously a status readout with nothing
+/// behind it to actually flip (`disable_capture_exclusion` sat unused). This
+/// is the real switch: some screen-share/screenshot pipelines are still on
+/// the legacy GDI capture path, where Windows itself renders an excluded
+/// window as a solid black rectangle instead of properly omitting it (a
+/// platform-level fallback, not something either side of this call can
+/// override) — a candidate who'd rather have the overlay plainly *visible*
+/// than show as an unexplained black box needs a way to turn protection off
+/// entirely, not just live with whichever behavior their capture pipeline
+/// happens to pick.
+pub fn set_overlay_capture_exclusion(app: &AppHandle, label: &str, enabled: bool) -> Result<OverlayCaptureStatus, String> {
+    let Some(window) = app.get_webview_window(label) else {
+        return Err(format!("overlay window '{label}' is not open"));
+    };
+    if enabled {
+        let excluded = windows_capture_protection::enable_capture_exclusion(&window).is_ok();
+        Ok(OverlayCaptureStatus { excluded })
+    } else {
+        windows_capture_protection::disable_capture_exclusion(&window)?;
+        Ok(OverlayCaptureStatus { excluded: false })
+    }
+}
+
 pub fn resize_overlay(app: &AppHandle, label: &str, fraction: f64) -> Result<(), String> {
     let Some(window) = app.get_webview_window(label) else {
         return Ok(());

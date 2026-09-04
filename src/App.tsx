@@ -15,6 +15,7 @@ import { SettingsPopover } from "./SettingsPopover";
 import { LowEndHardwareBanner } from "./LowEndHardwareBanner";
 import { HeaderDropdown } from "./HeaderDropdown";
 import { answerStyleToOverlayFields, loadOverlaySettings, saveOverlaySettings } from "./overlaySettings";
+import { CompanySelect } from "./CompanySelect";
 import { Button, Spinner } from "./ui";
 import {
   IconAccount,
@@ -33,7 +34,7 @@ import { getAuthSession, type AuthSessionInfo } from "./auth";
 import { checkForUpdate, installUpdate } from "./autoUpdate";
 
 type SessionState = "IDLE" | "STARTING" | "LISTENING";
-type Popover = "MODEL" | "CONTEXT" | "SETTINGS" | "ACCOUNT" | null;
+type Popover = "MODEL" | "CONTEXT" | "SETTINGS" | "ACCOUNT" | "START_SETUP" | null;
 
 // Only "openai" and "anthropic" have a real backend implementation (see
 // backend/supabase/functions/llm-proxy's PROVIDER_URLS). "gemini" was
@@ -273,6 +274,21 @@ function App() {
     }
   }, [startInterview, closePopover]);
 
+  // Company/role for the "Start Interview" details prompt (START_SETUP
+  // popover below) — seeded from whatever was saved last time, so returning
+  // to the same interview doesn't require retyping. Persisted into
+  // OverlaySettings (the same store InterviewOverlay.tsx reads role/company
+  // from to build the AI's prompt context) only once Start is actually
+  // pressed, not on every keystroke.
+  const [startRole, setStartRole] = useState(() => loadOverlaySettings().role);
+  const [startCompany, setStartCompany] = useState(() => loadOverlaySettings().company);
+
+  const handleConfirmStart = useCallback(async () => {
+    const current = loadOverlaySettings();
+    saveOverlaySettings({ ...current, role: startRole.trim(), company: startCompany.trim() });
+    await handleStart();
+  }, [startRole, startCompany, handleStart]);
+
   // "End other session & continue" from the activeElsewhereMessage banner.
   const handleForceStart = useCallback(async () => {
     setActiveElsewhereMessage(null);
@@ -469,26 +485,77 @@ function App() {
               Stop
             </Button>
           ) : (
-            <Button
-              variant="primary"
-              onClick={handleStart}
-              disabled={sessionState === "STARTING" || authSession?.loggedIn === false}
-              title={authSession?.loggedIn === false ? "Log in from the Account panel to start" : undefined}
-            >
-              {/* The STT model load behind Start can take a couple of
-                  seconds (cold-starting the sidecar process + loading the
-                  ONNX model) — a static label made that wait look frozen.
-                  This spinner is the only signal the user has that anything
-                  is happening until the overlay itself opens. */}
-              {sessionState === "STARTING" ? (
-                <span className="btn-spinner">
-                  <Spinner />
-                  {startLabel}
-                </span>
-              ) : (
-                startLabel
+            <div className="dropdown-anchor">
+              <Button
+                variant="primary"
+                onClick={() => togglePopover("START_SETUP")}
+                disabled={sessionState === "STARTING" || authSession?.loggedIn === false}
+                title={authSession?.loggedIn === false ? "Log in from the Account panel to start" : undefined}
+                aria-haspopup="dialog"
+                aria-expanded={openPopover === "START_SETUP"}
+              >
+                {/* The STT model load behind Start can take a couple of
+                    seconds (cold-starting the sidecar process + loading the
+                    ONNX model) — a static label made that wait look frozen.
+                    This spinner is the only signal the user has that anything
+                    is happening until the overlay itself opens. */}
+                {sessionState === "STARTING" ? (
+                  <span className="btn-spinner">
+                    <Spinner />
+                    {startLabel}
+                  </span>
+                ) : (
+                  startLabel
+                )}
+              </Button>
+              {openPopover === "START_SETUP" && (
+                <HeaderDropdown onClose={closePopover} className="header-dropdown-panel header-dropdown-wide">
+                  <div className="popover-overlay">
+                    <div className="popover" role="dialog" aria-label="Interview details">
+                      <div className="popover-header">
+                        <span className="setup-section-label">Interview details</span>
+                        <button className="modal-close-btn" onClick={closePopover} aria-label="Close">
+                          ✕
+                        </button>
+                      </div>
+                      <div className="popover-body start-setup-body">
+                        <div className="setup-identity-field">
+                          <label className="setup-section-label" htmlFor="start-setup-company">
+                            Company
+                          </label>
+                          <CompanySelect id="start-setup-company" value={startCompany} onChange={setStartCompany} />
+                        </div>
+                        <div className="setup-identity-field">
+                          <label className="setup-section-label" htmlFor="start-setup-role">
+                            Role
+                          </label>
+                          <input
+                            id="start-setup-role"
+                            className="setup-input"
+                            type="text"
+                            value={startRole}
+                            placeholder="e.g. Senior Frontend Engineer"
+                            onChange={(e) => setStartRole(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleConfirmStart()}
+                          />
+                        </div>
+                        <p className="setup-hint">
+                          Helps the AI tailor answers to this interview. Optional — Skip to start without it.
+                        </p>
+                      </div>
+                      <div className="popover-footer">
+                        <Button variant="ghost" onClick={handleStart}>
+                          Skip
+                        </Button>
+                        <Button variant="primary" onClick={handleConfirmStart}>
+                          Start Interview
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </HeaderDropdown>
               )}
-            </Button>
+            </div>
           )}
 
           <div className="dropdown-anchor">

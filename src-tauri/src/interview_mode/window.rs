@@ -27,6 +27,10 @@ pub fn set_overlay_always_on_top(app: &AppHandle, enabled: bool) -> Result<(), S
     overlay_window::set_overlay_always_on_top(app, OVERLAY_WINDOW_LABEL, enabled)
 }
 
+pub fn set_overlay_capture_exclusion(app: &AppHandle, enabled: bool) -> Result<OverlayCaptureStatus, String> {
+    overlay_window::set_overlay_capture_exclusion(app, OVERLAY_WINDOW_LABEL, enabled)
+}
+
 pub fn resize_overlay(app: &AppHandle, fraction: f64) -> Result<(), String> {
     overlay_window::resize_overlay(app, OVERLAY_WINDOW_LABEL, fraction)
 }

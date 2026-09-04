@@ -44,6 +44,11 @@ Deno.serve(async (req) => {
     } else if (provider === "anthropic") {
       headers["x-api-key"] = Deno.env.get("ANTHROPIC_API_KEY")!;
       headers["anthropic-version"] = "2023-06-01";
+      // Interview Mode's Ask AI sends a cache_control breakpoint on its
+      // (large, per-session-identical) system prompt to cut the
+      // time-to-first-token on every question after the first — this beta
+      // header is required for that to take effect.
+      headers["anthropic-beta"] = "prompt-caching-2024-07-31";
     }
 
     const providerResp = await fetch(providerUrl, {

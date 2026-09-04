@@ -196,6 +196,13 @@ export function InterviewOverlay() {
   // Shows the opacity percentage in the header for a moment after adjusting.
   const [opacityHint, setOpacityHint] = useState(false);
   const [settings, setSettings] = useState<OverlaySettings>(() => loadOverlaySettings());
+  // Mirrors `settings` for the mount-only overlay:reset-session listener
+  // below, which needs the *current* captureProtection preference on every
+  // reopen — a plain closure over `settings` in a `useEffect(..., [])`
+  // would stay pinned to whatever it was at mount, missing any toggle
+  // change made afterward.
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   // Remaining plan balance at the moment this session started, in seconds —
   // ticked down locally by elapsedSeconds rather than re-fetched every
   // second, so the display doesn't depend on network latency. The real
@@ -467,7 +474,19 @@ export function InterviewOverlay() {
 
   useEffect(() => {
     invoke<OverlayCaptureStatus>("show_interview_overlay")
-      .then((status) => setCaptureExcluded(status.excluded))
+      .then((status) => {
+        setCaptureExcluded(status.excluded);
+        // show_interview_overlay always turns protection ON for a
+        // brand-new window (it has no way to know a returning user
+        // previously chose to leave it off in Settings — see
+        // OverlaySettingsPanel's capture-protection checkbox). Reconcile
+        // here the same way the size fraction below does.
+        if (!settings.captureProtection) {
+          invoke<OverlayCaptureStatus>("set_overlay_capture_exclusion", { enabled: false })
+            .then((s) => setCaptureExcluded(s.excluded))
+            .catch(() => {});
+        }
+      })
       .catch((e) => setError(String(e)));
 
     // A brand-new overlay window is created at the Rust-side default size
@@ -510,6 +529,12 @@ export function InterviewOverlay() {
   // The Rust side emits this right before re-showing an existing window.
   useEffect(() => {
     const unlistenReset = listen("overlay:reset-session", () => {
+      // Re-read settings from localStorage — the overlay window is reused
+      // (see the comment above), so its React state otherwise still holds
+      // whatever role/company were current the *first* time this window was
+      // created, missing anything set from the Start dropdown just before
+      // this specific interview (see App.tsx's start-details popover).
+      setSettings(loadOverlaySettings());
       setTurns([]);
       setQuestion("");
       setBusy(false);
@@ -526,6 +551,16 @@ export function InterviewOverlay() {
       getEntitlement()
         .then((info) => setRemainingSecondsAtStart(Math.round(info.remainingMinutes * 60)))
         .catch(() => {});
+      // Re-showing an *existing* overlay window also always turns capture
+      // protection back ON on the Rust side (overlay_window.rs's
+      // show_overlay_window) — reconcile with a returning user's saved
+      // preference the same way the very-first-open effect above does, so
+      // choosing "off" once doesn't get silently reset on the next reopen.
+      if (!settingsRef.current.captureProtection) {
+        invoke<OverlayCaptureStatus>("set_overlay_capture_exclusion", { enabled: false })
+          .then((s) => setCaptureExcluded(s.excluded))
+          .catch(() => {});
+      }
     });
     return () => {
       unlistenReset.then((f) => f());
@@ -546,6 +581,7 @@ export function InterviewOverlay() {
       answerLength: settings.answerLength,
       responseStyle: settings.responseStyle,
       role: settings.role.trim() || null,
+      company: settings.company.trim() || null,
       jobDescription: settings.jobDescription.trim() || null,
       englishLevel: settings.englishLevel,
       humanization: settings.humanization,
@@ -795,7 +831,7 @@ export function InterviewOverlay() {
     setConfirmingClose(false);
     const completed = turns
       .filter((t) => !t.pending && !t.failed && t.answer.trim())
-      .map((t) => ({ question: t.question, answer: t.answer }));
+      .map((t) => ({ question: t.question, answer: t.answer, askedAtMs: t.askedAt }));
     try {
       await invoke("archive_interview_session", {
         startedAtMs: sessionStartedAtRef.current,
@@ -996,7 +1032,7 @@ export function InterviewOverlay() {
           className="overlay-status-icon"
           onClick={toggleMute}
           disabled={!captureActive || muteBusy}
-          title={muted ? "Unmute — resume transcribing" : "Mute — pause transcribing"}
+          data-tooltip={muted ? "Unmute — resume transcribing" : "Mute — pause transcribing"}
         >
           {muted ? <MicOffIcon size={13} /> : <MicIcon size={13} />}
           {captureActive && !muted && <span className="overlay-status-dot" />}
@@ -1006,7 +1042,7 @@ export function InterviewOverlay() {
           className="overlay-status-icon"
           onClick={toggleMute}
           disabled={!captureActive || muteBusy}
-          title={muted ? "Unmute — resume transcribing" : "Mute — pause transcribing"}
+          data-tooltip={muted ? "Unmute — resume transcribing" : "Mute — pause transcribing"}
         >
           <SpeakerIcon size={13} />
           {captureActive && !muted && <span className="overlay-status-dot" />}
@@ -1016,7 +1052,7 @@ export function InterviewOverlay() {
           className="overlay-pill-button"
           onClick={askAI}
           disabled={!question.trim() || busy}
-          title="Answer (Ctrl+Enter)"
+          data-tooltip="Answer (Ctrl+Enter)"
         >
           Answer
         </button>
@@ -1025,7 +1061,7 @@ export function InterviewOverlay() {
           className="overlay-pill-button"
           onClick={analyzeScreen}
           disabled={busy}
-          title="Analyze what's on my screen (Ctrl+Shift+Enter)"
+          data-tooltip="Analyze what's on my screen (Ctrl+Shift+Enter)"
         >
           Analyze Screen
         </button>
@@ -1036,7 +1072,7 @@ export function InterviewOverlay() {
           type="button"
           className={`overlay-pill-button${settings.autoAI ? " on" : ""}`}
           onClick={() => setSettings((prev) => ({ ...prev, autoAI: !prev.autoAI }))}
-          title={
+          data-tooltip={
             settings.autoAI
               ? "Auto Answer is on — questions send automatically when the interviewer stops talking"
               : "Auto Answer is off — use Answer or Enter to send"
@@ -1048,7 +1084,7 @@ export function InterviewOverlay() {
           <span
             className="overlay-time-left"
             style={{ opacity: 0.7, fontVariantNumeric: "tabular-nums" }}
-            title="Time remaining on your plan this session"
+            data-tooltip="Time remaining on your plan this session"
           >
             {formatCountdown(Math.max(0, remainingSecondsAtStart - elapsedSeconds))} left
           </span>
@@ -1060,7 +1096,7 @@ export function InterviewOverlay() {
             that exact spot (Tauri's drag script excludes interactive
             elements from dragging). This is purely the visual "you can drag
             from here" affordance. */}
-        <span className="overlay-move-affordance" title="Drag anywhere on this bar to move">
+        <span className="overlay-move-affordance" data-tooltip="Drag anywhere on this bar to move">
           <MoveIcon />
         </span>
         {/* Safe inside the header's drag region without any extra handling:
@@ -1078,14 +1114,14 @@ export function InterviewOverlay() {
           value={settings.opacity}
           onChange={handleOpacityChange}
           aria-label="Overlay opacity"
-          title={`Opacity — ${opacityPercent}%`}
+          data-tooltip={`Opacity — ${opacityPercent}%`}
         />
         {opacityHint && <span className="overlay-opacity-readout">{opacityPercent}%</span>}
         <button
           type="button"
           className="overlay-icon-button"
           onClick={cycleSize}
-          title={`Resize (currently ${settings.size})`}
+          data-tooltip={`Resize (currently ${settings.size})`}
         >
           <ResizeIcon />
         </button>
@@ -1093,7 +1129,7 @@ export function InterviewOverlay() {
           type="button"
           className={`overlay-icon-button${moreOpen ? " on" : ""}`}
           onClick={() => setMoreOpen((v) => !v)}
-          title="More"
+          data-tooltip="More"
         >
           <MoreVerticalIcon />
         </button>
@@ -1101,7 +1137,7 @@ export function InterviewOverlay() {
           type="button"
           className="overlay-pill-button end"
           onClick={requestClose}
-          title="End interview (Esc)"
+          data-tooltip="End interview (Esc)"
         >
           End
         </button>
@@ -1137,7 +1173,7 @@ export function InterviewOverlay() {
             <button
               className="overlay-icon-button"
               onClick={() => setSettingsOpen((v) => !v)}
-              title="Settings"
+              data-tooltip="Settings"
             >
               <GearIcon />
             </button>
@@ -1183,6 +1219,7 @@ export function InterviewOverlay() {
           onChange={setSettings}
           onClose={() => setSettingsOpen(false)}
           captureExcluded={captureExcluded}
+          onCaptureExcludedChange={setCaptureExcluded}
         />
       ) : (
         <>
@@ -1205,7 +1242,7 @@ export function InterviewOverlay() {
                 className="overlay-pill-button"
                 onClick={clearComposeBuffer}
                 disabled={!chatDraft.trim()}
-                title="Clear (Ctrl+Shift+Backspace)"
+                data-tooltip="Clear (Ctrl+Shift+Backspace)"
               >
                 Clear
               </button>
@@ -1213,7 +1250,7 @@ export function InterviewOverlay() {
                 className="overlay-icon-button"
                 onClick={sendChat}
                 disabled={!chatDraft.trim() || busy}
-                title="Send (Enter)"
+                data-tooltip="Send (Enter)"
               >
                 <SendIcon />
               </button>
@@ -1235,7 +1272,7 @@ export function InterviewOverlay() {
                 className="overlay-pill-button"
                 onClick={clearComposeBuffer}
                 disabled={!question.trim()}
-                title="Clear (Ctrl+Shift+Backspace)"
+                data-tooltip="Clear (Ctrl+Shift+Backspace)"
               >
                 Clear
               </button>
@@ -1254,7 +1291,7 @@ export function InterviewOverlay() {
               className="overlay-icon-button"
               onClick={goPrevTurn}
               disabled={displayIndex <= 0}
-              title="Previous question (Ctrl+Left)"
+              data-tooltip="Previous question (Ctrl+Left)"
             >
               <ChevronLeftIcon />
             </button>
@@ -1263,7 +1300,7 @@ export function InterviewOverlay() {
               className="overlay-icon-button"
               onClick={goNextTurn}
               disabled={displayIndex < 0 || displayIndex >= turns.length - 1}
-              title="Next question (Ctrl+Right)"
+              data-tooltip="Next question (Ctrl+Right)"
             >
               <ChevronRightIcon />
             </button>
@@ -1273,7 +1310,7 @@ export function InterviewOverlay() {
               className="overlay-pill-button"
               onClick={clearConversation}
               disabled={!hasConversation || busy}
-              title="Clear the whole conversation"
+              data-tooltip="Clear the whole conversation"
             >
               Clear
             </button>
@@ -1295,7 +1332,7 @@ export function InterviewOverlay() {
                     className="chat-copy-button"
                     onClick={() => copyAnswer(activeTurn.answer)}
                     disabled={!activeTurn.answer}
-                    title="Copy answer"
+                    data-tooltip="Copy answer"
                   >
                     <CopyIcon size={13} />
                   </button>
@@ -1331,7 +1368,7 @@ export function InterviewOverlay() {
                           type="button"
                           className={`chat-feedback-button${activeTurn.feedback === "up" ? " active" : ""}`}
                           onClick={() => toggleFeedback(activeTurn.id, "up")}
-                          title="Good answer"
+                          data-tooltip="Good answer"
                         >
                           <ThumbsUpIcon size={12} />
                         </button>
@@ -1339,7 +1376,7 @@ export function InterviewOverlay() {
                           type="button"
                           className={`chat-feedback-button${activeTurn.feedback === "down" ? " active" : ""}`}
                           onClick={() => toggleFeedback(activeTurn.id, "down")}
-                          title="Not useful"
+                          data-tooltip="Not useful"
                         >
                           <ThumbsDownIcon size={12} />
                         </button>

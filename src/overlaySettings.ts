@@ -35,6 +35,14 @@ export interface OverlaySettings {
   // transcript:update listener in InterviewOverlay.tsx. Off by default so
   // existing behavior (manual Ask AI / Enter) is unchanged until opted in.
   autoAI: boolean;
+  // Whether the overlay asks Windows to exclude it from screen captures
+  // (WDA_EXCLUDEFROMCAPTURE). On by default. Some legacy screen-share/
+  // screenshot pipelines still render an excluded window as a solid black
+  // rectangle instead of properly hiding it — that's a Windows-level
+  // fallback no app can override — so this exists for a candidate who'd
+  // rather have the overlay plainly visible than show as an unexplained
+  // black box on someone else's screen.
+  captureProtection: boolean;
 }
 
 export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
@@ -51,6 +59,7 @@ export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
   answerStyle: "natural",
   humanization: "natural",
   autoAI: false,
+  captureProtection: true,
 };
 
 /// Maps the setup page's single "Answer style" control onto the two

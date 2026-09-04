@@ -23,6 +23,8 @@ pub struct AskOptions {
     #[serde(default)]
     pub role: Option<String>,
     #[serde(default)]
+    pub company: Option<String>,
+    #[serde(default)]
     pub job_description: Option<String>,
     #[serde(default)]
     pub additional_context: Option<String>,
@@ -73,6 +75,7 @@ impl Default for AskOptions {
             answer_length: default_answer_length(),
             response_style: default_response_style(),
             role: None,
+            company: None,
             job_description: None,
             additional_context: None,
             english_level: default_english_level(),
@@ -111,6 +114,19 @@ pub async fn toggle_interview_overlay(app: AppHandle) -> Result<OverlayCaptureSt
 #[tauri::command]
 pub async fn set_overlay_always_on_top(app: AppHandle, enabled: bool) -> Result<(), String> {
     run_on_main(&app, move |app| window::set_overlay_always_on_top(app, enabled)).await
+}
+
+/// Applied when the user flips "Screen Capture Protection" in Settings —
+/// previously that row only ever displayed status, with no way to actually
+/// turn it off. See `overlay_window::set_overlay_capture_exclusion`'s doc
+/// comment for why someone would want to: legacy screen-share/screenshot
+/// pipelines render an excluded window as a black box rather than properly
+/// hiding it, and that's a Windows-level fallback neither side of this call
+/// can prevent — turning protection off trades that surprise for the window
+/// being plainly visible instead.
+#[tauri::command]
+pub async fn set_overlay_capture_exclusion(app: AppHandle, enabled: bool) -> Result<OverlayCaptureStatus, String> {
+    run_on_main(&app, move |app| window::set_overlay_capture_exclusion(app, enabled)).await
 }
 
 /// Applied when the user changes "Overlay size" in Settings. `fraction` is
@@ -215,6 +231,7 @@ pub async fn ask_interview_question(
         conversation_history: history,
         candidate_context: resume_text,
         role: options.role,
+        company: options.company,
         // The uploaded document's full text (when present) is more complete
         // than the settings panel's manually typed/pasted job_description
         // field, so it takes priority; the typed field remains the fallback
@@ -298,6 +315,7 @@ pub async fn analyze_screen_question(
         conversation_history: history,
         candidate_context: resume_text,
         role: options.role,
+        company: options.company,
         job_description: uploaded_job_description.or(options.job_description),
         additional_context: uploaded_additional_context.or(options.additional_context),
         answer_length: options.answer_length,

@@ -15,13 +15,20 @@ interface Props {
   onChange: (settings: OverlaySettings) => void;
   onClose: () => void;
   captureExcluded: boolean | null;
+  onCaptureExcludedChange: (excluded: boolean | null) => void;
 }
 
 /// Interview Mode's Settings panel — everything the overlay needs beyond the
 /// question/answer flow, without becoming the large Record/Prepare
 /// dashboard. Renders inline in the same small overlay window (swapped in for
 /// the question/answer body), not a separate window.
-export function OverlaySettingsPanel({ settings, onChange, onClose, captureExcluded }: Props) {
+export function OverlaySettingsPanel({
+  settings,
+  onChange,
+  onClose,
+  captureExcluded,
+  onCaptureExcludedChange,
+}: Props) {
   const set = <K extends keyof OverlaySettings>(key: K, value: OverlaySettings[K]) => {
     onChange({ ...settings, [key]: value });
   };
@@ -32,6 +39,21 @@ export function OverlaySettingsPanel({ settings, onChange, onClose, captureExclu
       // Best-effort — the CSS size-* class still applies even if the actual
       // OS window resize fails, so the panel remains usable either way.
     });
+  };
+
+  // The actual on/off switch behind what used to be a status-only row — see
+  // overlay_window.rs's set_overlay_capture_exclusion doc comment for why
+  // someone would turn this off (some screen-share/screenshot pipelines
+  // render an excluded window as a black box instead of hiding it, which a
+  // candidate may prefer to just avoid by leaving the overlay visible).
+  const changeCaptureProtection = (enabled: boolean) => {
+    set("captureProtection", enabled);
+    invoke<{ excluded: boolean }>("set_overlay_capture_exclusion", { enabled })
+      .then((status) => onCaptureExcludedChange(status.excluded))
+      .catch(() => {
+        // Best-effort — the checkbox still reflects the user's choice even
+        // if the underlying OS call failed to apply it this instant.
+      });
   };
 
   const resetDefaults = () => onChange({ ...DEFAULT_OVERLAY_SETTINGS });
@@ -120,7 +142,30 @@ export function OverlaySettingsPanel({ settings, onChange, onClose, captureExclu
 
       <div className="overlay-settings-section">
         <span className="overlay-settings-label">Screen Capture Protection</span>
-        <p>{captureExcluded ? "● Enabled" : "⚠ Unavailable"}</p>
+        <div className="overlay-settings-row overlay-settings-checkbox">
+          <input
+            type="checkbox"
+            checked={settings.captureProtection}
+            onChange={(e) => changeCaptureProtection(e.target.checked)}
+          />
+          <span>Hide from screen shares/screenshots</span>
+        </div>
+        {settings.captureProtection ? (
+          captureExcluded ? (
+            <p>● Enabled</p>
+          ) : (
+            <p>⚠ Unavailable on this system</p>
+          )
+        ) : (
+          <p>Off — the overlay is visible to whatever you share or screenshot</p>
+        )}
+        {settings.captureProtection && (
+          <p className="overlay-settings-note">
+            Some older screen-share/screenshot tools show an excluded window as a black box
+            instead of hiding it properly — a Windows-level limitation, not a bug here. Turn this
+            off if that's happening and you'd rather the overlay just stay visible.
+          </p>
+        )}
       </div>
 
       <div className="overlay-settings-section">

@@ -1202,6 +1202,71 @@ body.compact-transparent {
   width: 100%;
 }
 
+/* Start Interview details prompt (App.tsx's START_SETUP popover) — Company
+   uses CompanySelect below; Role is a plain .setup-input. */
+.start-setup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.company-select {
+  position: relative;
+}
+
+.company-select-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.company-select-input-row .setup-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.company-avatar {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--surface-alt);
+  overflow: hidden;
+}
+
+.company-avatar-img {
+  object-fit: contain;
+  padding: 2px;
+}
+
+.company-select-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 5;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.14), 0 2px 8px rgba(16, 24, 40, 0.06);
+  background: var(--surface);
+  padding: 0.3rem;
+}
+
+.company-select-option {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+}
+
 .setup-select .select-trigger {
   width: 100%;
   font-family: inherit;
@@ -1676,25 +1741,39 @@ body.compact-transparent {
   margin-top: 0.1rem;
 }
 
-.settings-popover-content .history-view-title {
-  font-size: 1rem;
+.settings-popover-content .transcript-view {
+  gap: 0.55rem;
 }
 
-.settings-popover-content .history-view-subtitle {
-  font-size: 0.76rem;
+.settings-popover-content .transcript-view-title {
+  font-size: 0.88rem;
 }
 
-.settings-popover-content .history-view-transcript {
-  gap: 0.7rem;
+.settings-popover-content .transcript-view-subtitle {
+  font-size: 0.74rem;
 }
 
-.settings-popover-content .history-turn-block {
-  gap: 0.3rem;
-  padding-bottom: 0.7rem;
+.settings-popover-content .transcript-view-avatar {
+  width: 28px;
+  height: 28px;
+  font-size: 0.7rem;
 }
 
-.settings-popover-content .history-turn-text {
-  font-size: 0.85rem;
+.settings-popover-content .transcript-body {
+  gap: 0.1rem;
+}
+
+.settings-popover-content .transcript-turn {
+  padding: 0.55rem 0;
+}
+
+.settings-popover-content .transcript-bubble-text {
+  font-size: 0.82rem;
+}
+
+.settings-popover-content .transcript-details-value,
+.settings-popover-content .transcript-details-label {
+  font-size: 0.78rem;
 }
 
 .agent-card {
@@ -1895,79 +1974,208 @@ body.compact-transparent {
   flex-shrink: 0;
 }
 
-.history-view-head {
+/* Transcript detail view (History → a past session) — an identity header
+   (avatar + role/company), Transcript/Call Details tabs, and a chat-bubble
+   transcript body, replacing the old flat Q&A list. */
+.transcript-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+}
+
+.transcript-view-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.5rem;
   flex-shrink: 0;
 }
 
-.history-view-meta {
+.transcript-view-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.transcript-view-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.transcript-view-titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.transcript-view-title {
+  font-size: 0.98rem;
+  font-weight: 650;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transcript-view-subtitle {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transcript-view-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.link-button.danger {
+  color: #d13c3c;
+}
+
+.link-button.neutral {
+  color: var(--accent);
+}
+
+.transcript-clear-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  font-size: 0.82rem;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.transcript-clear-confirm-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.transcript-view-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.transcript-tab {
+  padding: 0.4rem 0.1rem;
+  margin-right: 0.9rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.transcript-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.transcript-body {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  flex-shrink: 0;
-}
-
-.history-view-title {
-  margin: 0;
-  font-size: 1.35rem;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  color: var(--text);
-}
-
-.history-view-subtitle {
-  margin: 0;
-  font-size: 0.84rem;
-  color: var(--text-muted);
-}
-
-.history-view-transcript {
-  display: flex;
-  flex-direction: column;
-  gap: 1.1rem;
   min-height: 0;
   overflow-y: auto;
   padding-right: 0.25rem;
 }
 
-.history-turn-block {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding-bottom: 1.1rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.history-turn-block:last-child {
-  border-bottom: none;
-}
-
-.history-turn-q-row,
-.history-turn-a-row {
+.transcript-turn {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+  padding: 0.75rem 0;
 }
 
-.history-turn-tag {
-  font-size: 0.66rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-faint);
+.transcript-bubble {
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-md);
+  max-width: 92%;
 }
 
-.history-turn-tag.accent {
-  color: #454b54;
+.transcript-bubble.interviewer {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  align-self: flex-start;
 }
 
-.history-turn-text {
+.transcript-bubble.smallbird {
+  background: var(--accent-soft);
+  align-self: flex-start;
+}
+
+.transcript-bubble-text {
   margin: 0;
   font-size: 0.88rem;
   color: var(--text);
-  line-height: 1.55;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.transcript-bubble-meta {
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  margin: 0.15rem 0 0.55rem 0.1rem;
+}
+
+.transcript-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.transcript-details-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.transcript-details-row:last-child {
+  border-bottom: none;
+}
+
+.transcript-details-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.transcript-details-value {
+  font-size: 0.85rem;
+  color: var(--text);
+  font-weight: 600;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mode-placeholder {
