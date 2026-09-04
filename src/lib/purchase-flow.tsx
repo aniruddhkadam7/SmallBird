@@ -176,6 +176,13 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
     setEmail(null)
     setPurchased(false)
     setSelectedPlan(null)
+    // A hard navigation, not router.push -- pages like /dashboard gate
+    // themselves with a *server-side* session check (cookies read in a
+    // Server Component), which a client-side signOut() doesn't retrigger
+    // on its own. Without this, clicking Log Out visibly did nothing:
+    // the session was gone, but the already-rendered dashboard just sat
+    // there until the next real page load.
+    window.location.href = "/"
   }
 
   const completePayment = async () => {
