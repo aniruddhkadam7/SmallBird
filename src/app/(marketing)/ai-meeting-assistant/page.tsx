@@ -83,6 +83,11 @@ export default function AiMeetingAssistantPage() {
             description: "Why Smallbird surfaces suggestions instead of scripted answers.",
           },
           {
+            href: "/ai-interview-tools",
+            label: "AI Interview Tools",
+            description: "The broader landscape of AI interview and meeting tool categories.",
+          },
+          {
             href: "/pricing",
             label: "Pricing",
             description: "Free plan, one-time passes, and monthly plans.",

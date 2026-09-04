@@ -84,6 +84,16 @@ export default function AiInterviewCopilotPage() {
             description: "How the live transcription and response pipeline works.",
           },
           {
+            href: "/interview-copilot",
+            label: "Interview Copilot",
+            description: "What defines the category, and how to evaluate any copilot.",
+          },
+          {
+            href: "/smallbird-alternatives",
+            label: "Smallbird Alternatives",
+            description: "How Smallbird compares to other interview copilots.",
+          },
+          {
             href: "/pricing",
             label: "Pricing",
             description: "Free plan, one-time passes, and monthly plans.",

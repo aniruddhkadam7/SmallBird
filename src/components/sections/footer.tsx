@@ -24,6 +24,16 @@ const columns = [
     ],
   },
   {
+    title: "Compare",
+    links: [
+      { label: "AI Interview Tools", href: "/ai-interview-tools" },
+      { label: "Interview Copilot", href: "/interview-copilot" },
+      { label: "Best AI Interview Assistant", href: "/best-ai-interview-assistant" },
+      { label: "Best Coding Interview Tools", href: "/best-coding-interview-tools" },
+      { label: "Smallbird Alternatives", href: "/smallbird-alternatives" },
+    ],
+  },
+  {
     title: "Company",
     links: [
       { label: "Privacy by design", href: "/#privacy" },
@@ -37,7 +47,7 @@ export function Footer() {
   return (
     <footer className="border-t border-border bg-neutral-950 px-4 py-14 text-neutral-300">
       <div className="mx-auto max-w-7xl">
-        <div className="grid gap-10 sm:grid-cols-2 sm:gap-8 lg:grid-cols-[1.1fr_1fr_1fr_1fr]">
+        <div className="grid gap-10 sm:grid-cols-2 sm:gap-8 lg:grid-cols-5">
           <div>
             <Image src={logo} alt="Smallbird" className="h-8 w-auto" />
             <p className="mt-3 max-w-xs text-sm text-neutral-400">

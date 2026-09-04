@@ -50,6 +50,14 @@ export function Solutions() {
             </Link>
           ))}
         </div>
+
+        <p className="mt-8 text-center text-sm text-muted-foreground">
+          Deciding between tools?{" "}
+          <Link href="/smallbird-alternatives" className="font-medium text-foreground underline underline-offset-4">
+            See how Smallbird compares
+          </Link>
+          .
+        </p>
       </div>
     </section>
   )

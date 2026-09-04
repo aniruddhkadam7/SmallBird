@@ -59,6 +59,11 @@ export default function PricingPage() {
             label: "AI Interview Assistant",
             description: "See how Smallbird works during an interview.",
           },
+          {
+            href: "/smallbird-alternatives",
+            label: "Smallbird Alternatives",
+            description: "How Smallbird's pricing compares to other tools.",
+          },
         ]}
       />
     </div>

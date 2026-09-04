@@ -116,6 +116,11 @@ export default function AiInterviewAssistantPage() {
             description: "The same real-time assistance, useful beyond interviews too.",
           },
           {
+            href: "/best-ai-interview-assistant",
+            label: "Best AI Interview Assistant",
+            description: "A checklist for evaluating any interview assistant, including this one.",
+          },
+          {
             href: "/pricing",
             label: "Pricing",
             description: "Free plan, one-time passes, and monthly plans.",

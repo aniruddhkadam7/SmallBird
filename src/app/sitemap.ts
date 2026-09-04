@@ -10,6 +10,11 @@ const routes: { path: string; changeFrequency: MetadataRoute.Sitemap[number]["ch
   { path: "/ai-coding-interview-assistant", changeFrequency: "monthly", priority: 0.8 },
   { path: "/ai-meeting-assistant", changeFrequency: "monthly", priority: 0.8 },
   { path: "/features/real-time-ai", changeFrequency: "monthly", priority: 0.7 },
+  { path: "/ai-interview-tools", changeFrequency: "monthly", priority: 0.7 },
+  { path: "/interview-copilot", changeFrequency: "monthly", priority: 0.7 },
+  { path: "/best-ai-interview-assistant", changeFrequency: "monthly", priority: 0.7 },
+  { path: "/best-coding-interview-tools", changeFrequency: "monthly", priority: 0.7 },
+  { path: "/smallbird-alternatives", changeFrequency: "monthly", priority: 0.7 },
 ]
 
 export default function sitemap(): MetadataRoute.Sitemap {

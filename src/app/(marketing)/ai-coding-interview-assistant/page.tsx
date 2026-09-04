@@ -105,6 +105,16 @@ export default function AiCodingInterviewAssistantPage() {
             description: "How the live transcription and response pipeline works.",
           },
           {
+            href: "/best-coding-interview-tools",
+            label: "Best Coding Interview Tools",
+            description: "The screen-reading vs. conversation-based trade-off, explained.",
+          },
+          {
+            href: "/smallbird-alternatives",
+            label: "Smallbird Alternatives",
+            description: "How Smallbird compares to code-reading interview tools.",
+          },
+          {
             href: "/pricing",
             label: "Pricing",
             description: "Free plan, one-time passes, and monthly plans.",
