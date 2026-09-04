@@ -68,8 +68,8 @@ export function DashboardSidebar({
   const name = email.split("@")[0]
 
   return (
-    <div className={`${theme === "dark" ? "dark" : ""} flex min-h-screen bg-background text-foreground`}>
-      <aside className="flex w-64 shrink-0 flex-col gap-6 border-r border-border bg-background px-4 py-5">
+    <div className={`${theme === "dark" ? "dark" : ""} flex h-screen overflow-hidden bg-background text-foreground`}>
+      <aside className="flex w-64 shrink-0 flex-col gap-6 overflow-y-auto border-r border-border bg-background px-4 py-5">
         <a href="/" className="flex items-center gap-2 px-1">
           <Image src={logo} alt="Smallbird" className="h-6 w-auto" />
           <span
