@@ -1,14 +1,12 @@
 import { HeroWithMockup } from "@/components/blocks/hero-with-mockup";
-import { HeroGlassOverlay } from "@/components/blocks/hero-glass-overlay";
+import { PovCompare } from "@/components/blocks/pov-compare";
 import { ProductDemo } from "@/components/sections/product-demo";
-import { InterviewModeSection } from "@/components/sections/interview-mode";
-import { HowItWorks } from "@/components/sections/how-it-works";
+import { Platforms } from "@/components/sections/platforms";
 import { Advantages } from "@/components/sections/advantages";
 import { Reviews } from "@/components/sections/reviews";
+import { Companies } from "@/components/sections/companies";
 import { Privacy } from "@/components/sections/privacy";
 import { Pricing } from "@/components/sections/pricing";
-import { DownloadSection } from "@/components/sections/download";
-import { FinalCta } from "@/components/sections/final-cta";
 
 export default function Home() {
   return (
@@ -17,17 +15,17 @@ export default function Home() {
         eyebrow="AI assistance for important conversations"
         title="Real-time AI assistance, right when the conversation matters."
         description="Smallbird listens, understands your context, and helps you respond well — right when your interview matters most."
-        mockup={<HeroGlassOverlay />}
+        mockup={
+          <PovCompare className="rounded-2xl border border-border shadow-[0_20px_60px_-20px_rgba(0,0,0,0.35)]" />
+        }
       />
       <ProductDemo />
-      <InterviewModeSection />
-      <HowItWorks />
+      <Platforms />
       <Advantages />
       <Reviews />
+      <Companies />
       <Privacy />
       <Pricing />
-      <DownloadSection />
-      <FinalCta />
     </>
   );
 }

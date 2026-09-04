@@ -12,7 +12,7 @@ export function Advantages() {
   const router = useRouter()
 
   return (
-    <section id="features" className="border-t border-border py-20 px-4 sm:py-28">
+    <section id="features" className="border-t border-border py-14 px-4 sm:py-20">
       <div className="mx-auto max-w-5xl">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">

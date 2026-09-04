@@ -1,52 +1,55 @@
 import Image from "next/image"
+import { Mail } from "lucide-react"
 import logo from "@/assets/smallbird-logo.png"
 
 const columns = [
   {
     title: "Product",
     links: [
-      { label: "Interview Mode", href: "/#modes" },
+      { label: "Features", href: "/#features" },
       { label: "How it works", href: "/#product-demo" },
+      { label: "Pricing", href: "/#pricing" },
       { label: "Download for Windows", href: "/download" },
     ],
   },
   {
     title: "Company",
     links: [
-      { label: "Pricing", href: "/#pricing" },
+      { label: "Privacy by design", href: "/#privacy" },
       { label: "Security", href: "/#security" },
-      { label: "Privacy", href: "/#privacy" },
-    ],
-  },
-  {
-    title: "Legal",
-    links: [
-      { label: "Terms", href: "#terms" },
-      { label: "Contact", href: "mailto:hello@smallbird.app" },
+      { label: "Dashboard", href: "/dashboard" },
     ],
   },
 ]
 
 export function Footer() {
   return (
-    <footer className="border-t border-border py-16 px-4">
-      <div className="mx-auto max-w-5xl">
-        <div className="grid gap-10 sm:grid-cols-[1.5fr_1fr_1fr_1fr]">
+    <footer className="border-t border-border bg-neutral-950 px-4 py-14 text-neutral-300">
+      <div className="mx-auto max-w-7xl">
+        <div className="grid gap-10 sm:grid-cols-[1.4fr_1fr_1fr] sm:gap-8">
           <div>
             <Image src={logo} alt="Smallbird" className="h-8 w-auto" />
-            <p className="mt-3 max-w-xs text-sm text-muted-foreground">
+            <p className="mt-3 max-w-xs text-sm text-neutral-400">
               AI assistance for important conversations.
             </p>
+            <a
+              href="mailto:hello@smallbird.app"
+              className="mt-4 inline-flex items-center gap-1.5 text-sm text-neutral-400 transition-colors hover:text-white"
+            >
+              <Mail className="h-3.5 w-3.5" />
+              hello@smallbird.app
+            </a>
           </div>
+
           {columns.map((col) => (
             <div key={col.title}>
-              <h3 className="text-sm font-medium text-foreground">{col.title}</h3>
-              <ul className="mt-3 space-y-2.5">
+              <h3 className="text-sm font-semibold text-white">{col.title}</h3>
+              <ul className="mt-4 space-y-3">
                 {col.links.map((link) => (
                   <li key={link.label}>
                     <a
                       href={link.href}
-                      className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                      className="text-sm text-neutral-400 transition-colors hover:text-white"
                     >
                       {link.label}
                     </a>
@@ -57,8 +60,9 @@ export function Footer() {
           ))}
         </div>
 
-        <div className="mt-12 border-t border-border pt-6 text-sm text-muted-foreground">
-          SmallBird™ is a trademark of Smallbird. © {new Date().getFullYear()} Smallbird. All rights reserved.
+        <div className="mt-12 flex flex-col gap-4 border-t border-white/10 pt-6 text-sm text-neutral-500 sm:flex-row sm:items-center sm:justify-between">
+          <span>SmallBird™ is a trademark of Smallbird. © {new Date().getFullYear()} Smallbird. All rights reserved.</span>
+          <span>Made in India 🇮🇳</span>
         </div>
       </div>
     </footer>

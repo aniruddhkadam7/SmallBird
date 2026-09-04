@@ -23,8 +23,8 @@ export function Nav() {
 
   return (
     <header className="sticky top-4 z-50 flex justify-center px-4">
-      <LiquidGlassContainer className="w-full max-w-5xl">
-        <div className="flex h-16 w-full items-center justify-between gap-4 px-4">
+      <LiquidGlassContainer className="w-full max-w-7xl">
+        <div className="flex h-16 w-full items-center justify-between gap-4 px-6">
           <a href="/" className="flex items-center gap-2">
             <Image src={logo} alt="Smallbird" className="h-6 w-auto" priority />
             <span

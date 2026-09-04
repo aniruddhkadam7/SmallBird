@@ -154,6 +154,39 @@
   }
 }
 
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  animation: marquee 45s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+@keyframes divider-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 8px 1px rgba(255, 255, 255, 0.5);
+    opacity: 0.85;
+  }
+  50% {
+    box-shadow: 0 0 20px 4px rgba(255, 255, 255, 0.9);
+    opacity: 1;
+  }
+}
+
+.animate-divider-glow {
+  animation: divider-glow 2.2s ease-in-out infinite;
+}
+
 /* Ambient color blobs placed behind glass sections so backdrop-blur has
    something to distort. Slow, subtle drift only — no flashing motion. */
 .ambient-blobs {

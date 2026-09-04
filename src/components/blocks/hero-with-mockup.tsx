@@ -5,6 +5,7 @@ import { ArrowRight, Play } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Glow } from "@/components/ui/glow"
+import { LiquidButton } from "@/components/ui/liquid-glass-button"
 
 interface HeroWithMockupProps {
   eyebrow?: string
@@ -40,62 +41,64 @@ export function HeroWithMockup({
         className,
       )}
     >
-      <div className="relative mx-auto flex max-w-5xl flex-col gap-12 lg:gap-20">
-        <div className="relative z-10 flex flex-col items-center gap-6 text-center lg:gap-8">
-          {eyebrow ? (
-            <Badge
-              variant="outline"
-              className="animate-appear px-3 py-1 text-xs tracking-wide text-muted-foreground opacity-0 [animation-delay:0ms]"
-            >
-              {eyebrow}
-            </Badge>
-          ) : null}
+      <div className="relative mx-auto max-w-7xl">
+        <div className="relative z-10 grid gap-10 md:grid-cols-[1fr_1.2fr] md:items-center md:gap-8">
+          <div className="flex flex-col items-center gap-5 text-center md:items-start md:gap-6 md:text-left">
+            {eyebrow ? (
+              <Badge
+                variant="outline"
+                className="animate-appear px-3 py-1 text-xs tracking-wide text-muted-foreground opacity-0 [animation-delay:0ms]"
+              >
+                {eyebrow}
+              </Badge>
+            ) : null}
 
-          <h1
-            className={cn(
-              "inline-block animate-appear opacity-0 [animation-delay:80ms]",
-              "text-4xl font-semibold tracking-tight sm:text-5xl md:text-6xl",
-              "leading-[1.1]",
-              "text-foreground",
-            )}
-          >
-            {title}
-          </h1>
-
-          <p
-            className={cn(
-              "max-w-[620px] animate-appear opacity-0 [animation-delay:200ms]",
-              "text-base sm:text-lg",
-              "text-muted-foreground",
-            )}
-          >
-            {description}
-          </p>
-
-          <div className="relative z-10 flex flex-wrap items-center justify-center gap-3 animate-appear opacity-0 [animation-delay:320ms]">
-            <button
-              type="button"
-              onClick={() => {
-                window.location.href = primaryCta.href
-              }}
-              className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-[0_8px_20px_rgba(0,0,0,0.14)] transition-transform hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(0,0,0,0.18)]"
+            <h1
+              className={cn(
+                "inline-block animate-appear opacity-0 [animation-delay:80ms]",
+                "text-3xl font-semibold tracking-tight sm:text-4xl md:text-3xl lg:text-4xl xl:text-5xl 2xl:text-6xl",
+                "leading-[1.1]",
+                "text-foreground",
+              )}
             >
-              {primaryCta.text}
-              <ArrowRight className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                window.location.href = secondaryCta.href
-              }}
-              className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-6 py-3 text-sm font-semibold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.06)] transition-transform hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(0,0,0,0.1)]"
+              {title}
+            </h1>
+
+            <p
+              className={cn(
+                "max-w-[480px] animate-appear opacity-0 [animation-delay:200ms]",
+                "text-base sm:text-lg",
+                "text-muted-foreground",
+              )}
             >
-              <Play className="h-4 w-4 fill-current" />
-              {secondaryCta.text}
-            </button>
+              {description}
+            </p>
+
+            <div className="relative z-10 flex flex-wrap items-center justify-center gap-3 animate-appear opacity-0 [animation-delay:320ms] md:justify-start">
+              <LiquidButton
+                size="lg"
+                className="bg-green-200 hover:bg-green-300"
+                onClick={() => {
+                  window.location.href = primaryCta.href
+                }}
+              >
+                {primaryCta.text}
+                <ArrowRight className="h-4 w-4" />
+              </LiquidButton>
+              <LiquidButton
+                size="lg"
+                variant="outline"
+                onClick={() => {
+                  window.location.href = secondaryCta.href
+                }}
+              >
+                <Play className="h-4 w-4 fill-current" />
+                {secondaryCta.text}
+              </LiquidButton>
+            </div>
           </div>
 
-          <div className="animate-appear relative w-full max-w-3xl pt-10 opacity-0 [animation-delay:480ms]">
+          <div className="animate-appear relative w-full opacity-0 [animation-delay:480ms]">
             {mockup}
           </div>
         </div>

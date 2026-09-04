@@ -8,12 +8,26 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { cn } from "@/lib/utils"
 import { usePurchaseFlow } from "@/lib/purchase-flow"
 import { PLANS } from "@/lib/plans"
+import { siVisa, siGooglepay, siPhonepe, siPaytm } from "simple-icons"
+
+// Only payment methods actually supported through our Razorpay checkout --
+// Apple Pay is deliberately left out since Razorpay doesn't support it for
+// Indian merchants, and listing it would set a false expectation. Mastercard,
+// Amex, CRED, and UPI are hand-built text/shape badges below since simple-icons
+// either has no real logo for them (CRED) or only ships a flat single-color
+// mark that reads as an unrecognizable blob/box (Mastercard, Amex).
+const paymentMethods = [
+  { name: "Visa", color: `#${siVisa.hex}`, icon: siVisa },
+  { name: "Google Pay", color: `#${siGooglepay.hex}`, icon: siGooglepay },
+  { name: "Paytm", color: `#${siPaytm.hex}`, icon: siPaytm },
+  { name: "PhonePe", color: `#${siPhonepe.hex}`, icon: siPhonepe },
+]
 
 export function Pricing() {
   const { startFlow } = usePurchaseFlow()
 
   return (
-    <section id="pricing" className="border-t border-border py-20 px-4 sm:py-28">
+    <section id="pricing" className="border-t border-border py-14 px-4 sm:py-20">
       <div className="mx-auto max-w-6xl">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -89,6 +103,54 @@ export function Pricing() {
           is a one-time purchase; Pro Monthly and Pro Annual are recurring
           subscriptions.
         </p>
+
+        <div className="mt-10 flex flex-wrap items-center justify-center gap-2.5">
+          <span className="text-sm font-medium text-foreground">Pay with</span>
+
+          <span
+            title="Visa"
+            className="flex h-11 w-20 items-center justify-center rounded-lg border border-border bg-card"
+          >
+            <svg viewBox="0 0 24 24" className="h-6 w-12" fill={`#${siVisa.hex}`} aria-hidden="true">
+              <path d={siVisa.path} />
+            </svg>
+          </span>
+
+          <span title="Mastercard" className="relative flex h-11 w-20 items-center justify-center rounded-lg border border-border bg-card">
+            <span className="absolute h-7 w-7 -translate-x-2 rounded-full bg-[#EB001B]" />
+            <span className="absolute h-7 w-7 translate-x-2 rounded-full bg-[#F79E1B] mix-blend-multiply" />
+          </span>
+
+          <span
+            title="American Express"
+            className="flex h-11 w-20 items-center justify-center rounded-lg bg-[#006FCF] text-[11px] font-bold tracking-tight text-white"
+          >
+            AMEX
+          </span>
+
+          {paymentMethods.slice(1).map((m) => (
+            <span
+              key={m.name}
+              title={m.name}
+              className="flex h-11 w-20 items-center justify-center rounded-lg border border-border bg-card"
+            >
+              <svg viewBox="0 0 24 24" className="h-7 w-7" fill={m.color} aria-hidden="true">
+                <path d={m.icon.path} />
+              </svg>
+            </span>
+          ))}
+
+          <span
+            title="CRED"
+            className="flex h-11 w-20 items-center justify-center rounded-lg bg-black text-[11px] font-bold tracking-tight text-white"
+          >
+            CRED
+          </span>
+
+          <span className="flex h-11 w-20 items-center justify-center rounded-lg border border-border bg-card text-xs font-bold text-foreground">
+            UPI
+          </span>
+        </div>
       </div>
     </section>
   )
