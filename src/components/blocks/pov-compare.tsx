@@ -62,6 +62,11 @@ export function PovCompare({ className, compact = false }: { className?: string;
 
   return (
     <div className="flex flex-col gap-2.5">
+      <div className={cn("flex items-center justify-between px-0.5 font-medium text-muted-foreground", captionClass)}>
+        <span>Candidate view</span>
+        <span>Interviewer view</span>
+      </div>
+
       <div
         ref={containerRef}
         onPointerDown={onPointerDown}
@@ -107,11 +112,6 @@ export function PovCompare({ className, compact = false }: { className?: string;
             <MoveHorizontal className={compact ? "h-3 w-3" : "h-4 w-4"} />
           </div>
         </div>
-      </div>
-
-      <div className={cn("flex items-center justify-between px-0.5 font-medium text-muted-foreground", captionClass)}>
-        <span>Candidate view</span>
-        <span>Interviewer view</span>
       </div>
     </div>
   )

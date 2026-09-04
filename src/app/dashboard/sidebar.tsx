@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
-import { AudioLines, Gift, LogOut, Moon, MonitorSmartphone, Sun } from "lucide-react"
+import { AudioLines, Gift, LogOut, Menu, Moon, MonitorSmartphone, Sun, X } from "lucide-react"
 import logo from "@/assets/smallbird-logo.png"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { usePurchaseFlow } from "@/lib/purchase-flow"
@@ -63,14 +63,15 @@ export function DashboardSidebar({
   const [theme, setTheme] = useTheme()
   const [view, setView] = useState<"interviews" | "plans">("interviews")
   const [confirmingLogout, setConfirmingLogout] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const initial = email.charAt(0).toUpperCase()
   const avatarColor = colorForUser(email)
   const name = email.split("@")[0]
 
   return (
-    <div className={`${theme === "dark" ? "dark" : ""} flex h-screen overflow-hidden bg-background text-foreground`}>
-      <aside className="flex w-64 shrink-0 flex-col gap-6 overflow-y-auto border-r border-border bg-background px-4 py-5">
-        <a href="/" className="flex items-center gap-2 px-1">
+    <div className={`${theme === "dark" ? "dark" : ""} flex h-screen flex-col overflow-hidden bg-background text-foreground lg:flex-row`}>
+      <div className="flex items-center justify-between border-b border-border bg-background px-4 py-3 lg:hidden">
+        <a href="/" className="flex items-center gap-2">
           <Image src={logo} alt="Smallbird" className="h-6 w-auto" />
           <span
             className="text-lg font-bold tracking-tight text-foreground"
@@ -79,12 +80,53 @@ export function DashboardSidebar({
             SmallBird
           </span>
         </a>
+        <button
+          type="button"
+          onClick={() => setMobileNavOpen(true)}
+          aria-label="Open menu"
+          className="rounded-md p-2 text-foreground transition-colors hover:bg-foreground/10"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+      </div>
+
+      {mobileNavOpen && (
+        <div className="fixed inset-0 z-40 bg-black/60 lg:hidden" onClick={() => setMobileNavOpen(false)} />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 -translate-x-full flex-col gap-6 overflow-y-auto border-r border-border bg-background px-4 py-5 transition-transform duration-200 lg:static lg:translate-x-0 ${
+          mobileNavOpen ? "translate-x-0" : ""
+        }`}
+      >
+        <div className="flex items-center justify-between px-1">
+          <a href="/" className="flex items-center gap-2">
+            <Image src={logo} alt="Smallbird" className="h-6 w-auto" />
+            <span
+              className="text-lg font-bold tracking-tight text-foreground"
+              style={{ fontFamily: "var(--font-playfair-display)" }}
+            >
+              SmallBird
+            </span>
+          </a>
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(false)}
+            aria-label="Close menu"
+            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-foreground/10 lg:hidden"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
 
         <nav className="flex flex-col gap-1">
           <div className="px-2 pb-1 text-xs font-semibold text-muted-foreground">Workspace</div>
           <button
             type="button"
-            onClick={() => setView("interviews")}
+            onClick={() => {
+              setView("interviews")
+              setMobileNavOpen(false)
+            }}
             className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
               view === "interviews" ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5"
             }`}
