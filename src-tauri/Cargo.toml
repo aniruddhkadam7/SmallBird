@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "0.1.7"
+version = "0.1.8"
 description = "Smallbird — AI interview copilot"
 authors = ["you"]
 edition = "2021"
@@ -68,4 +68,6 @@ tokio-tungstenite = { version = "0.24", default-features = false, features = ["c
 # service's per-launch internal auth token (see src/rag/process.rs). Adds no
 # new crate to the dependency tree.
 ring = "0.17"
+xcap = "0.9.8"
+base64 = "0.23.1"
 

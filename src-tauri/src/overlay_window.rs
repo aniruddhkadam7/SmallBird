@@ -11,7 +11,59 @@ use crate::main_window::MAIN_WINDOW_LABEL;
 use crate::windows_capture_protection;
 
 const OVERLAY_FALLBACK_SIDE: f64 = 560.0;
-const DEFAULT_SIZE_FRACTION: f64 = 0.75;
+// Was 0.75 ("large") back when this was the baseline for a *square* window.
+// Combined with OVERLAY_HEIGHT_BOOST below it now made every fresh overlay
+// open nearly full-screen-tall, which read as "opening too big" — dialed
+// back so the default open is comfortably sized, with "large" still
+// available deliberately via the resize icon (see SIZE_FRACTIONS).
+const DEFAULT_SIZE_FRACTION: f64 = 0.48;
+
+/// The header's pill toolbar (Answer/Screenshot/Chat + move/resize/more/End)
+/// needs meaningfully more horizontal room than the window is tall — the
+/// overlay used to be a plain square (`side x side`), which clipped or
+/// overflowed that row. Width is this multiple of the height instead;
+/// `overlay_dimensions` below is the one place that math lives.
+const OVERLAY_WIDTH_RATIO: f64 = 1.7;
+
+/// Absolute floor on top of `overlay_dimensions`' own math — the action
+/// bar's three pill buttons (each carrying a keyboard-shortcut hint) plus
+/// the mic/speaker status icons and the move/resize/more/End controls need
+/// this much room laid out in one row without wrapping or clipping,
+/// regardless of what fraction-of-screen math would otherwise produce at
+/// the "small" preset on a modest display.
+// Was 700 — the action bar's pill buttons dropped their inline keyboard-hint
+// text since this was last tuned, so they need less horizontal room now.
+const OVERLAY_MIN_WIDTH: f64 = 640.0;
+
+/// Height gets more room than the old square math gave it, independent of
+/// width — the three stacked bars (action bar, transcript bar, main panel)
+/// need vertical space of their own, not just whatever falls out of matching
+/// the width ratio. Multiplies the same fraction-of-screen baseline width
+/// derives from, so the two scale independently rather than one inflating
+/// the other.
+const OVERLAY_HEIGHT_BOOST: f64 = 1.35;
+
+/// From a monitor size and a size fraction, computes (width, height) for the
+/// overlay. Both start from the same baseline — `fraction` of the monitor's
+/// shorter side (the value the old square sizing used directly as its one
+/// side) — then scale independently: height by `OVERLAY_HEIGHT_BOOST`, width
+/// by `OVERLAY_WIDTH_RATIO`, each with its own floor. Width is capped so it
+/// never exceeds the monitor's own width (with a small margin so the window
+/// never touches both screen edges at once); height is capped against the
+/// monitor's height minus `TOP_MARGIN` and a matching bottom margin, since
+/// the window is now anchored at top-center (see `center_overlay_on_screen`)
+/// rather than vertically centered, so it has to fit below that margin
+/// without running off the bottom of the screen.
+fn overlay_dimensions(monitor_size: LogicalSize<f64>, fraction: f64, min_height: f64) -> (f64, f64) {
+    let baseline = monitor_size.width.min(monitor_size.height) * fraction;
+    let height = (baseline * OVERLAY_HEIGHT_BOOST)
+        .max(min_height)
+        .min(monitor_size.height - TOP_MARGIN * 2.0);
+    let width = (baseline * OVERLAY_WIDTH_RATIO)
+        .max(OVERLAY_MIN_WIDTH)
+        .min(monitor_size.width - 40.0);
+    (width, height)
+}
 
 #[derive(Debug, Clone, Copy, serde::Serialize)]
 pub struct OverlayCaptureStatus {
@@ -117,8 +169,8 @@ pub fn resize_overlay(app: &AppHandle, label: &str, fraction: f64) -> Result<(),
     if let Ok(Some(monitor)) = window.primary_monitor() {
         let scale = monitor.scale_factor();
         let monitor_size = monitor.size().to_logical::<f64>(scale);
-        let side = (monitor_size.width.min(monitor_size.height) * fraction).max(320.0);
-        let _ = window.set_size(LogicalSize::new(side, side));
+        let (width, height) = overlay_dimensions(monitor_size, fraction, 520.0);
+        let _ = window.set_size(LogicalSize::new(width, height));
     }
     center_overlay_on_screen(&window, false);
     Ok(())
@@ -127,8 +179,11 @@ pub fn resize_overlay(app: &AppHandle, label: &str, fraction: f64) -> Result<(),
 fn build_overlay_window(app: &AppHandle, label: &str, title: &str) -> Result<WebviewWindow, String> {
     WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
         .title(title)
-        .inner_size(OVERLAY_FALLBACK_SIDE, OVERLAY_FALLBACK_SIDE)
-        .min_inner_size(320.0, 320.0)
+        .inner_size(OVERLAY_FALLBACK_SIDE * OVERLAY_WIDTH_RATIO, OVERLAY_FALLBACK_SIDE)
+        // Width floor is wide enough for the action bar's three pill buttons
+        // (with their keyboard-shortcut hints) plus the move/resize/more/End
+        // controls without clipping or overflowing.
+        .min_inner_size(OVERLAY_MIN_WIDTH, 320.0)
         .resizable(true)
         .decorations(false)
         .transparent(true)
@@ -148,15 +203,15 @@ fn build_overlay_window(app: &AppHandle, label: &str, title: &str) -> Result<Web
 /// main_window.rs's `position_top_center`/`TOP_MARGIN`), so the overlay
 /// should land close to it rather than drifting toward the middle of a
 /// tall monitor.
-const UPWARD_BIAS: f64 = 40.0;
+const TOP_MARGIN: f64 = 24.0;
 
-/// Positions the overlay centered on the primary monitor — horizontally
-/// exactly centered, vertically offset upward by `UPWARD_BIAS`. If
-/// `apply_default_size` is set (only true right after `build_overlay_window`
-/// creates a brand-new window), also sizes it to a square roughly
-/// three-quarters of the primary monitor's shorter dimension first.
-/// `resize_overlay` sets its own explicit size before calling this purely
-/// for repositioning, so it always passes `false`.
+/// Positions the overlay at top-center of the primary monitor — horizontally
+/// exactly centered, vertically anchored `TOP_MARGIN` below the top edge
+/// rather than vertically centered. If `apply_default_size` is set (only
+/// true right after `build_overlay_window` creates a brand-new window), also
+/// sizes it first via `overlay_dimensions`. `resize_overlay` sets its own
+/// explicit size before calling this purely for repositioning, so it always
+/// passes `false`.
 ///
 /// Always computed from the monitor and the overlay's own *intended* size
 /// (recomputed here with the same `DEFAULT_SIZE_FRACTION` math
@@ -177,18 +232,21 @@ fn center_overlay_on_screen(window: &WebviewWindow, apply_default_size: bool) {
     let monitor_size = monitor.size().to_logical::<f64>(scale);
     let monitor_pos = monitor.position().to_logical::<f64>(scale);
 
-    let side = if apply_default_size {
-        let side = (monitor_size.width.min(monitor_size.height) * DEFAULT_SIZE_FRACTION).max(360.0);
-        let _ = window.set_size(LogicalSize::new(side, side));
-        side
+    let (width, height) = if apply_default_size {
+        let dims = overlay_dimensions(monitor_size, DEFAULT_SIZE_FRACTION, 560.0);
+        let _ = window.set_size(LogicalSize::new(dims.0, dims.1));
+        dims
     } else {
         window
             .outer_size()
-            .map(|s| s.to_logical::<f64>(scale).width)
-            .unwrap_or_else(|_| (monitor_size.width.min(monitor_size.height) * DEFAULT_SIZE_FRACTION).max(360.0))
+            .map(|s| {
+                let logical = s.to_logical::<f64>(scale);
+                (logical.width, logical.height)
+            })
+            .unwrap_or_else(|_| overlay_dimensions(monitor_size, DEFAULT_SIZE_FRACTION, 560.0))
     };
 
-    let x = monitor_pos.x + (monitor_size.width - side) / 2.0;
-    let y = (monitor_pos.y + (monitor_size.height - side) / 2.0 - UPWARD_BIAS).max(monitor_pos.y);
+    let x = monitor_pos.x + (monitor_size.width - width) / 2.0;
+    let y = monitor_pos.y + TOP_MARGIN;
     let _ = window.set_position(LogicalPosition::new(x, y));
 }

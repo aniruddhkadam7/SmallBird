@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import ReactMarkdown from "react-markdown";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import type { TranscriptSegment } from "./types";
 import {
   loadOverlaySettings,
@@ -10,6 +12,7 @@ import {
   SIZE_FRACTIONS,
   type AnswerLength,
   type OverlaySettings,
+  type OverlaySize,
   type ResponseStyle,
 } from "./overlaySettings";
 import { OverlaySettingsPanel } from "./OverlaySettingsPanel";
@@ -20,6 +23,23 @@ import {
   joinSpeech,
 } from "./questionCompleteness";
 import { AudioLevelBars, useSttSpeaking } from "./ui";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  CopyIcon,
+  GearIcon,
+  MessageIcon,
+  MicIcon,
+  MicOffIcon,
+  MoreVerticalIcon,
+  MoveIcon,
+  ResizeIcon,
+  SendIcon,
+  SpeakerIcon,
+  StarIcon,
+  ThumbsDownIcon,
+  ThumbsUpIcon,
+} from "./OverlayIcons";
 import { loadLlmProvider } from "./llmProviderSetting";
 import { getEntitlement } from "./auth";
 
@@ -45,6 +65,17 @@ interface Turn {
   answer: string;
   pending: boolean;
   failed?: boolean;
+  /// When this turn was asked — Date.now() at creation. Rendered as a
+  /// timestamp under the answer; local-only, never sent to the backend.
+  askedAt: number;
+  /// Local-only reaction on the answer — never sent anywhere, just a
+  /// personal "was this good" marker for the candidate to glance back at.
+  feedback?: "up" | "down" | null;
+}
+
+function formatTimestamp(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
 }
 
 const overlayWindow = getCurrentWebviewWindow();
@@ -52,6 +83,15 @@ const overlayWindow = getCurrentWebviewWindow();
 /// Cap on how tall the question box can grow before it scrolls internally
 /// instead of continuing to shrink the conversation area above it.
 const MAX_QUESTION_INPUT_PX = 160;
+
+/// Fixed label for a screen-analysis turn — matches the backend's
+/// `ANALYZE_SCREEN_QUESTION_LABEL` (commands.rs), since there's no real
+/// transcribed question to show; it's also what gets replayed as this turn's
+/// "question" in later questions' conversation history.
+const ANALYZE_SCREEN_QUESTION_LABEL = "What's on my screen?";
+
+/// Cycle order for the resize icon — small -> medium -> large -> small.
+const SIZE_ORDER: OverlaySize[] = ["small", "medium", "large"];
 
 /// Range for the header's opacity slider. The floor matches
 /// `MIN_USABLE_OPACITY` in overlaySettings.ts — below that the overlay is hard
@@ -64,13 +104,73 @@ const OPACITY_MAX = 1;
 // joinSpeech() now live in questionCompleteness.ts, shared with Custom
 // Agents' overlay so both Auto AI implementations behave identically.
 
+/// react-markdown's `code` renderer — fenced code blocks (```python ... ```)
+/// get real syntax highlighting (VS Code's own Dark+ theme) instead of flat
+/// monochrome text, since a coding-interview answer is far more scannable
+/// with the same coloring an interviewer would see reading it in an editor.
+/// Inline code (`like this`) has no `language-xxx` class and stays a plain
+/// <code> pill — only fenced blocks get the highlighter.
+function MarkdownCode({ className, children, ...rest }: React.ComponentPropsWithoutRef<"code">) {
+  const language = /language-(\w+)/.exec(className ?? "")?.[1];
+  if (!language) {
+    return (
+      <code className={className} {...rest}>
+        {children}
+      </code>
+    );
+  }
+  return (
+    <SyntaxHighlighter
+      language={language}
+      style={vscDarkPlus}
+      customStyle={{
+        margin: 0,
+        padding: "8px 10px",
+        background: "rgba(0, 0, 0, 0.35)",
+        border: "1px solid rgba(255, 255, 255, 0.1)",
+        borderRadius: 6,
+        fontSize: "0.85em",
+        lineHeight: 1.45,
+        // The overlay is narrow — wrap long lines instead of the theme's
+        // default horizontal scroll, matching how the rest of the answer
+        // already wraps.
+        whiteSpace: "pre-wrap",
+        overflowWrap: "anywhere",
+      }}
+      codeTagProps={{
+        style: {
+          fontFamily: '"Cascadia Code", "SF Mono", Menlo, Consolas, monospace',
+          whiteSpace: "pre-wrap",
+          overflowWrap: "anywhere",
+        },
+      }}
+    >
+      {String(children).replace(/\n$/, "")}
+    </SyntaxHighlighter>
+  );
+}
+
 export function InterviewOverlay() {
   // The whole conversation, oldest first. Nothing is ever removed or replaced
   // — a new question appends, and streaming deltas only ever mutate the last
   // turn's answer.
   const [turns, setTurns] = useState<Turn[]>([]);
+  // Which turn the single-card panel is showing — `null` means "follow the
+  // newest turn" (the common case); an explicit index means the candidate
+  // paged back to review an earlier one via the ⌘←/⌘→ buttons. Sending a new
+  // question always snaps back to `null` so the answer streaming in is what
+  // shows, regardless of where they'd paged to.
+  const [viewIndex, setViewIndex] = useState<number | null>(null);
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
+  // Chat mode: a manual, typed-only way to ask something without touching
+  // the live-transcript buffer — see `sendChat`. Off by default; the
+  // overlay's primary flow stays transcript + Ask AI / Analyze Screen.
+  const [chatMode, setChatMode] = useState(false);
+  const [chatDraft, setChatDraft] = useState("");
+  // Whether Row B (status readout + Auto AI/opacity/settings) is revealed —
+  // tucked behind the "⋮" (More) icon in Row A rather than always visible.
+  const [moreOpen, setMoreOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [captureExcluded, setCaptureExcluded] = useState<boolean | null>(null);
   // Whether audio capture is confirmed actually running, so the header can
@@ -146,6 +246,20 @@ export function InterviewOverlay() {
   // version instead of one captured at effect-setup time.
   const askAIRef = useRef<() => void>(() => {});
   const autoAIEnabledRef = useRef(false);
+  // Id of the turn currently receiving answer-delta/answer-complete events —
+  // the reveal ticker below only ever touches this turn.
+  const currentTurnIdRef = useRef<string | null>(null);
+  // Per-turn reveal state, keyed by turn id. `full` accumulates every delta
+  // (and is topped up by the authoritative answer-complete payload) as fast
+  // as events arrive; `shown` trails behind it and is drained at a steady
+  // pace by the ticker effect below. This decouples "text received" from
+  // "text displayed": whether the backend/network delivers real token-by-
+  // token deltas or the whole answer in one late burst, the overlay always
+  // reveals it as a smooth word-by-word typing effect instead of slamming
+  // the full answer onto screen at once. `done` marks that answer-complete
+  // has landed for this turn, so the ticker knows there's nothing more to
+  // wait for once `shown` catches up to `full`.
+  const revealRef = useRef<Map<string, { full: string; shown: number; done: boolean }>>(new Map());
 
   useEffect(
     () => () => {
@@ -238,29 +352,29 @@ export function InterviewOverlay() {
 
     // Deltas always belong to the last turn — it is the only one that can be
     // pending, because Ask AI is disabled until the previous answer completes.
+    // They only feed the reveal buffer here; the ticker effect below is what
+    // actually paints them into `turns`, at a steady pace.
     const unlistenDelta = listen<string>("interview-mode:answer-delta", (event) => {
-      setTurns((prev) => {
-        if (!prev.length) return prev;
-        const last = prev[prev.length - 1];
-        if (!last.pending) return prev;
-        return [...prev.slice(0, -1), { ...last, answer: last.answer + event.payload }];
-      });
+      const id = currentTurnIdRef.current;
+      if (!id) return;
+      const entry = revealRef.current.get(id);
+      if (!entry || entry.done) return;
+      entry.full += event.payload;
     });
 
     const unlistenComplete = listen<string>("interview-mode:answer-complete", (event) => {
-      setTurns((prev) => {
-        if (!prev.length) return prev;
-        const last = prev[prev.length - 1];
-        if (!last.pending) return prev;
+      const id = currentTurnIdRef.current;
+      if (id) {
+        const entry = revealRef.current.get(id) ?? { full: "", shown: 0, done: false };
         // Prefer the completed answer from the event: it is authoritative,
         // where the accumulated deltas could have dropped one.
-        return [
-          ...prev.slice(0, -1),
-          { ...last, answer: event.payload || last.answer, pending: false },
-        ];
-      });
-      busyRef.current = false;
-      setBusy(false);
+        if (event.payload && event.payload.length > entry.full.length) entry.full = event.payload;
+        entry.done = true;
+        revealRef.current.set(id, entry);
+      }
+      // The turn itself is only marked non-pending once the reveal ticker
+      // finishes draining it (see below) — busy/pending stay in sync with
+      // what's actually on screen, not with when bytes arrived.
     });
 
     return () => {
@@ -269,6 +383,65 @@ export function InterviewOverlay() {
       unlistenComplete.then((f) => f());
       clearAutoAiTimer();
     };
+  }, []);
+
+  // Reveal ticker: drains the current turn's reveal buffer (see
+  // `revealRef` above) at a steady pace instead of dumping newly-received
+  // text onto screen the instant it arrives. Advances one word at a time in
+  // the common case; when a lot of unrevealed text has piled up (e.g. the
+  // backend delivered most of the answer in one late burst), it reveals
+  // proportionally more words per tick so a long buffered answer still
+  // finishes in a reasonable time instead of visibly crawling.
+  useEffect(() => {
+    const TICK_MS = 30;
+    const advance = (full: string, shown: number): number => {
+      const remaining = full.length - shown;
+      if (remaining <= 0) return shown;
+      const wordsThisTick = 1 + Math.floor(remaining / 150);
+      let pos = shown;
+      for (let i = 0; i < wordsThisTick; i++) {
+        const nextSpace = full.indexOf(" ", pos);
+        if (nextSpace === -1) {
+          pos = full.length;
+          break;
+        }
+        pos = nextSpace + 1;
+      }
+      return pos;
+    };
+
+    const id = window.setInterval(() => {
+      const turnId = currentTurnIdRef.current;
+      if (!turnId) return;
+      const entry = revealRef.current.get(turnId);
+      if (!entry) return;
+
+      if (entry.shown >= entry.full.length) {
+        if (!entry.done) return;
+        setTurns((prev) => {
+          const idx = prev.findIndex((t) => t.id === turnId);
+          if (idx === -1 || !prev[idx].pending) return prev;
+          const next = [...prev];
+          next[idx] = { ...next[idx], answer: entry.full, pending: false };
+          return next;
+        });
+        if (currentTurnIdRef.current === turnId) currentTurnIdRef.current = null;
+        busyRef.current = false;
+        setBusy(false);
+        return;
+      }
+
+      entry.shown = advance(entry.full, entry.shown);
+      setTurns((prev) => {
+        const idx = prev.findIndex((t) => t.id === turnId);
+        if (idx === -1 || !prev[idx].pending) return prev;
+        const next = [...prev];
+        next[idx] = { ...next[idx], answer: entry.full.slice(0, entry.shown) };
+        return next;
+      });
+    }, TICK_MS);
+
+    return () => window.clearInterval(id);
   }, []);
 
   // Live countdown: fetch the plan balance once per session (on mount, and
@@ -365,6 +538,28 @@ export function InterviewOverlay() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [turns, question]);
 
+  // Shared between `askAI` and `analyzeScreen` — both send the same
+  // answer-shaping options to their respective backend commands.
+  const buildAskOptions = useCallback(() => {
+    const chosenProvider = loadLlmProvider();
+    return {
+      answerLength: settings.answerLength,
+      responseStyle: settings.responseStyle,
+      role: settings.role.trim() || null,
+      jobDescription: settings.jobDescription.trim() || null,
+      englishLevel: settings.englishLevel,
+      humanization: settings.humanization,
+      // DeepSeek isn't implemented backend-side yet (see
+      // llmProviderSetting.ts) — the header dropdown keeps it disabled, so
+      // only "anthropic"/"openai"/"gemini" ever actually reach here in
+      // practice, but guard anyway rather than send an unsupported value.
+      llmProvider:
+        chosenProvider === "anthropic" || chosenProvider === "openai" || chosenProvider === "gemini"
+          ? chosenProvider
+          : null,
+    };
+  }, [settings]);
+
   const askAI = useCallback(async () => {
     const trimmed = question.trim();
     if (!trimmed || busyRef.current) return;
@@ -378,10 +573,14 @@ export function InterviewOverlay() {
       question: trimmed,
       answer: "",
       pending: true,
+      askedAt: Date.now(),
     };
     setTurns((prev) => [...prev, turn]);
+    setViewIndex(null);
     setQuestion("");
     committedRef.current = "";
+    currentTurnIdRef.current = turn.id;
+    revealRef.current.set(turn.id, { full: "", shown: 0, done: false });
     // If the interviewer was still mid-utterance when Ask AI was pressed,
     // its text already made it into `trimmed` via the live partial — the
     // final that STT emits for that same segment a moment later must be
@@ -397,26 +596,10 @@ export function InterviewOverlay() {
       .map((t) => ({ question: t.question, answer: t.answer }));
 
     try {
-      const chosenProvider = loadLlmProvider();
       await invoke<string>("ask_interview_question", {
         question: trimmed,
         history,
-        options: {
-          answerLength: settings.answerLength,
-          responseStyle: settings.responseStyle,
-          role: settings.role.trim() || null,
-          jobDescription: settings.jobDescription.trim() || null,
-          englishLevel: settings.englishLevel,
-          humanization: settings.humanization,
-          // DeepSeek isn't implemented backend-side yet (see
-          // llmProviderSetting.ts) — the header dropdown keeps it disabled,
-          // so only "anthropic"/"openai"/"gemini" ever actually reach here in
-          // practice, but guard anyway rather than send an unsupported value.
-          llmProvider:
-            chosenProvider === "anthropic" || chosenProvider === "openai" || chosenProvider === "gemini"
-              ? chosenProvider
-              : null,
-        },
+        options: buildAskOptions(),
       });
     } catch (e) {
       setError(String(e));
@@ -425,14 +608,175 @@ export function InterviewOverlay() {
       setTurns((prev) =>
         prev.map((t) => (t.id === turn.id ? { ...t, pending: false, failed: true } : t)),
       );
+      if (currentTurnIdRef.current === turn.id) currentTurnIdRef.current = null;
+      revealRef.current.delete(turn.id);
       busyRef.current = false;
       setBusy(false);
     }
-  }, [question, turns, settings]);
+  }, [question, turns, buildAskOptions]);
 
   useEffect(() => {
     askAIRef.current = askAI;
   }, [askAI]);
+
+  // Captures the primary screen and asks the LLM to identify/solve whatever
+  // is shown (a coding problem, a diagram, written questions, etc.) — same
+  // streamed-turn shape as askAI, just without a transcribed question.
+  const analyzeScreen = useCallback(async () => {
+    if (busyRef.current) return;
+
+    setError(null);
+    const turn: Turn = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      question: ANALYZE_SCREEN_QUESTION_LABEL,
+      answer: "",
+      pending: true,
+      askedAt: Date.now(),
+    };
+    setTurns((prev) => [...prev, turn]);
+    setViewIndex(null);
+    currentTurnIdRef.current = turn.id;
+    revealRef.current.set(turn.id, { full: "", shown: 0, done: false });
+    busyRef.current = true;
+    setBusy(true);
+
+    const history = turns
+      .filter((t) => !t.pending && t.answer.trim() && !t.failed)
+      .map((t) => ({ question: t.question, answer: t.answer }));
+
+    try {
+      await invoke<string>("analyze_screen_question", {
+        history,
+        options: buildAskOptions(),
+      });
+    } catch (e) {
+      setError(String(e));
+      setTurns((prev) =>
+        prev.map((t) => (t.id === turn.id ? { ...t, pending: false, failed: true } : t)),
+      );
+      if (currentTurnIdRef.current === turn.id) currentTurnIdRef.current = null;
+      revealRef.current.delete(turn.id);
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }, [turns, buildAskOptions]);
+
+  // Sends a manually typed message in Chat mode — independent of the live
+  // transcript (`question`/committedRef), so switching into Chat mode never
+  // disturbs STT dictation running in the background. Reuses the same
+  // backend command and conversation history as askAI; the only difference
+  // is where the outgoing text comes from.
+  const sendChat = useCallback(async () => {
+    const trimmed = chatDraft.trim();
+    if (!trimmed || busyRef.current) return;
+
+    setError(null);
+    const turn: Turn = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      question: trimmed,
+      answer: "",
+      pending: true,
+      askedAt: Date.now(),
+    };
+    setTurns((prev) => [...prev, turn]);
+    setViewIndex(null);
+    setChatDraft("");
+    currentTurnIdRef.current = turn.id;
+    revealRef.current.set(turn.id, { full: "", shown: 0, done: false });
+    busyRef.current = true;
+    setBusy(true);
+
+    const history = turns
+      .filter((t) => !t.pending && t.answer.trim() && !t.failed)
+      .map((t) => ({ question: t.question, answer: t.answer }));
+
+    try {
+      await invoke<string>("ask_interview_question", {
+        question: trimmed,
+        history,
+        options: buildAskOptions(),
+      });
+    } catch (e) {
+      setError(String(e));
+      setTurns((prev) =>
+        prev.map((t) => (t.id === turn.id ? { ...t, pending: false, failed: true } : t)),
+      );
+      if (currentTurnIdRef.current === turn.id) currentTurnIdRef.current = null;
+      revealRef.current.delete(turn.id);
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }, [chatDraft, turns, buildAskOptions]);
+
+  const handleChatKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendChat();
+      }
+    },
+    [sendChat],
+  );
+
+  const toggleFeedback = useCallback((turnId: string, reaction: "up" | "down") => {
+    setTurns((prev) =>
+      prev.map((t) =>
+        t.id === turnId ? { ...t, feedback: t.feedback === reaction ? null : reaction } : t,
+      ),
+    );
+  }, []);
+
+  const copyAnswer = useCallback((answer: string) => {
+    navigator.clipboard?.writeText(answer).catch(() => {});
+  }, []);
+
+  // Single-turn panel navigation (⌘←/⌘→ in the reference layout) — pages the
+  // displayed turn without touching `turns` itself.
+  const goPrevTurn = useCallback(() => {
+    setViewIndex((v) => {
+      const current = v ?? turns.length - 1;
+      return Math.max(0, current - 1);
+    });
+  }, [turns.length]);
+
+  const goNextTurn = useCallback(() => {
+    setViewIndex((v) => {
+      const current = v ?? turns.length - 1;
+      return Math.min(turns.length - 1, current + 1);
+    });
+  }, [turns.length]);
+
+  // Clears the whole conversation (the panel's own Clear), distinct from the
+  // transcript/chat-draft Clear in the compose bar below.
+  const clearConversation = useCallback(() => {
+    if (busyRef.current) return;
+    setTurns([]);
+    setViewIndex(null);
+  }, []);
+
+  // Clears whichever buffer is currently live in the compose bar — the
+  // dictated transcript normally, or the chat draft while in Chat mode.
+  const clearComposeBuffer = useCallback(() => {
+    if (chatMode) {
+      setChatDraft("");
+    } else {
+      setQuestion("");
+      committedRef.current = "";
+    }
+  }, [chatMode]);
+
+  // Resize icon — cycles the overlay through its three preset sizes (see
+  // SIZE_FRACTIONS) and actually resizes the window itself; nothing else
+  // reacts to `settings.size` changes to do that on its own (the mount-time
+  // effect that calls resize_interview_overlay only ever runs once).
+  const cycleSize = useCallback(() => {
+    setSettings((prev) => {
+      const idx = SIZE_ORDER.indexOf(prev.size);
+      const nextSize = SIZE_ORDER[(idx + 1) % SIZE_ORDER.length];
+      invoke("resize_interview_overlay", { fraction: SIZE_FRACTIONS[nextSize] }).catch(() => {});
+      return { ...prev, size: nextSize };
+    });
+  }, []);
 
   // Archives the Q&A turns so far as one history entry, then hides the
   // overlay. Turns still pending/failed are skipped — only completed
@@ -480,7 +824,7 @@ export function InterviewOverlay() {
     invoke("hide_interview_overlay").catch(() => overlayWindow.hide());
   }, [turns, settings.role, settings.company]);
 
-  // Entry point for both the ✕ button and Escape: conversations with at least
+  // Entry point for both the End button and Escape: conversations with at least
   // one exchange ask for confirmation first (closing mid-interview is easy to
   // trigger by accident), while an empty session just closes immediately —
   // there's nothing to lose by skipping the prompt.
@@ -569,6 +913,36 @@ export function InterviewOverlay() {
         if (e.key === "Escape") setSettingsOpen(false);
         return;
       }
+      // Ctrl-chord shortcuts work from anywhere in the overlay, including
+      // while a textarea has focus — Ctrl+Enter/Ctrl+Shift+Enter/
+      // Ctrl+Shift+C are deliberately distinct from plain Enter (which the
+      // transcript/chat textareas already handle themselves) so they never
+      // collide with normal typing.
+      if (e.ctrlKey && !e.altKey && e.key === "Enter") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          analyzeScreen();
+        } else {
+          askAI();
+        }
+        return;
+      }
+      if (e.ctrlKey && e.shiftKey && !e.altKey && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        setChatMode((v) => !v);
+        return;
+      }
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === "ArrowLeft") {
+        e.preventDefault();
+        goPrevTurn();
+        return;
+      }
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === "ArrowRight") {
+        e.preventDefault();
+        goNextTurn();
+        return;
+      }
+
       // The textarea has its own Enter/Shift+Enter handling above; this
       // top-level listener only needs to cover ESC (hide) globally and ENTER
       // when focus is somewhere else in the overlay.
@@ -582,7 +956,7 @@ export function InterviewOverlay() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [askAI, settingsOpen, confirmingClose, requestClose]);
+  }, [askAI, analyzeScreen, goPrevTurn, goNextTurn, settingsOpen, confirmingClose, requestClose]);
 
   const overlayStyle: React.CSSProperties = {
     fontSize: `${settings.fontSize}px`,
@@ -595,6 +969,8 @@ export function InterviewOverlay() {
   };
 
   const hasConversation = turns.length > 0;
+  const displayIndex = turns.length === 0 ? -1 : Math.min(viewIndex ?? turns.length - 1, turns.length - 1);
+  const activeTurn = displayIndex >= 0 ? turns[displayIndex] : null;
   const opacityPercent = Math.round(settings.opacity * 100);
 
   return (
@@ -602,96 +978,172 @@ export function InterviewOverlay() {
       className={`overlay-root density-${settings.density} size-${settings.size}`}
       style={overlayStyle}
     >
-      {/* "deep" so the whole bar drags — including the empty space and the
-          status dot — rather than only direct clicks on this exact element,
-          which is what a bare attribute means. Safe for the controls on the
-          right: Tauri's drag script treats BUTTON/INPUT as clickable and
-          blocks dragging for them (tauri/src/window/scripts/drag.js). */}
-      <div className="overlay-header" data-tauri-drag-region="deep">
-        <AudioLevelBars active={sttSpeaking && !busy} />
-        <div className="overlay-title">
-          {/* While adjusting, the title doubles as the readout — the change
-              itself can be hard to judge against a dark desktop, and this
-              avoids spending permanent header space on a number. Before
-              capture is confirmed active, this says "Starting…" rather than
-              claiming "Listening" while audio/STT may still be initializing
-              (or may have failed — see the error banner below). */}
-          {opacityHint
-            ? `Opacity ${opacityPercent}%`
-            : busy
-              ? "Answering…"
-              : muted
-                ? "Muted"
-                : captureActive
-                  ? "Listening"
-                  : "Starting…"}
-        </div>
-
-        <div className="overlay-header-actions">
-          {/* Live plan-balance countdown — ticks down locally from the
-              balance fetched at session start; the server is the actual
-              source of truth (see usage-report), this just keeps the user
-              from being surprised mid-answer. Hidden until the balance
-              loads rather than showing a misleading "0:00" first. */}
-          {remainingSecondsAtStart !== null && (
-            <span
-              className="overlay-title"
-              style={{ opacity: 0.7, fontVariantNumeric: "tabular-nums" }}
-              title="Time remaining on your plan this session"
-            >
-              {formatCountdown(Math.max(0, remainingSecondsAtStart - elapsedSeconds))} left
-            </span>
-          )}
-
-          {/* A <button>, not a checkbox+<label>: Tauri's drag script already
-              treats BUTTON as clickable and blocks dragging for it (see the
-              comment on the opacity slider below), and a bare button avoids
-              the <label> pitfall that comment warns about — no risk of the
-              click handing the drag gesture back to the window. */}
-          <button
-            type="button"
-            className={`overlay-auto-ai-toggle${settings.autoAI ? " on" : ""}`}
-            onClick={() => setSettings((prev) => ({ ...prev, autoAI: !prev.autoAI }))}
-            title={
-              settings.autoAI
-                ? "Auto AI is on — questions send automatically when the interviewer stops talking"
-                : "Auto AI is off — use Ask AI or Enter to send"
-            }
+      {/* Row A — primary actions, styled as a pill toolbar (matches the
+          reference layout: Answer / Screenshot / Chat on the left, End on
+          the right). "deep" so the whole bar drags outside the pills
+          themselves — Tauri's drag script already treats BUTTON as
+          clickable and blocks dragging for it. */}
+      <div className="overlay-header overlay-action-bar" data-tauri-drag-region="deep">
+        {/* Mic + system audio share one underlying capture/mute pipeline
+            (see toggleMute/pause_recording — there's no separate on/off for
+            each source), so both are real buttons wired to the same toggle;
+            a lit red dot means that source is actually feeding the
+            transcript right now. This is also the overlay's only mute
+            control — the transcript bar used to have its own second mic
+            icon here, which was just a duplicate of this one. */}
+        <button
+          type="button"
+          className="overlay-status-icon"
+          onClick={toggleMute}
+          disabled={!captureActive || muteBusy}
+          title={muted ? "Unmute — resume transcribing" : "Mute — pause transcribing"}
+        >
+          {muted ? <MicOffIcon size={13} /> : <MicIcon size={13} />}
+          {captureActive && !muted && <span className="overlay-status-dot" />}
+        </button>
+        <button
+          type="button"
+          className="overlay-status-icon"
+          onClick={toggleMute}
+          disabled={!captureActive || muteBusy}
+          title={muted ? "Unmute — resume transcribing" : "Mute — pause transcribing"}
+        >
+          <SpeakerIcon size={13} />
+          {captureActive && !muted && <span className="overlay-status-dot" />}
+        </button>
+        <button
+          type="button"
+          className="overlay-pill-button"
+          onClick={askAI}
+          disabled={!question.trim() || busy}
+          title="Answer (Ctrl+Enter)"
+        >
+          Answer
+        </button>
+        <button
+          type="button"
+          className="overlay-pill-button"
+          onClick={analyzeScreen}
+          disabled={busy}
+          title="Analyze what's on my screen (Ctrl+Shift+Enter)"
+        >
+          Analyze Screen
+        </button>
+        {/* Auto AI toggle — replaces the Chat button here; the manual typed
+            follow-up it used to open is still reachable via Ctrl+Shift+C,
+            just without a dedicated pill in the primary row. */}
+        <button
+          type="button"
+          className={`overlay-pill-button${settings.autoAI ? " on" : ""}`}
+          onClick={() => setSettings((prev) => ({ ...prev, autoAI: !prev.autoAI }))}
+          title={
+            settings.autoAI
+              ? "Auto Answer is on — questions send automatically when the interviewer stops talking"
+              : "Auto Answer is off — use Answer or Enter to send"
+          }
+        >
+          Auto Answer
+        </button>
+        {remainingSecondsAtStart !== null && (
+          <span
+            className="overlay-time-left"
+            style={{ opacity: 0.7, fontVariantNumeric: "tabular-nums" }}
+            title="Time remaining on your plan this session"
           >
-            <span className="overlay-auto-ai-dot" />
-            Auto AI
-          </button>
-
-          {/* Safe inside the header's drag region without any extra handling:
-              Tauri's drag script treats INPUT as clickable and blocks dragging
-              for it (see tauri/src/window/scripts/drag.js). Do NOT wrap this in
-              a <label> or give it a data-tauri-drag-region attribute — either
-              would hand the gesture back to the window and make the bar
-              undraggable. */}
-          <input
-            type="range"
-            className="overlay-opacity-slider"
-            min={OPACITY_MIN}
-            max={OPACITY_MAX}
-            step={0.01}
-            value={settings.opacity}
-            onChange={handleOpacityChange}
-            aria-label="Overlay opacity"
-            title={`Opacity — ${opacityPercent}%`}
-          />
-
-          <button
-            className="overlay-icon-button"
-            onClick={() => setSettingsOpen((v) => !v)}
-            title="Settings"
-          >
-            ⚙
-          </button>
-          <button className="overlay-icon-button close" onClick={requestClose} title="Close (Esc)">
-            ✕
-          </button>
-        </div>
+            {formatCountdown(Math.max(0, remainingSecondsAtStart - elapsedSeconds))} left
+          </span>
+        )}
+        <div className="overlay-action-bar-spacer" />
+        {/* Not a <button> — the whole bar is already the drag handle (see
+            data-tauri-drag-region="deep" above); a real button here would
+            do nothing on click while also *blocking* the drag gesture at
+            that exact spot (Tauri's drag script excludes interactive
+            elements from dragging). This is purely the visual "you can drag
+            from here" affordance. */}
+        <span className="overlay-move-affordance" title="Drag anywhere on this bar to move">
+          <MoveIcon />
+        </span>
+        {/* Safe inside the header's drag region without any extra handling:
+            Tauri's drag script treats INPUT as clickable and blocks dragging
+            for it (see tauri/src/window/scripts/drag.js). Do NOT wrap this in
+            a <label> or give it a data-tauri-drag-region attribute — either
+            would hand the gesture back to the window and make the bar
+            undraggable. */}
+        <input
+          type="range"
+          className="overlay-opacity-slider"
+          min={OPACITY_MIN}
+          max={OPACITY_MAX}
+          step={0.01}
+          value={settings.opacity}
+          onChange={handleOpacityChange}
+          aria-label="Overlay opacity"
+          title={`Opacity — ${opacityPercent}%`}
+        />
+        {opacityHint && <span className="overlay-opacity-readout">{opacityPercent}%</span>}
+        <button
+          type="button"
+          className="overlay-icon-button"
+          onClick={cycleSize}
+          title={`Resize (currently ${settings.size})`}
+        >
+          <ResizeIcon />
+        </button>
+        <button
+          type="button"
+          className={`overlay-icon-button${moreOpen ? " on" : ""}`}
+          onClick={() => setMoreOpen((v) => !v)}
+          title="More"
+        >
+          <MoreVerticalIcon />
+        </button>
+        <button
+          type="button"
+          className="overlay-pill-button end"
+          onClick={requestClose}
+          title="End interview (Esc)"
+        >
+          End
+        </button>
       </div>
+
+      {/* Row B — status + Auto AI/opacity/full-settings, tucked behind "⋮"
+          (More) instead of permanently on screen, matching the reference's
+          minimal default chrome. */}
+      {moreOpen && (
+        <div className="overlay-header overlay-status-bar" data-tauri-drag-region="deep">
+          <div className="overlay-title">
+            {/* While adjusting, the title doubles as the readout — the
+                change itself can be hard to judge against a dark desktop,
+                and this avoids spending permanent header space on a number.
+                Before capture is confirmed active, this says "Starting…"
+                rather than claiming "Listening" while audio/STT may still be
+                initializing (or may have failed — see the error banner
+                below). */}
+            {opacityHint
+              ? `Opacity ${opacityPercent}%`
+              : busy
+                ? "Answering…"
+                : muted
+                  ? "Muted"
+                  : captureActive
+                    ? "Listening"
+                    : "Starting…"}
+          </div>
+
+          <div className="overlay-header-actions">
+            {/* Time-left and the Auto Answer toggle both moved to the main
+                action bar above — not duplicated here. */}
+            <button
+              className="overlay-icon-button"
+              onClick={() => setSettingsOpen((v) => !v)}
+              title="Settings"
+            >
+              <GearIcon />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Screen-capture exclusion (SetWindowDisplayAffinity/
           WDA_EXCLUDEFROMCAPTURE) can fail — older Windows builds don't
@@ -734,68 +1186,170 @@ export function InterviewOverlay() {
         />
       ) : (
         <>
-          <div className="overlay-chat" ref={scrollRef}>
-            {!hasConversation && !question && (
-              <p className="overlay-empty">Waiting for the interviewer to speak…</p>
-            )}
+          {/* Transcript/chat bar — its own rounded island, sitting between
+              the action bar and the answer panel. */}
+          {chatMode ? (
+            <div className="overlay-header overlay-transcript-bar overlay-chat-compose">
+              <AudioLevelBars active={sttSpeaking && !busy} />
+              <textarea
+                className="overlay-question-input"
+                value={chatDraft}
+                onChange={(e) => setChatDraft(e.target.value)}
+                onKeyDown={handleChatKeyDown}
+                placeholder="Type a follow-up…"
+                rows={1}
+                autoFocus
+              />
+              <button
+                type="button"
+                className="overlay-pill-button"
+                onClick={clearComposeBuffer}
+                disabled={!chatDraft.trim()}
+                title="Clear (Ctrl+Shift+Backspace)"
+              >
+                Clear
+              </button>
+              <button
+                className="overlay-icon-button"
+                onClick={sendChat}
+                disabled={!chatDraft.trim() || busy}
+                title="Send (Enter)"
+              >
+                <SendIcon />
+              </button>
+            </div>
+          ) : (
+            <div className="overlay-header overlay-transcript-bar">
+              <AudioLevelBars active={sttSpeaking && !busy} />
+              <textarea
+                ref={questionRef}
+                className="overlay-question-input"
+                value={question}
+                onChange={handleQuestionChange}
+                onKeyDown={handleQuestionKeyDown}
+                placeholder={hasConversation ? "Next question…" : "Waiting for the interviewer to speak…"}
+                rows={1}
+              />
+              <button
+                type="button"
+                className="overlay-pill-button"
+                onClick={clearComposeBuffer}
+                disabled={!question.trim()}
+                title="Clear (Ctrl+Shift+Backspace)"
+              >
+                Clear
+              </button>
+            </div>
+          )}
 
-            {turns.map((turn) => (
-              <div key={turn.id} className="chat-turn">
-                <div className="chat-message interviewer">
-                  <span className="chat-role">Interviewer</span>
-                  <p className="chat-text">{turn.question}</p>
+          {/* Main panel — a single Q&A card with ⌘←/⌘→-style paging through
+              the conversation, rather than one long scrolling list. Toolbar
+              + body share one island (no gap/shadow between them); the
+              wrapper below is what actually carries the panel's background,
+              radius and shadow. */}
+          <div className="overlay-panel">
+          <div className="overlay-header overlay-panel-toolbar" data-tauri-drag-region="deep">
+            <button
+              type="button"
+              className="overlay-icon-button"
+              onClick={goPrevTurn}
+              disabled={displayIndex <= 0}
+              title="Previous question (Ctrl+Left)"
+            >
+              <ChevronLeftIcon />
+            </button>
+            <button
+              type="button"
+              className="overlay-icon-button"
+              onClick={goNextTurn}
+              disabled={displayIndex < 0 || displayIndex >= turns.length - 1}
+              title="Next question (Ctrl+Right)"
+            >
+              <ChevronRightIcon />
+            </button>
+            <div className="overlay-action-bar-spacer" />
+            <button
+              type="button"
+              className="overlay-pill-button"
+              onClick={clearConversation}
+              disabled={!hasConversation || busy}
+              title="Clear the whole conversation"
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="overlay-chat" ref={scrollRef}>
+            {!activeTurn ? (
+              <p className="overlay-empty">Waiting for the interviewer to speak…</p>
+            ) : (
+              <div className="chat-turn">
+                <div className="chat-card-label question">
+                  <span className="chat-card-icon">
+                    <MessageIcon size={13} />
+                  </span>
+                  <span>Question:</span>
+                  <span className="chat-card-question-text">{activeTurn.question}</span>
+                  <button
+                    type="button"
+                    className="chat-copy-button"
+                    onClick={() => copyAnswer(activeTurn.answer)}
+                    disabled={!activeTurn.answer}
+                    title="Copy answer"
+                  >
+                    <CopyIcon size={13} />
+                  </button>
                 </div>
-                <div className={`chat-message assistant${turn.failed ? " failed" : ""}`}>
-                  <span className="chat-role">Answer</span>
-                  {turn.answer ? (
+                <div className={`chat-answer-card${activeTurn.failed ? " failed" : ""}`}>
+                  <div className="chat-card-label answer">
+                    <span className="chat-card-icon">
+                      <StarIcon size={13} />
+                    </span>
+                    <span>Answer:</span>
+                    {!activeTurn.pending && (
+                      <span className="chat-answer-timestamp">
+                        {formatTimestamp(activeTurn.askedAt)}
+                      </span>
+                    )}
+                  </div>
+                  {activeTurn.answer ? (
                     <div className="chat-text chat-markdown">
-                      <ReactMarkdown>{turn.answer}</ReactMarkdown>
+                      <ReactMarkdown components={{ code: MarkdownCode }}>{activeTurn.answer}</ReactMarkdown>
                     </div>
-                  ) : turn.failed ? (
+                  ) : activeTurn.failed ? (
                     <p className="chat-text muted">Couldn't get an answer.</p>
                   ) : (
                     <p className="chat-text muted thinking">Thinking…</p>
                   )}
+                  {!activeTurn.pending && (
+                    <div className="chat-answer-footer">
+                      <span className="chat-answer-timestamp">
+                        Answer · {formatTimestamp(activeTurn.askedAt)}
+                      </span>
+                      <div className="chat-feedback">
+                        <button
+                          type="button"
+                          className={`chat-feedback-button${activeTurn.feedback === "up" ? " active" : ""}`}
+                          onClick={() => toggleFeedback(activeTurn.id, "up")}
+                          title="Good answer"
+                        >
+                          <ThumbsUpIcon size={12} />
+                        </button>
+                        <button
+                          type="button"
+                          className={`chat-feedback-button${activeTurn.feedback === "down" ? " active" : ""}`}
+                          onClick={() => toggleFeedback(activeTurn.id, "down")}
+                          title="Not useful"
+                        >
+                          <ThumbsDownIcon size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
-            ))}
+            )}
           </div>
-
-          <div className="overlay-compose">
-            <textarea
-              ref={questionRef}
-              className="overlay-question-input"
-              value={question}
-              onChange={handleQuestionChange}
-              onKeyDown={handleQuestionKeyDown}
-              placeholder={hasConversation ? "Next question…" : "Waiting for the interviewer to speak…"}
-              rows={1}
-            />
-            {/* Pauses/resumes audio capture without tearing down the STT
-                connection or clearing the transcript-so-far — see
-                commands.rs's pause_recording/resume_recording doc comments.
-                Disabled until capture is actually confirmed active, matching
-                the backend's own state-machine requirement. Placed beside
-                Ask AI rather than up in the header — the same reach as the
-                button someone's about to click next, rather than a separate
-                trip to the top bar. */}
-            <button
-              type="button"
-              className={`overlay-icon-button${muted ? " on" : ""}`}
-              onClick={toggleMute}
-              disabled={!captureActive || muteBusy}
-              title={muted ? "Unmute — resume transcribing" : "Mute — pause transcribing"}
-            >
-              {muted ? "🔇" : "🎤"}
-            </button>
-            <button
-              className="overlay-ask-button"
-              onClick={askAI}
-              disabled={!question.trim() || busy}
-              title="Ask AI (Enter)"
-            >
-              Ask AI
-            </button>
           </div>
 
           {error && <p className="overlay-error">{error}</p>}

@@ -8,6 +8,7 @@
 //! second window the user can open/close independently.
 
 pub mod commands;
+pub mod screen;
 mod window;
 
 pub use window::{

@@ -116,11 +116,15 @@ interface AudioLevelBarsProps {
 /// going flat between words. Callers gate `active` on `useSttSpeaking()` so it
 /// stops moving once STT itself has gone idle (no speech to transcribe),
 /// rather than running continuously for the whole session.
+///
+/// Always renders its own footprint (even when inactive, just dimmed/still)
+/// rather than unmounting — the transcript bar's textarea sits right next to
+/// it, and this used to pop in/out of the layout every time STT started or
+/// stopped, visibly shifting the textarea's width mid-dictation.
 export function AudioLevelBars({ active, className }: AudioLevelBarsProps) {
-  if (!active) return null;
-  const classes = ["audio-level-bars", className].filter(Boolean).join(" ");
+  const classes = ["audio-level-bars", active && "active", className].filter(Boolean).join(" ");
   return (
-    <span className={classes} role="img" aria-label="Listening">
+    <span className={classes} role="img" aria-label={active ? "Listening" : "Not listening"}>
       <span className="audio-level-bar" />
       <span className="audio-level-bar" />
       <span className="audio-level-bar" />

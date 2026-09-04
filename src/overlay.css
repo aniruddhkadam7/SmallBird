@@ -20,13 +20,18 @@ body.overlay-window #root {
 }
 
 .overlay-root {
-  /* --overlay-alpha comes from the opacity slider. It tints the panel
+  /* --overlay-alpha comes from the opacity slider. It's used exactly as
+     before — as the alpha channel itself, unscaled — on each island's
+     background; only the RGB differs per tier below, so the three sections
+     read as different tones without changing how transparent any of them
+     is relative to the old single-tone --panel. Applied to each island's
      background only, never the element itself: applying `opacity` to the
      whole overlay would fade the text along with it and make a translucent
-     window unreadable. This way the glass gets more transparent while the
-     conversation stays crisp. */
-  --panel: rgba(18, 18, 22, var(--overlay-alpha, 0.55));
-  --hairline: rgba(255, 255, 255, 0.12);
+     window unreadable. */
+  --panel-header: rgba(60, 60, 60, var(--overlay-alpha, 0.72));
+  --panel-transcript: rgba(45, 45, 45, var(--overlay-alpha, 0.72));
+  --panel-answer: rgba(20, 20, 20, var(--overlay-alpha, 0.72));
+  --hairline: rgba(255, 255, 255, 0.1);
   --text: #f4f4f5;
   --muted: rgba(255, 255, 255, 0.6);
   --accent: #6aa8ff;
@@ -36,29 +41,89 @@ body.overlay-window #root {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  border-radius: 14px;
-  background-color: var(--panel);
-  /* Deliberately NO backdrop-filter. On a transparent Tauri window under
-     WebView2 there is no backdrop to sample, and the compositor falls back to
-     painting an opaque layer — which defeats window transparency entirely and
-     is exactly why this overlay rendered as a solid dark rectangle. The
-     translucency here comes from the alpha channel of --panel alone.
-
-     Text stays readable against a busy desktop via the shadow below rather
-     than by making the background more opaque. */
+  /* Tight gap between the three stacked bars (action bar, transcript bar,
+     main panel) — enough to read as separate floating islands without
+     wasting vertical space the panel could use instead. */
+  gap: 3px;
+  padding: 4px;
+  /* The window itself stays fully transparent — every visible surface
+     (action bar, transcript bar, panel, settings/confirm screens) is its own
+     floating "island" with its own background/radius/shadow, applied below,
+     rather than one continuous panel filling the whole window. */
+  background: transparent;
+  /* Deliberately NO backdrop-filter anywhere in this file. On a transparent
+     Tauri window under WebView2 there is no backdrop to sample, and the
+     compositor falls back to painting an opaque layer — which defeats window
+     transparency entirely and is exactly why this overlay once rendered as a
+     solid dark rectangle. Each island's translucency comes from its own
+     background alpha alone; text stays readable via the shadow below rather
+     than by making backgrounds more opaque. */
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
   color: var(--text);
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   font-size: 14px;
   line-height: 1.5;
-  border: 1px solid var(--hairline);
-  overflow: hidden;
   cursor: default;
   -webkit-user-select: none;
   user-select: none;
 }
 
-/* ---------- header: the drag area ---------- */
+/* Shared "floating island" treatment — every top-level surface (action bar,
+   transcript bar, the main panel, settings/confirm-close) gets the same
+   border/shadow language so they read as one consistent design even though
+   each is visually separate with a gap between it and its neighbors.
+   Background color is NOT shared here — each tier sets its own below, per
+   the three-tier hierarchy (--panel-header/--panel-transcript/--panel-answer)
+   defined on .overlay-root. */
+.overlay-header,
+.overlay-panel,
+.overlay-confirm-close,
+.overlay-settings,
+.overlay-capture-warning {
+  border: 1px solid var(--hairline);
+  /* Soft and close, not a heavy drop shadow — enough to read as a floating
+     surface without looking like it's hovering far off the desktop. */
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+}
+
+/* Chrome tier — action bar + the revealed "more" row. Lightest/most
+   transparent: these are controls, not content, so they can let more of the
+   desktop behind them show through. */
+.overlay-action-bar,
+.overlay-status-bar {
+  background-color: var(--panel-header);
+}
+
+/* Transcript tier — sits between chrome and the answer in both position and
+   opacity. */
+.overlay-transcript-bar {
+  background-color: var(--panel-transcript);
+  align-items: flex-end;
+}
+
+/* Overrides .overlay-header's 999px pill radius — this bar's height grows
+   with the dictated question (up to MAX_QUESTION_INPUT_PX), and a full pill
+   radius on a tall box makes the whole left/right edge balloon into a big
+   circular bulge instead of staying a clean rounded rectangle. Compound
+   selector (not just .overlay-transcript-bar) so this reliably wins over
+   .overlay-header's own rule regardless of source order — same specificity,
+   single-class selectors, previously depended on which rule happened to
+   come later in the file. */
+.overlay-header.overlay-transcript-bar {
+  border-radius: 20px;
+}
+
+/* Answer tier — darkest and most opaque, since this is the text that
+   actually has to stay readable over whatever is on screen behind it.
+   Applies to the main panel and the two full-screen sub-views (confirm-close,
+   settings) that replace it. */
+.overlay-panel,
+.overlay-confirm-close,
+.overlay-settings {
+  background-color: var(--panel-answer);
+}
+
+/* ---------- header bars: the drag areas ---------- */
 
 /* The whole bar is the drag handle (via data-tauri-drag-region in the TSX),
    so there is no separate grip glyph to spend space on. Buttons inside opt
@@ -66,15 +131,123 @@ body.overlay-window #root {
 .overlay-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--hairline);
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 999px;
   flex: 0 0 auto;
   cursor: grab;
 }
 
 .overlay-header:active {
   cursor: grabbing;
+}
+
+/* The revealed "more" row (Auto AI/opacity/settings) reads as a lighter
+   dropdown-style panel rather than another primary pill bar. */
+.overlay-status-bar {
+  border-radius: 12px;
+}
+
+/* Now a real button (mic + speaker both toggle the same mute state — see
+   the JSX comment where it's used), not a static status glyph, so it needs
+   button resets on top of the same footprint it had as a <span>. */
+.overlay-status-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  font-size: 13px;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.overlay-status-icon:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.overlay-status-icon:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.overlay-status-dot {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 3px rgba(239, 68, 68, 0.9);
+}
+
+/* Row A — the primary-action pill toolbar (Answer / Screenshot / Chat / End),
+   matching the reference layout's top bar. */
+.overlay-action-bar {
+  padding: 6px 8px;
+}
+
+.overlay-action-bar-spacer {
+  flex: 1 1 auto;
+}
+
+.overlay-pill-button {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 10px;
+  /* A visible field, not just a hover tint — needs to read as a clickable
+     button at a glance against the header's lighter mid-gray background,
+     not blend into it. Alpha is fixed (not tied to --overlay-alpha) so the
+     button stays legible even when the opacity slider is turned way down —
+     it shouldn't fade away along with the header's own background. */
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.overlay-pill-button:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.75);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.overlay-pill-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.overlay-pill-button.on {
+  background: var(--accent);
+  color: #08131f;
+}
+
+.overlay-pill-button.end {
+  background: rgba(239, 68, 68, 0.85);
+  color: #fff;
+}
+
+.overlay-pill-button.end:hover:not(:disabled) {
+  background: #ef4444;
+}
+
+/* Row B — status readout + the opacity/Auto AI/settings controls, a slightly
+   quieter bar under the action row. */
+.overlay-status-bar {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--hairline);
 }
 
 @keyframes overlay-pulse {
@@ -85,30 +258,84 @@ body.overlay-window #root {
 .audio-level-bars {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 2px;
-  height: 14px;
+  width: 22px;
+  height: 20px;
   flex: 0 0 auto;
+  border-radius: 999px;
+  /* Reserves this footprint even while idle (see the component doc comment)
+     — only the lit badge background and the bar animation below are gated
+     on .active, so the textarea next to it never jumps in width. A gentle
+     scale-in on becoming active, rather than just the color fade, is what
+     makes it read as switching "on" instead of merely re-tinting. */
+  background: transparent;
+  transform: scale(0.92);
+  transition: background-color 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* A soft lit badge while actually listening, gently breathing rather than a
+   flat fill — makes it read clearly as "live" at a glance in the corner of
+   the transcript bar, not something easy to miss against the dark
+   background. */
+.audio-level-bars.active {
+  transform: scale(1);
+  animation: audio-badge-breathe 1.6s ease-in-out infinite;
 }
 
 /* A liveness cue, not a volume meter — always bounces at the same fast, high
-   amplitude while listening, staggered per bar via animation-delay so the
-   three don't move in lockstep (which reads as one blinking block rather
-   than an active equalizer). */
+   amplitude while listening, staggered per bar so the three don't move in
+   lockstep (which reads as one blinking block rather than an active
+   equalizer). Idle: small, still, dim dots — present but clearly "not
+   listening" rather than absent. */
 .audio-level-bar {
-  width: 3px;
-  height: 3px;
+  width: 2px;
+  height: 14px;
   border-radius: 1px;
-  background: #4ade80;
-  animation: audio-bar-bounce 0.5s ease-in-out infinite;
+  background: rgba(255, 255, 255, 0.25);
+  /* Bars are full-height and hidden via a bottom-anchored scaleY instead of
+     an animated `height` — animating a transform is smooth/GPU-composited,
+     where animating height/layout properties tends to look slightly janky
+     at this size. */
+  transform: scaleY(0.22);
+  transform-origin: bottom;
+  transition: transform 0.2s ease, background-color 0.2s ease;
 }
 
-.audio-level-bar:nth-child(1) { animation-delay: 0s; }
-.audio-level-bar:nth-child(2) { animation-delay: 0.15s; }
-.audio-level-bar:nth-child(3) { animation-delay: 0.3s; }
+.audio-level-bars.active .audio-level-bar {
+  background: #4ade80;
+  box-shadow: 0 0 3px rgba(74, 222, 128, 0.6);
+  animation: audio-bar-bounce 1s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+/* Each bar gets its own timing AND peak height — a shallower dip/rise on
+   the outer two, tallest in the middle — so it reads as an organic little
+   waveform rather than three identical blocks ticking in a row. */
+.audio-level-bars.active .audio-level-bar:nth-child(1) {
+  animation-delay: -0.66s;
+  animation-name: audio-bar-bounce-side;
+}
+.audio-level-bars.active .audio-level-bar:nth-child(2) {
+  animation-delay: -0.33s;
+}
+.audio-level-bars.active .audio-level-bar:nth-child(3) {
+  animation-delay: 0s;
+  animation-name: audio-bar-bounce-side;
+}
 
 @keyframes audio-bar-bounce {
-  0%, 100% { height: 3px; }
-  50% { height: 14px; }
+  0%, 100% { transform: scaleY(0.22); }
+  50% { transform: scaleY(1); }
+}
+
+@keyframes audio-bar-bounce-side {
+  0%, 100% { transform: scaleY(0.22); }
+  50% { transform: scaleY(0.65); }
+}
+
+@keyframes audio-badge-breathe {
+  0%, 100% { background-color: rgba(74, 222, 128, 0.1); }
+  50% { background-color: rgba(74, 222, 128, 0.22); }
 }
 
 .overlay-title {
@@ -120,6 +347,16 @@ body.overlay-window #root {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Plan-balance countdown, now in the main action bar — fixed-size (not
+   flex-growing like .overlay-title, which would otherwise crowd the pill
+   buttons next to it) and small enough to sit inline between them. */
+.overlay-time-left {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .overlay-header-actions {
@@ -172,52 +409,16 @@ body.overlay-window #root {
   box-shadow: 0 0 0 2px rgba(106, 168, 255, 0.7);
 }
 
-/* Small pill toggle for Auto AI — sits left of the opacity slider. Kept
-   compact and text-labelled (not an icon) since "on/off" needs to read
-   unambiguously at a glance in a live interview, not be inferred from a
-   symbol. */
-.overlay-auto-ai-toggle {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 20px;
-  padding: 0 7px;
-  margin-right: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.02em;
-  line-height: 1;
-  white-space: nowrap;
-  cursor: pointer;
+/* Shows only while actively dragging the opacity slider (see the
+   `opacityHint` state) — the slider now lives in the action bar with no
+   spare title text nearby to double as a live readout, so this is a small
+   floating percentage next to it instead. */
+.overlay-opacity-readout {
   flex: 0 0 auto;
-}
-
-.overlay-auto-ai-toggle:hover {
-  border-color: rgba(255, 255, 255, 0.32);
-  color: var(--text);
-}
-
-.overlay-auto-ai-toggle .overlay-auto-ai-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--muted);
-  flex-shrink: 0;
-}
-
-.overlay-auto-ai-toggle.on {
-  border-color: rgba(74, 222, 128, 0.55);
-  background: rgba(74, 222, 128, 0.12);
-  color: #d1fae5;
-}
-
-.overlay-auto-ai-toggle.on .overlay-auto-ai-dot {
-  background: #4ade80;
-  box-shadow: 0 0 4px rgba(74, 222, 128, 0.8);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .overlay-icon-button {
@@ -228,26 +429,41 @@ body.overlay-window #root {
   padding: 0;
   border: none;
   border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
+  /* A faint but fixed-alpha field (not tied to --overlay-alpha, same
+     reasoning as .overlay-pill-button) so the button's own hit area/edges
+     stay visible at a glance instead of only revealing themselves on
+     hover. */
+  background: rgba(0, 0, 0, 0.28);
+  /* var(--text)/white, not var(--muted) — against the header's lighter
+     mid-gray background a dimmed icon reads as barely-there; full-strength
+     color plus the icon's own currentColor stroke keeps it clearly visible
+     everywhere this button appears, not just on the darkest tier. */
+  color: #fff;
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
 }
 
+/* Purely visual "drag handle" glyph — see the JSX comment where it's used.
+   Same footprint as .overlay-icon-button so it lines up with its neighbors,
+   but not a button: no hover/active state, cursor inherits the bar's own
+   grab/grabbing. */
+.overlay-move-affordance {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.45);
+}
+
 .overlay-icon-button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
 }
 
 .overlay-icon-button:disabled {
   opacity: 0.3;
   cursor: default;
-}
-
-.overlay-icon-button.close:hover {
-  background: rgba(239, 68, 68, 0.85);
-  color: #fff;
 }
 
 /* Mute button while actively muted — a steady warm highlight so "muted" is
@@ -273,6 +489,7 @@ body.overlay-window #root {
   gap: 10px;
   padding: 24px;
   text-align: center;
+  border-radius: 16px;
 }
 
 .overlay-confirm-close-title {
@@ -323,6 +540,30 @@ body.overlay-window #root {
 
 /* ---------- conversation ---------- */
 
+/* Wraps overlay-panel-toolbar + overlay-chat into one island — the island
+   background/border/shadow themselves come from the shared selector above;
+   this just adds the shape and layout. */
+.overlay-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+/* Cancels the shared island background/border/shadow it would otherwise
+   inherit via ".overlay-header" — the toolbar is part of .overlay-panel's
+   single island, not a separate one stacked on top of it. */
+.overlay-panel-toolbar {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 16px 16px 0 0;
+  border-bottom: 1px solid var(--hairline);
+  cursor: default;
+}
+
 .overlay-chat {
   flex: 1 1 auto;
   overflow-y: auto;
@@ -360,48 +601,126 @@ body.overlay-window #root {
 .chat-turn {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
-.chat-message {
+/* Question line — plain, un-cardified, sitting just above its answer card
+   (matches the reference layout's "💬 Question: ..." row). */
+.chat-card-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.92em;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.chat-card-label.question {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.chat-card-icon {
+  display: inline-flex;
+  align-items: center;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.chat-card-label.answer .chat-card-icon {
+  color: #fbbf24;
+}
+
+.chat-card-question-text {
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.8);
+  overflow-wrap: anywhere;
+}
+
+/* The answer itself is the one card-like surface in the conversation — a
+   subtly raised panel against the translucent overlay background, echoing
+   the reference's dark answer card. */
+/* Flat — no background/border of its own. The reference keeps one uniform
+   panel color throughout (question row, answer, everything); a distinct
+   nested card shade here would read as an inconsistent color, not a design
+   choice. */
+.chat-answer-card {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 6px;
 }
 
-.chat-role {
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.chat-answer-card .chat-card-label.answer {
+  color: #fbbf24;
+}
+
+.chat-copy-button {
+  margin-left: auto;
+  border: none;
+  background: transparent;
   color: var(--muted);
+  font-size: 0.95em;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
 }
 
-.chat-message.interviewer .chat-role {
-  color: rgba(255, 255, 255, 0.45);
+.chat-copy-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
 }
 
-.chat-message.assistant .chat-role {
-  color: var(--accent);
+.chat-copy-button:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 
 .chat-text {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.chat-message.interviewer .chat-text {
-  color: rgba(255, 255, 255, 0.72);
-  border-left: 2px solid rgba(255, 255, 255, 0.14);
-  padding-left: 8px;
-}
-
-.chat-message.assistant .chat-text {
   color: var(--text);
 }
 
-.chat-message.assistant.failed .chat-text {
+.chat-answer-card.failed .chat-text {
   color: #fca5a5;
+}
+
+.chat-answer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+
+.chat-answer-timestamp {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.chat-feedback {
+  display: flex;
+  gap: 2px;
+}
+
+.chat-feedback-button {
+  border: none;
+  background: transparent;
+  font-size: 0.9em;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.chat-feedback-button:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.chat-feedback-button.active {
+  opacity: 1;
+  background: rgba(106, 168, 255, 0.18);
 }
 
 .chat-text.muted {
@@ -493,16 +812,7 @@ body.overlay-window #root {
   white-space: inherit;
 }
 
-/* ---------- compose row ---------- */
-
-.overlay-compose {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 8px 10px;
-  border-top: 1px solid var(--hairline);
-}
+/* ---------- transcript/chat compose bar ---------- */
 
 .overlay-question-input {
   /* No border, no fill — this is meant to read as open typing space
@@ -579,6 +889,12 @@ body.overlay-window #root {
   cursor: default;
 }
 
+/* Chat mode's compose row — same pill shape as the transcript bar, just
+   flagged with an accent-tinted border so it reads as a distinct mode. */
+.overlay-chat-compose {
+  border-color: rgba(106, 168, 255, 0.45);
+}
+
 .overlay-error {
   flex: 0 0 auto;
   margin: 0;
@@ -587,16 +903,20 @@ body.overlay-window #root {
   font-size: 0.85em;
 }
 
-/* Deliberately louder than .overlay-error (solid background, not just
-   colored text) — this isn't a transient failure the user can shrug off,
-   it means the window is not actually hidden from screen capture, so it
-   needs to read as a standing condition rather than a passing notice. */
+/* Deliberately louder than .overlay-error (solid amber background, not just
+   colored text) — this isn't a transient failure the user can shrug off, it
+   means the window is not actually hidden from screen capture, so it needs
+   to read as a standing condition rather than a passing notice. Overrides
+   the shared island's neutral background/border (see the ".overlay-header,
+   .overlay-panel, ... " rule above, which this selector is also a member
+   of) with its own amber theme. */
 .overlay-capture-warning {
   flex: 0 0 auto;
   margin: 0;
   padding: 6px 12px;
-  background: rgba(251, 191, 36, 0.15);
-  border-bottom: 1px solid rgba(251, 191, 36, 0.35);
+  background-color: rgba(251, 191, 36, 0.15);
+  border-color: rgba(251, 191, 36, 0.35);
+  border-radius: 999px;
   color: #fbbf24;
   font-size: 0.8em;
   font-weight: 600;
@@ -619,6 +939,7 @@ body.overlay-window #root {
   padding: 10px 12px;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.85);
+  border-radius: 16px;
 }
 
 .overlay-settings::-webkit-scrollbar {

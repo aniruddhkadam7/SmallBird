@@ -32,10 +32,41 @@ fn split_system(messages: &[ChatMessage]) -> (Option<String>, Vec<serde_json::Va
     let turns: Vec<serde_json::Value> = messages
         .iter()
         .filter(|m| m.role != "system")
-        .map(|m| serde_json::json!({"role": m.role, "content": m.content}))
+        .map(|m| {
+            let text_block = if m.cacheable {
+                serde_json::json!({ "type": "text", "text": m.content, "cache_control": { "type": "ephemeral" } })
+            } else {
+                serde_json::json!({ "type": "text", "text": m.content })
+            };
+            if let Some(image) = &m.image_png_base64 {
+                serde_json::json!({
+                    "role": m.role,
+                    "content": [
+                        { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": image } },
+                        text_block,
+                    ],
+                })
+            } else if m.cacheable {
+                serde_json::json!({ "role": m.role, "content": [text_block] })
+            } else {
+                serde_json::json!({"role": m.role, "content": m.content})
+            }
+        })
         .collect();
     let system = if system_parts.is_empty() { None } else { Some(system_parts.join("\n\n")) };
     (system, turns)
+}
+
+/// Wraps the system prompt with an Anthropic prompt-cache breakpoint. The
+/// system prompt (`ask::SYSTEM_PROMPT`) is a large, byte-identical block sent
+/// on every single question in an interview session — without caching, the
+/// model re-processes all of it before emitting the first output token on
+/// every question, which is a big chunk of the "thinking..." delay the
+/// overlay shows. Caching it means only the first question in a session (or
+/// after the ~5min cache TTL lapses) pays that cost; every question after
+/// hits a cached prefix and starts generating much sooner.
+fn system_with_cache_control(system: String) -> serde_json::Value {
+    serde_json::json!([{ "type": "text", "text": system, "cache_control": { "type": "ephemeral" } }])
 }
 
 pub async fn generate(access_token: &str, model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32) -> Result<String, String> {
@@ -48,7 +79,7 @@ pub async fn generate(access_token: &str, model: &str, messages: &[ChatMessage],
         "max_tokens": max_tokens,
     });
     if let Some(system) = system {
-        payload["system"] = serde_json::Value::String(system);
+        payload["system"] = system_with_cache_control(system);
     }
 
     let response = client
@@ -90,7 +121,7 @@ where
         "stream": true,
     });
     if let Some(system) = system {
-        payload["system"] = serde_json::Value::String(system);
+        payload["system"] = system_with_cache_control(system);
     }
 
     let response = client

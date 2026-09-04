@@ -10,7 +10,7 @@ use crate::backend::{
     NotesSummaryRequest, OverallInterviewAnalysis, QuestionAnalysis, SetupAnalysisRequest, SetupAnalysisResponse,
 };
 
-use super::prompts::{analysis, ask, notes, setup, ChatMessage};
+use super::prompts::{analysis, ask, notes, screen, setup, ChatMessage};
 use super::provider::LlmProvider;
 use super::providers::{anthropic, openai};
 
@@ -84,6 +84,23 @@ impl DirectLlmClient {
         let max_tokens = ask::max_tokens_for_question(request);
         let mut full_answer = String::new();
         self.stream(&messages, 0.65, max_tokens, |delta| {
+            full_answer.push_str(delta);
+            on_delta(delta);
+        })
+        .await?;
+        Ok(full_answer)
+    }
+
+    /// "Analyze Screen": one vision LLM call over a screenshot (see
+    /// `interview_mode::screen::capture_primary_screen_png`), streamed the
+    /// same way as `ask_stream`.
+    pub async fn ask_screen_stream<F>(&self, request: &AskRequest, image_png_base64: String, mut on_delta: F) -> Result<String, String>
+    where
+        F: FnMut(&str),
+    {
+        let messages = screen::build_messages(request, image_png_base64);
+        let mut full_answer = String::new();
+        self.stream(&messages, 0.65, screen::MAX_TOKENS, |delta| {
             full_answer.push_str(delta);
             on_delta(delta);
         })

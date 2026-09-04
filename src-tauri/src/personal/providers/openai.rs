@@ -16,7 +16,19 @@ use super::{llm_proxy_url, shared_client, REQUEST_TIMEOUT_SECS};
 fn build_request_body(model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32, stream: bool) -> serde_json::Value {
     serde_json::json!({
         "model": model,
-        "messages": messages.iter().map(|m| serde_json::json!({"role": m.role, "content": m.content})).collect::<Vec<_>>(),
+        "messages": messages.iter().map(|m| {
+            if let Some(image) = &m.image_png_base64 {
+                serde_json::json!({
+                    "role": m.role,
+                    "content": [
+                        { "type": "image_url", "image_url": { "url": format!("data:image/png;base64,{image}") } },
+                        { "type": "text", "text": m.content },
+                    ],
+                })
+            } else {
+                serde_json::json!({"role": m.role, "content": m.content})
+            }
+        }).collect::<Vec<_>>(),
         "temperature": temperature,
         "max_tokens": max_tokens,
         "stream": stream,

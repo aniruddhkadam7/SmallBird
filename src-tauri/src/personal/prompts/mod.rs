@@ -1,6 +1,7 @@
 pub mod ask;
 pub mod analysis;
 pub mod notes;
+pub mod screen;
 pub mod setup;
 
 /// One chat message, mirroring `apps/backend/app/services/llm/base.py`'s
@@ -11,17 +12,44 @@ pub mod setup;
 pub struct ChatMessage {
     pub role: &'static str,
     pub content: String,
+    /// Marks this message as a stable, identical-every-call prefix worth an
+    /// explicit cache breakpoint. Anthropic gets a `cache_control` block on
+    /// it (see `providers::anthropic::split_system`); OpenAI has no manual
+    /// knob but benefits anyway, since keeping this content in its own fixed
+    /// message (rather than folded into the ever-changing per-question
+    /// message) keeps the request's leading messages byte-identical across
+    /// questions in the same session, which is what its automatic prefix
+    /// caching keys on.
+    pub cacheable: bool,
+    /// A base64-encoded PNG attached to this message, for vision requests
+    /// (the "Analyze Screen" flow — see `prompts::screen`). `None` for every
+    /// ordinary text-only message.
+    pub image_png_base64: Option<String>,
 }
 
 impl ChatMessage {
     pub fn system(content: impl Into<String>) -> Self {
-        Self { role: "system", content: content.into() }
+        Self { role: "system", content: content.into(), cacheable: false, image_png_base64: None }
     }
     pub fn user(content: impl Into<String>) -> Self {
-        Self { role: "user", content: content.into() }
+        Self { role: "user", content: content.into(), cacheable: false, image_png_base64: None }
     }
     pub fn assistant(content: impl Into<String>) -> Self {
-        Self { role: "assistant", content: content.into() }
+        Self { role: "assistant", content: content.into(), cacheable: false, image_png_base64: None }
+    }
+    /// A user message with an attached screenshot (see `image_png_base64`
+    /// above).
+    pub fn user_with_image(content: impl Into<String>, image_png_base64: impl Into<String>) -> Self {
+        Self {
+            role: "user",
+            content: content.into(),
+            cacheable: false,
+            image_png_base64: Some(image_png_base64.into()),
+        }
+    }
+    /// A user message worth caching (see `cacheable` above).
+    pub fn cacheable_user(content: impl Into<String>) -> Self {
+        Self { role: "user", content: content.into(), cacheable: true, image_png_base64: None }
     }
 }
 

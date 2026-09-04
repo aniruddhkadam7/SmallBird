@@ -140,6 +140,7 @@ pub fn run() {
             interview_mode::commands::hide_interview_overlay,
             interview_mode::commands::toggle_interview_overlay,
             interview_mode::commands::ask_interview_question,
+            interview_mode::commands::analyze_screen_question,
             interview_mode::commands::set_overlay_always_on_top,
             interview_mode::commands::resize_interview_overlay,
             interview_mode::commands::start_backend_session,

@@ -252,6 +252,85 @@ pub async fn ask_interview_question(
     Ok(answer)
 }
 
+/// Fixed label used both as the pending turn's question text (frontend side)
+/// and, here, as `AskRequest.question` / the eventual `PriorTurn.question`
+/// replayed into later questions' history — there's no real transcribed
+/// question for a screen analysis, so this stands in for it consistently on
+/// both sides.
+pub const ANALYZE_SCREEN_QUESTION_LABEL: &str = "What's on my screen?";
+
+/// Runs the "Analyze Screen" flow: captures the primary screen -> ONE vision
+/// LLM call -> stream. Mirrors `ask_interview_question`'s shape and event
+/// names (`interview-mode:answer-delta`/`-complete`) so the overlay's
+/// existing turn rendering and reveal ticker apply unchanged — the only
+/// difference from the frontend's point of view is which command it invokes
+/// and that there's no typed/spoken question to send.
+#[tauri::command]
+pub async fn analyze_screen_question(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    options: Option<AskOptions>,
+    history: Option<Vec<PriorTurn>>,
+) -> Result<String, String> {
+    use crate::hardware::telemetry::{finish, PipelineStage, Stopwatch};
+    use base64::Engine;
+
+    let question_to_answer = Stopwatch::start();
+    let options = options.unwrap_or_default();
+    let history = trim_history(history.unwrap_or_default());
+
+    // Captured (and access-token-checked) before the RAG fetches below, not
+    // because either depends on the other, but so a capture failure (no
+    // monitor found, driver issue) surfaces immediately rather than after
+    // paying for document fetches that would otherwise go to waste.
+    let png_bytes = crate::interview_mode::screen::capture_primary_screen_png()?;
+    let image_base64 = base64::engine::general_purpose::STANDARD.encode(png_bytes);
+
+    let service_available = state.rag_service.lock().map(|slot| slot.is_some()).unwrap_or(false);
+    let (resume_text, uploaded_job_description, uploaded_additional_context) = tokio::join!(
+        fetch_document_full_text("RESUME", service_available),
+        fetch_document_full_text("JOB_DESCRIPTION", service_available),
+        fetch_document_full_text("ADDITIONAL_CONTEXT", service_available)
+    );
+
+    let request = AskRequest {
+        question: ANALYZE_SCREEN_QUESTION_LABEL.to_string(),
+        conversation_history: history,
+        candidate_context: resume_text,
+        role: options.role,
+        job_description: uploaded_job_description.or(options.job_description),
+        additional_context: uploaded_additional_context.or(options.additional_context),
+        answer_length: options.answer_length,
+        response_style: options.response_style,
+        english_level: options.english_level,
+        humanization: options.humanization,
+        llm_provider: options.llm_provider,
+    };
+
+    let app_for_events = app.clone();
+    let llm_timer = Stopwatch::start();
+    let first_token = crate::hardware::telemetry::FirstTokenTracker::new();
+    let first_token_recorder = first_token.recorder();
+    let on_delta = move |delta: &str| {
+        first_token_recorder.mark();
+        let _ = app_for_events.emit("interview-mode:answer-delta", delta);
+    };
+    let access_token = crate::auth::current_access_token(&state).await?;
+    let answer = crate::personal::DirectLlmClient::new(request.llm_provider.as_deref(), access_token)
+        .ask_screen_stream(&request, image_base64, on_delta)
+        .await?;
+
+    let ctx = crate::hardware::perf_context(&app);
+    if let Some(ms) = first_token.elapsed_ms() {
+        crate::hardware::telemetry::log_stage_ms(PipelineStage::LlmFirstToken, ms, &ctx);
+    }
+    finish(llm_timer, PipelineStage::LlmTotal, &ctx);
+    finish(question_to_answer, PipelineStage::QuestionToAnswer, &ctx);
+
+    let _ = app.emit("interview-mode:answer-complete", &answer);
+    Ok(answer)
+}
+
 /// Normalizes the overlay's conversation history into what the backend wants:
 /// the most recent complete turns, still oldest-first.
 ///
