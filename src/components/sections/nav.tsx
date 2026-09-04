@@ -11,10 +11,10 @@ import { AccountMenu } from "@/components/blocks/account-menu"
 import { usePurchaseFlow } from "@/lib/purchase-flow"
 
 const links = [
-  { label: "Product", href: "/#product-demo" },
-  { label: "Interview Mode", href: "/#modes" },
-  { label: "Pricing", href: "/#pricing" },
+  { label: "Features", href: "/#features" },
+  { label: "Reviews", href: "/#product-demo" },
   { label: "Privacy", href: "/#privacy" },
+  { label: "Pricing", href: "/#pricing" },
 ]
 
 export function Nav() {
