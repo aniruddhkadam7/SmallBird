@@ -4,6 +4,7 @@ import { ProductDemo } from "@/components/sections/product-demo";
 import { InterviewModeSection } from "@/components/sections/interview-mode";
 import { HowItWorks } from "@/components/sections/how-it-works";
 import { Advantages } from "@/components/sections/advantages";
+import { Reviews } from "@/components/sections/reviews";
 import { Privacy } from "@/components/sections/privacy";
 import { Pricing } from "@/components/sections/pricing";
 import { DownloadSection } from "@/components/sections/download";
@@ -22,6 +23,7 @@ export default function Home() {
       <InterviewModeSection />
       <HowItWorks />
       <Advantages />
+      <Reviews />
       <Privacy />
       <Pricing />
       <DownloadSection />

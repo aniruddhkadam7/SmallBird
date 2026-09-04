@@ -12,7 +12,7 @@ import { usePurchaseFlow } from "@/lib/purchase-flow"
 
 const links = [
   { label: "Features", href: "/#features" },
-  { label: "Reviews", href: "/#product-demo" },
+  { label: "Reviews", href: "/#reviews" },
   { label: "Privacy", href: "/#privacy" },
   { label: "Pricing", href: "/#pricing" },
 ]
