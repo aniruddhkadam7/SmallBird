@@ -287,6 +287,12 @@ pub async fn ask_interview_question(
     let answer = crate::personal::DirectLlmClient::new(request.llm_provider.as_deref(), access_token)
         .ask_stream(&request, on_delta)
         .await?;
+    // Safety net for when the model organizes the answer correctly but skips
+    // the actual Markdown syntax — see `personal::format_fixup` for why this
+    // exists. The raw streamed deltas above are unaffected (still live,
+    // unprocessed text as it arrives); only this final, authoritative answer
+    // is corrected.
+    let answer = crate::personal::format_fixup::ensure_markdown_structure(&answer);
 
     let ctx = crate::hardware::perf_context(&app);
     if let Some(ms) = first_token.elapsed_ms() {
@@ -360,6 +366,7 @@ pub async fn analyze_screen_question(
     let answer = crate::personal::DirectLlmClient::new(request.llm_provider.as_deref(), access_token)
         .ask_screen_stream(&request, image_base64, on_delta)
         .await?;
+    let answer = crate::personal::format_fixup::ensure_markdown_structure(&answer);
 
     let ctx = crate::hardware::perf_context(&app);
     if let Some(ms) = first_token.elapsed_ms() {

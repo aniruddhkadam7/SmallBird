@@ -5,6 +5,7 @@
 //! site.
 
 pub mod client;
+pub mod format_fixup;
 pub mod prompts;
 pub mod provider;
 pub mod providers;

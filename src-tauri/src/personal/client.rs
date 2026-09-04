@@ -15,13 +15,22 @@ use super::provider::LlmProvider;
 use super::providers::{anthropic, openai};
 
 /// Default model per provider (`settings.ask_model`/`settings.llm_model`
-/// fall back to a generic `gpt-4o-mini`-shaped string; Anthropic's own
+/// fall back to a generic model-shaped string; Anthropic's own
 /// `resolve_model` guard substitutes its real default when that doesn't
 /// apply, so this default only matters for OpenAI, where no substitution
-/// happens).
+/// happens). Tried the whole GPT-5 reasoning family (mini, at "minimal",
+/// "low", and "none" reasoning_effort) and none of them reliably produced
+/// Markdown — confirmed live, and consistent with OpenAI's own docs that
+/// GPT-5-family models suppress Markdown in API mode independent of
+/// reasoning effort, while every effort level above "minimal" also adds
+/// real per-question latency. `gpt-4o` isn't a reasoning model at all — a
+/// single forward pass (fast, no reasoning-token overhead, no
+/// `reasoning_effort`/`max_completion_tokens` workarounds needed) and not
+/// subject to that Markdown-suppression bias, so it's the pick for both
+/// speed and formatting together.
 fn default_model(provider: LlmProvider) -> &'static str {
     match provider {
-        LlmProvider::OpenAi => "gpt-4o-mini",
+        LlmProvider::OpenAi => "gpt-4o",
         LlmProvider::Anthropic => "claude-sonnet-5",
     }
 }

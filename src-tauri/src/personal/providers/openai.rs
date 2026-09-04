@@ -13,10 +13,37 @@ use futures_util::StreamExt;
 use crate::personal::prompts::ChatMessage;
 use super::{llm_proxy_url, shared_client, REQUEST_TIMEOUT_SECS};
 
+/// GPT-5/o-series "reasoning" models reject the classic Chat Completions
+/// `temperature` and `max_tokens` params outright with a 400 error — they
+/// need `max_completion_tokens` instead, and only support the default
+/// temperature (1), so `temperature` must be omitted entirely rather than
+/// sent as any explicit value.
+fn is_reasoning_model(model: &str) -> bool {
+    model.starts_with("gpt-5") || model.starts_with("o1") || model.starts_with("o3") || model.starts_with("o4")
+}
+
+/// Extra headroom added on top of the caller's requested `max_tokens` for a
+/// reasoning model only — `max_completion_tokens` caps hidden reasoning
+/// tokens AND the visible answer combined, and our per-question budgets
+/// (ask::length_target, 75-700) were tuned for a non-reasoning model where
+/// every token is visible output, so without this buffer a reasoning model
+/// can spend the entire budget "thinking" and stream back nothing at all.
+const REASONING_TOKEN_BUFFER: u32 = 300;
+
+/// `"none"` was tried and rejected outright by the API for this model with a
+/// 400 (confirmed live, not just documentation) — it is NOT a valid
+/// `reasoning_effort` value for gpt-5-mini via Chat Completions, whatever
+/// other GPT-5-family versions may accept. `"minimal"` is the lowest value
+/// actually confirmed to work: fast, but see `prompts::ask::SYSTEM_PROMPT`'s
+/// caveat that Markdown compliance isn't guaranteed regardless of this
+/// setting — GPT-5-family models suppress Markdown in API mode by default,
+/// independent of reasoning effort.
+const REASONING_EFFORT: &str = "minimal";
+
 fn build_request_body(model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32, stream: bool) -> serde_json::Value {
-    serde_json::json!({
-        "model": model,
-        "messages": messages.iter().map(|m| {
+    let messages_json = messages
+        .iter()
+        .map(|m| {
             if let Some(image) = &m.image_png_base64 {
                 serde_json::json!({
                     "role": m.role,
@@ -28,11 +55,26 @@ fn build_request_body(model: &str, messages: &[ChatMessage], temperature: f32, m
             } else {
                 serde_json::json!({"role": m.role, "content": m.content})
             }
-        }).collect::<Vec<_>>(),
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "stream": stream,
-    })
+        })
+        .collect::<Vec<_>>();
+
+    if is_reasoning_model(model) {
+        serde_json::json!({
+            "model": model,
+            "messages": messages_json,
+            "max_completion_tokens": max_tokens + REASONING_TOKEN_BUFFER,
+            "reasoning_effort": REASONING_EFFORT,
+            "stream": stream,
+        })
+    } else {
+        serde_json::json!({
+            "model": model,
+            "messages": messages_json,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": stream,
+        })
+    }
 }
 
 pub async fn generate(access_token: &str, model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32) -> Result<String, String> {

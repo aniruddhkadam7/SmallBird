@@ -18,6 +18,7 @@ const PROVIDER_URLS: Record<string, string> = {
 const RATE_PER_1K: Record<string, { input: number; output: number }> = {
   "gpt-4o-mini": { input: 0.00015, output: 0.0006 },
   "gpt-4o": { input: 0.0025, output: 0.01 },
+  "gpt-5-mini": { input: 0.00025, output: 0.002 },
   "claude-3-5-sonnet-20241022": { input: 0.003, output: 0.015 },
 };
 
