@@ -52,8 +52,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
       }
     : null
 
+  // Set by the OTP/signup flows (options.data.full_name) when the account
+  // was created, or backfilled the next time an existing account without
+  // one logs in through them — see request-otp's verify-otp Edge Function
+  // and the website's own signInWithOtp call. Absent for older accounts
+  // that haven't been through either since this was added; the sidebar
+  // falls back to a cleaned-up version of the email in that case.
+  const fullName = typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name.trim() : null
+
   return (
-    <DashboardSidebar email={user.email} plan={plan}>
+    <DashboardSidebar email={user.email} name={fullName || null} plan={plan}>
       <InterviewsList transcripts={transcripts ?? []} />
     </DashboardSidebar>
   )

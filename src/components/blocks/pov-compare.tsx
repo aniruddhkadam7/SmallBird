@@ -11,6 +11,7 @@ export function PovCompare({
   className,
   compact = false,
   fill = false,
+  hideLabels = false,
 }: {
   className?: string
   compact?: boolean
@@ -20,6 +21,9 @@ export function PovCompare({
   // default left most of the box as empty black space around a small image.
   // The homepage hero's usage doesn't pass this, so its sizing is untouched.
   fill?: boolean
+  // Skips the internal "Candidate view / Interviewer view" caption row, for
+  // callers that render that caption themselves outside the image box.
+  hideLabels?: boolean
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState(50)
@@ -75,10 +79,12 @@ export function PovCompare({
 
   return (
     <div className={cn("flex flex-col gap-2.5", fill && "h-full w-full")}>
-      <div className={cn("flex items-center justify-between px-0.5 font-medium text-muted-foreground", captionClass)}>
-        <span>Candidate view</span>
-        <span>Interviewer view</span>
-      </div>
+      {!hideLabels && (
+        <div className={cn("flex items-center justify-between px-0.5 font-medium text-muted-foreground", captionClass)}>
+          <span>Candidate view</span>
+          <span>Interviewer view</span>
+        </div>
+      )}
 
       <div
         ref={containerRef}

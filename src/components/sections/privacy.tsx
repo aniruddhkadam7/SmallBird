@@ -1,10 +1,12 @@
 "use client"
 
+import { useState } from "react"
 import Image from "next/image"
 import { Video, Eye, MonitorX, PanelBottomClose, BellOff } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { MockupFrame } from "@/components/ui/mockup"
 import { PovCompare } from "@/components/blocks/pov-compare"
+import { cn } from "@/lib/utils"
 import taskManagerGif from "@/assets/stealth-task-manager.gif"
 import taskbarGif from "@/assets/stealth-taskbar.gif"
 import systemTrayGif from "@/assets/stealth-system-tray.gif"
@@ -15,7 +17,7 @@ const points = [
     icon: Eye,
     title: "Invisible on screen share",
     description: "Smallbird's assistance appears in its own window on your screen — separate from the call itself. If you share your screen or someone watches you present, they see a normal call, never your overlay.",
-    proof: <PovCompare compact fill />,
+    proof: <PovCompare compact fill hideLabels />,
     proofLabel: "Drag to compare — what you see vs. what they see",
     ownsLabel: true,
   },
@@ -67,6 +69,9 @@ const points = [
 ]
 
 export function Privacy() {
+  const [activeTab, setActiveTab] = useState("0")
+  const activePoint = points[Number(activeTab)]
+
   return (
     <section id="privacy" className="scroll-mt-16 border-t border-border py-14 px-4 sm:py-20">
       <div id="security" className="mx-auto max-w-5xl">
@@ -81,7 +86,7 @@ export function Privacy() {
           </p>
         </div>
 
-        <Tabs defaultValue="0" orientation="vertical" className="mt-14 lg:grid lg:grid-cols-2 lg:items-center lg:gap-10">
+        <Tabs value={activeTab} onValueChange={setActiveTab} orientation="vertical" className="mt-14 lg:grid lg:grid-cols-[1fr_1.3fr] lg:items-center lg:gap-10">
           <TabsList variant="line" className="h-auto w-full flex-col items-stretch gap-2 bg-transparent p-0">
             {points.map((point, i) => (
               <TabsTrigger
@@ -109,24 +114,42 @@ export function Privacy() {
             ))}
           </TabsList>
 
-          <MockupFrame className="relative mt-8 h-80 items-center justify-center bg-neutral-950 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.35)] lg:mt-0">
-            {points.map((point, i) => (
-              <TabsContent
-                key={point.title}
-                value={String(i)}
-                forceMount
-                className="absolute inset-0 m-0 flex items-center justify-center p-6 data-[state=inactive]:hidden"
-              >
-                {!point.ownsLabel ? (
-                  <span className="absolute top-4 left-4 z-10 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-medium text-white backdrop-blur">
-                    <Video className="h-3 w-3" />
-                    {point.proofLabel}
-                  </span>
-                ) : null}
-                {point.proof}
-              </TabsContent>
-            ))}
-          </MockupFrame>
+          <div className="mt-8 lg:mt-0">
+            {activePoint.ownsLabel ? (
+              <div className="mb-3 flex items-center justify-between px-0.5 text-base font-semibold text-foreground">
+                <span>Candidate view</span>
+                <span>Interviewer view</span>
+              </div>
+            ) : null}
+
+            <MockupFrame
+              size={activePoint.ownsLabel ? undefined : "small"}
+              className={cn(
+                "relative aspect-[1616/973] w-full items-center justify-center bg-neutral-950 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.35)]",
+                activePoint.ownsLabel && "p-0",
+              )}
+            >
+              {points.map((point, i) => (
+                <TabsContent
+                  key={point.title}
+                  value={String(i)}
+                  forceMount
+                  className={cn(
+                    "absolute inset-0 m-0 flex items-center justify-center data-[state=inactive]:hidden",
+                    point.ownsLabel ? "p-0" : "p-6",
+                  )}
+                >
+                  {!point.ownsLabel ? (
+                    <span className="absolute top-4 left-4 z-10 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-medium text-white backdrop-blur">
+                      <Video className="h-3 w-3" />
+                      {point.proofLabel}
+                    </span>
+                  ) : null}
+                  {point.proof}
+                </TabsContent>
+              ))}
+            </MockupFrame>
+          </div>
         </Tabs>
       </div>
     </section>

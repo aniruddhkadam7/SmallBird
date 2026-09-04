@@ -43,6 +43,20 @@ function colorForUser(seed: string) {
   return `hsl(${hue}, 65%, 45%)`
 }
 
+/// Fallback for accounts with no stored name yet (older accounts, or ones
+/// that haven't logged back in through the name-collecting flow) — splits
+/// the email's local part on the usual separators instead of showing it as
+/// one run-together capitalized word (e.g. "jane.doe" -> "Jane Doe" rather
+/// than "Jane.doe").
+function nameFromEmail(email: string): string {
+  const local = email.split("@")[0]
+  return local
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
+}
+
 interface PlanInfo {
   displayName: string
   remainingMinutes: number
@@ -51,10 +65,12 @@ interface PlanInfo {
 
 export function DashboardSidebar({
   email,
+  name: storedName,
   plan,
   children,
 }: {
   email: string
+  name: string | null
   plan: PlanInfo | null
   children: React.ReactNode
 }) {
@@ -64,9 +80,9 @@ export function DashboardSidebar({
   const [view, setView] = useState<"interviews" | "plans">("interviews")
   const [confirmingLogout, setConfirmingLogout] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const initial = email.charAt(0).toUpperCase()
+  const name = storedName || nameFromEmail(email)
+  const initial = name.charAt(0).toUpperCase()
   const avatarColor = colorForUser(email)
-  const name = email.split("@")[0]
 
   return (
     <div className={`${theme === "dark" ? "dark" : ""} flex h-screen flex-col overflow-hidden bg-background text-foreground lg:flex-row`}>
@@ -194,7 +210,7 @@ export function DashboardSidebar({
               {initial}
             </span>
             <div className="min-w-0">
-              <div className="truncate text-sm font-medium capitalize text-foreground">{name}</div>
+              <div className="truncate text-sm font-medium text-foreground">{name}</div>
               <div className="truncate text-xs text-muted-foreground">{email}</div>
             </div>
           </div>
