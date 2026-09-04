@@ -1,10 +1,10 @@
 "use client"
 
 import type { ReactNode } from "react"
+import { ArrowRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Glow } from "@/components/ui/glow"
-import { LiquidButton } from "@/components/ui/liquid-glass-button"
 
 interface HeroWithMockupProps {
   eyebrow?: string
@@ -72,24 +72,26 @@ export function HeroWithMockup({
             {description}
           </p>
 
-          <div className="relative z-10 flex flex-wrap items-center justify-center gap-4 animate-appear opacity-0 [animation-delay:320ms]">
-            <LiquidButton
-              size="lg"
+          <div className="relative z-10 flex flex-wrap items-center justify-center gap-3 animate-appear opacity-0 [animation-delay:320ms]">
+            <button
+              type="button"
               onClick={() => {
                 window.location.href = primaryCta.href
               }}
+              className="inline-flex items-center gap-2 rounded-full bg-foreground px-6 py-3 text-sm font-semibold text-background shadow-[0_8px_20px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
             >
               {primaryCta.text}
-            </LiquidButton>
-            <LiquidButton
-              size="lg"
-              variant="outline"
+              <ArrowRight className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 window.location.href = secondaryCta.href
               }}
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-6 py-3 text-sm font-semibold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.06)] transition-transform hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(0,0,0,0.1)]"
             >
               {secondaryCta.text}
-            </LiquidButton>
+            </button>
           </div>
 
           <div className="animate-appear relative w-full max-w-3xl pt-10 opacity-0 [animation-delay:480ms]">
