@@ -5,11 +5,11 @@ import { GlassFilter } from "@/components/ui/liquid-glass-button";
 import { PurchaseFlowDialog } from "@/components/blocks/purchase-flow-dialog";
 import { PurchaseFlowProvider } from "@/lib/purchase-flow";
 import { siteName, siteUrl } from "@/lib/site";
-import { OrganizationJsonLd } from "@/components/seo/json-ld";
+import { OrganizationJsonLd, WebsiteJsonLd } from "@/components/seo/json-ld";
 
-const title = "Smallbird — Real-time AI Assistant for Interviews";
+const title = "Smallbird — AI Interview & Meeting Assistant";
 const description =
-  "Smallbird gives you real-time AI assistance during interviews — with context from your CV and the job description. Free to download for Windows and macOS.";
+  "Smallbird is a real-time AI assistant for interviews and important calls. It listens as the conversation happens, grounds its help in your CV and the job description, and stays invisible even if you share your screen.";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -36,10 +36,13 @@ export const metadata: Metadata = {
   keywords: [
     "Smallbird",
     "AI interview assistant",
-    "real-time interview help",
     "AI interview copilot",
-    "interview AI tool",
-    "AI assistant for job interviews",
+    "real-time interview assistant",
+    "AI coding interview assistant",
+    "interview preparation AI",
+    "AI meeting assistant",
+    "interview copilot",
+    "real-time AI assistant",
   ],
   applicationName: siteName,
   authors: [{ name: siteName }],
@@ -75,6 +78,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body>
         <OrganizationJsonLd />
+        <WebsiteJsonLd />
         <PurchaseFlowProvider>
           <div id="top" className="relative">
             <GlassFilter />

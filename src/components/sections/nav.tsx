@@ -14,7 +14,7 @@ const links = [
   { label: "Features", href: "/#features" },
   { label: "Reviews", href: "/#reviews" },
   { label: "Privacy", href: "/#privacy" },
-  { label: "Pricing", href: "/#pricing" },
+  { label: "Pricing", href: "/pricing" },
 ]
 
 export function Nav() {

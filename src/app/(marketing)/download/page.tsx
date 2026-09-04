@@ -3,6 +3,7 @@ import Link from "next/link"
 import { ArrowLeft, Download } from "lucide-react"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
+import { RelatedPages } from "@/components/blocks/related-pages"
 
 export const metadata: Metadata = {
   title: "Download Smallbird for Windows",
@@ -108,6 +109,22 @@ export default function DownloadPage() {
       <p className="mt-10 text-center text-xs text-muted-foreground">
         After installing, sign in (or create a free account) to start your first session.
       </p>
+
+      <RelatedPages
+        title="Learn more"
+        links={[
+          {
+            href: "/ai-interview-assistant",
+            label: "AI Interview Assistant",
+            description: "How Smallbird works during an interview.",
+          },
+          {
+            href: "/pricing",
+            label: "Pricing",
+            description: "Free plan, one-time passes, and monthly plans.",
+          },
+        ]}
+      />
     </div>
   )
 }

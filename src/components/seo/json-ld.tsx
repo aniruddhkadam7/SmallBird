@@ -18,6 +18,22 @@ export function OrganizationJsonLd() {
   )
 }
 
+export function WebsiteJsonLd() {
+  const data = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: siteName,
+    url: siteUrl,
+  }
+
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
+    />
+  )
+}
+
 export function SoftwareApplicationJsonLd() {
   const data = {
     "@context": "https://schema.org",

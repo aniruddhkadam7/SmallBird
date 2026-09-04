@@ -4,6 +4,7 @@ import { PovCompare } from "@/components/blocks/pov-compare";
 import { ProductDemo } from "@/components/sections/product-demo";
 import { Platforms } from "@/components/sections/platforms";
 import { Advantages } from "@/components/sections/advantages";
+import { Solutions } from "@/components/sections/solutions";
 import { Reviews } from "@/components/sections/reviews";
 import { Companies } from "@/components/sections/companies";
 import { Privacy } from "@/components/sections/privacy";
@@ -33,6 +34,7 @@ export default function Home() {
       <ProductDemo />
       <Platforms />
       <Advantages />
+      <Solutions />
       <Reviews />
       <Companies />
       <Privacy />
