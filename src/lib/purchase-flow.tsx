@@ -8,9 +8,9 @@ export type { PlanId }
 
 export const PLAN_LABELS: Record<PlanId, string> = {
   free: "Free",
-  "interview-pass": "Interview Pass",
-  "pro-monthly": "Pro Monthly",
-  "pro-annual": "Pro Annual",
+  starter: "Starter",
+  pro: "Pro",
+  "pro-plus": "Pro Plus",
 }
 
 export type FlowStep = "signup" | "verify" | "payment" | "processing" | "done"
@@ -26,7 +26,7 @@ interface PurchaseFlowState {
   activeFlow: { plan: PlanId; step: FlowStep } | null
   startFlow: (plan: PlanId) => void
   requestDashboardAccess: () => void
-  requestCode: (email: string) => Promise<void>
+  requestCode: (email: string, name: string) => Promise<void>
   verifyCode: (email: string, code: string) => Promise<void>
   signInWithGoogle: () => Promise<void>
   completePayment: () => Promise<void>
@@ -62,6 +62,11 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [activeFlow, setActiveFlow] = useState<{ plan: PlanId; step: FlowStep } | null>(null)
+  // Held between requestCode and verifyCode — signInWithOtp's `data` only
+  // seeds user_metadata for a brand-new account, so a returning user who
+  // doesn't have a name stored yet needs it applied via updateUser once
+  // they're actually signed in (see verifyCode below).
+  const [pendingName, setPendingName] = useState("")
 
   const PENDING_REDIRECT_KEY = "smallbird:post-auth-redirect"
 
@@ -118,17 +123,19 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
     startFlow("free")
   }
 
-  const requestCode = async (rawEmail: string) => {
+  const requestCode = async (rawEmail: string, name: string) => {
     setBusy(true)
     setError(null)
     try {
       const supabase = createClient()
+      const trimmedName = name.trim()
       const { error: otpError } = await supabase.auth.signInWithOtp({
         email: rawEmail,
-        options: { shouldCreateUser: true },
+        options: { shouldCreateUser: true, data: trimmedName ? { full_name: trimmedName } : undefined },
       })
       if (otpError) throw otpError
       setEmail(rawEmail)
+      setPendingName(trimmedName)
       setActiveFlow((prev) => (prev ? { ...prev, step: "verify" } : prev))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -142,10 +149,20 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
     setError(null)
     try {
       const supabase = createClient()
-      const { error: verifyError } = await supabase.auth.verifyOtp({ email: rawEmail, token: code, type: "email" })
+      const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+        email: rawEmail,
+        token: code,
+        type: "email",
+      })
       if (verifyError) throw verifyError
       setSignedUp(true)
       setEmail(rawEmail)
+
+      // Backfill for an existing account that signed up before name
+      // collection existed, or simply didn't have one set yet.
+      if (pendingName && !verifyData.user?.user_metadata?.full_name) {
+        await supabase.auth.updateUser({ data: { full_name: pendingName } })
+      }
 
       const pendingRedirect = sessionStorage.getItem(PENDING_REDIRECT_KEY)
       if (pendingRedirect) {

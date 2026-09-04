@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getPlan, type PlanId } from "@/lib/plans"
 
-// Creates a Razorpay Order for a one-time purchase (Interview Pass).
+// Creates a Razorpay Order for a one-time purchase (Starter).
 // RAZORPAY_KEY_SECRET never reaches the client — only the resulting
 // order_id + the public key id do, which is what Checkout.js needs.
 export async function POST(request: Request) {
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   }
 
   const { planId } = (await request.json()) as { planId?: PlanId }
-  if (planId !== "interview-pass") {
+  if (planId !== "starter") {
     return NextResponse.json({ error: "This plan isn't a one-time purchase" }, { status: 400 })
   }
 

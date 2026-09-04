@@ -51,7 +51,7 @@ export function Pricing() {
             >
               {plan.recommended ? (
                 <Badge className="absolute -top-3 left-1/2 z-20 -translate-x-1/2">
-                  Recommended
+                  MOST POPULAR
                 </Badge>
               ) : null}
 
@@ -62,7 +62,9 @@ export function Pricing() {
                 )}
               >
                 <CardHeader>
-                  <CardTitle className="text-lg">{plan.name}</CardTitle>
+                  <CardTitle className="text-lg">
+                    {plan.emoji} {plan.name}
+                  </CardTitle>
                   <div className="mt-2 flex items-baseline gap-1.5">
                     <span className="text-3xl font-semibold tracking-tight">
                       {plan.price}
@@ -99,9 +101,8 @@ export function Pricing() {
         </div>
 
         <p className="mt-8 text-center text-xs text-muted-foreground">
-          Prices are in INR and include applicable taxes. The Interview Pass
-          is a one-time purchase; Pro Monthly and Pro Annual are recurring
-          subscriptions.
+          Prices are in INR and include applicable taxes. Starter is a
+          one-time purchase; Pro and Pro Plus are recurring subscriptions.
         </p>
 
         <div className="mt-10 flex flex-wrap items-center justify-center gap-2.5">

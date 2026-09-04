@@ -2,21 +2,21 @@ import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import type { PlanId } from "@/lib/plans"
 
-// Creates a Razorpay Subscription for a recurring plan (Pro Monthly/Annual)
+// Creates a Razorpay Subscription for a recurring plan (Pro/Pro Plus)
 // against a pre-created Razorpay-side Plan (see backend/README.md's
 // Razorpay setup checklist) — distinct from our own public.plans.id.
 const RAZORPAY_PLAN_ID_BY_PLAN: Partial<Record<PlanId, string | undefined>> = {
-  "pro-monthly": process.env.RAZORPAY_PLAN_ID_MONTHLY,
-  "pro-annual": process.env.RAZORPAY_PLAN_ID_ANNUAL,
+  pro: process.env.RAZORPAY_PLAN_ID_PRO,
+  "pro-plus": process.env.RAZORPAY_PLAN_ID_PRO_PLUS,
 }
 
 // Razorpay subscriptions require a total_count of billing cycles up front —
-// there's no "until cancelled" option. These give effectively-unlimited
-// runway (10 years monthly, 20 years annual); the user can cancel anytime
-// via the webhook's subscription.cancelled handling.
+// there's no "until cancelled" option. 120 monthly cycles is effectively-
+// unlimited runway (10 years); the user can cancel anytime via the
+// webhook's subscription.cancelled handling.
 const TOTAL_COUNT_BY_PLAN: Partial<Record<PlanId, number>> = {
-  "pro-monthly": 120,
-  "pro-annual": 20,
+  pro: 120,
+  "pro-plus": 120,
 }
 
 export async function POST(request: Request) {
