@@ -1,7 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { ArrowRight } from "lucide-react"
+import { ArrowRight, Play } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Glow } from "@/components/ui/glow"
@@ -26,8 +26,8 @@ export function HeroWithMockup({
   eyebrow,
   title,
   description,
-  primaryCta = { text: "Get Started", href: "#get-started" },
-  secondaryCta = { text: "See how it works", href: "#product-demo" },
+  primaryCta = { text: "Dashboard", href: "/dashboard" },
+  secondaryCta = { text: "Demo", href: "#product-demo" },
   mockup,
   className,
 }: HeroWithMockupProps) {
@@ -78,7 +78,7 @@ export function HeroWithMockup({
               onClick={() => {
                 window.location.href = primaryCta.href
               }}
-              className="inline-flex items-center gap-2 rounded-full bg-foreground px-6 py-3 text-sm font-semibold text-background shadow-[0_8px_20px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
+              className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-[0_8px_20px_rgba(0,0,0,0.14)] transition-transform hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(0,0,0,0.18)]"
             >
               {primaryCta.text}
               <ArrowRight className="h-4 w-4" />
@@ -90,6 +90,7 @@ export function HeroWithMockup({
               }}
               className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-6 py-3 text-sm font-semibold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.06)] transition-transform hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(0,0,0,0.1)]"
             >
+              <Play className="h-4 w-4 fill-current" />
               {secondaryCta.text}
             </button>
           </div>
