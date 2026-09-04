@@ -116,7 +116,14 @@ supabase functions deploy verify-otp
 4. Add a webhook endpoint (Dashboard -> Account & Settings -> Webhooks)
    pointing at
    `https://xubbwgrjvvsbfvxcuzav.supabase.co/functions/v1/razorpay-webhook`,
-   subscribed to `order.paid`, `subscription.charged`, `subscription.cancelled`.
+   subscribed to `order.paid`, `subscription.charged`, `subscription.cancelled`,
+   `subscription.halted`, `refund.created`, `payment.failed`.
+5. Money-in/failed/halted events also send an operational email to
+   `payments@smallbird.in` via Resend (reusing `RESEND_API_KEY`) — see
+   `notifyOwner` in `razorpay-webhook/index.ts`. Refunds are issued directly
+   from the Razorpay Dashboard (Payments -> find payment -> Refund); the
+   `refund.created` webhook then syncs the account back to `free`
+   automatically — no separate refund UI/endpoint of our own.
    Note the webhook secret shown at creation — that's `RAZORPAY_WEBHOOK_SECRET`.
 
 ## Every new user already starts on a plan

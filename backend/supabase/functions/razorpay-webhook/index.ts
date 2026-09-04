@@ -10,7 +10,8 @@
 //
 // Configure in Razorpay Dashboard -> Account & Settings -> Webhooks:
 //   URL: https://<project-ref>.supabase.co/functions/v1/razorpay-webhook
-//   Events: order.paid, subscription.charged, subscription.cancelled
+//   Events: order.paid, subscription.charged, subscription.cancelled,
+//           subscription.halted, refund.created, payment.failed
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -57,6 +58,45 @@ async function getPlanMinutes(planId: string): Promise<number> {
   return data.included_minutes;
 }
 
+async function lookupUserEmail(userId: string): Promise<string | null> {
+  const { data, error } = await admin.auth.admin.getUserById(userId);
+  if (error || !data?.user?.email) return null;
+  return data.user.email;
+}
+
+const OWNER_NOTIFY_EMAIL = "payments@smallbird.in";
+const FROM_ADDRESS = "SmallBird <noreply@smallbird.in>";
+
+// Best-effort operational email to the business owner — money in, money
+// stuck, or a subscription drying up. Never throws: a Resend hiccup must
+// never fail the webhook response, which would make Razorpay retry the
+// whole event and re-run the DB writes above against already-idempotent
+// guards for nothing. Deliberately awaited (not truly fire-and-forget) —
+// an unawaited fetch can get cut off once this function's response goes
+// out, since Edge Functions don't keep running in the background on their
+// own; Resend is fast enough that awaiting it adds negligible latency.
+async function notifyOwner(subject: string, html: string): Promise<void> {
+  const resendKey = Deno.env.get("RESEND_API_KEY");
+  if (!resendKey) {
+    console.error("razorpay-webhook: RESEND_API_KEY not set, skipping owner notification");
+    return;
+  }
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${resendKey}`, "content-type": "application/json" },
+      body: JSON.stringify({ from: FROM_ADDRESS, to: OWNER_NOTIFY_EMAIL, subject, html }),
+    });
+    if (!res.ok) console.error("razorpay-webhook: owner notification failed", res.status, await res.text());
+  } catch (err) {
+    console.error("razorpay-webhook: owner notification threw", err);
+  }
+}
+
+function formatRupees(amountPaise: number): string {
+  return `₹${(amountPaise / 100).toFixed(2)}`;
+}
+
 Deno.serve(async (req) => {
   const rawBody = await req.text();
   const signature = req.headers.get("x-razorpay-signature");
@@ -101,6 +141,17 @@ Deno.serve(async (req) => {
         if (current?.plan_id === "free") {
           await admin.from("entitlements").update({ plan_id: planId }).eq("user_id", userId);
         }
+
+        const buyerEmail = await lookupUserEmail(userId);
+        await notifyOwner(
+          `💰 ${formatRupees(order.amount)} — ${planId}`,
+          `<p>New purchase.</p><ul>
+            <li>Plan: ${planId}</li>
+            <li>Amount: ${formatRupees(order.amount)}</li>
+            <li>Buyer: ${buyerEmail ?? userId}</li>
+            <li>Order: ${order.id}</li>
+          </ul>`,
+        );
         break;
       }
 
@@ -127,6 +178,17 @@ Deno.serve(async (req) => {
         });
         await admin.from("entitlements").update({ plan_id: planId }).eq("user_id", userId);
         await admin.rpc("increment_entitlement_minutes", { p_user_id: userId, p_minutes: minutes });
+
+        const chargedEmail = await lookupUserEmail(userId);
+        await notifyOwner(
+          `💰 ${formatRupees(payment.amount)} — ${planId} renewal`,
+          `<p>Subscription charge succeeded.</p><ul>
+            <li>Plan: ${planId}</li>
+            <li>Amount: ${formatRupees(payment.amount)}</li>
+            <li>Customer: ${chargedEmail ?? userId}</li>
+            <li>Subscription: ${subscription.id}</li>
+          </ul>`,
+        );
         break;
       }
 
@@ -137,6 +199,79 @@ Deno.serve(async (req) => {
 
         await admin.from("subscriptions").update({ status: "canceled" }).eq("user_id", userId);
         await admin.from("entitlements").update({ plan_id: "free" }).eq("user_id", userId);
+
+        const cancelledEmail = await lookupUserEmail(userId);
+        await notifyOwner(
+          `📉 Subscription cancelled — ${cancelledEmail ?? userId}`,
+          `<p>A subscription was cancelled and the account dropped to the free plan.</p>
+           <p>Subscription: ${subscription.id}</p>`,
+        );
+        break;
+      }
+
+      // Razorpay auto-halts a subscription after repeated failed renewal
+      // charges (expired card, insufficient funds, etc.) instead of
+      // cancelling it outright — without this case, that user keeps full
+      // paid access indefinitely even though billing has actually stopped.
+      case "subscription.halted": {
+        const subscription = body.payload.subscription.entity;
+        const userId = subscription.notes?.user_id;
+        if (!userId) break;
+
+        await admin.from("subscriptions").update({ status: "halted" }).eq("user_id", userId);
+        await admin.from("entitlements").update({ plan_id: "free" }).eq("user_id", userId);
+
+        const haltedEmail = await lookupUserEmail(userId);
+        await notifyOwner(
+          `⚠️ Subscription halted — ${haltedEmail ?? userId}`,
+          `<p>Razorpay halted a subscription after repeated failed renewal charges (expired card, insufficient funds, etc.) — the account was dropped to the free plan.</p>
+           <p>Subscription: ${subscription.id}</p>`,
+        );
+        break;
+      }
+
+      // A refund (one-time Interview Pass or a subscription charge) hands
+      // the money back — without this, the buyer keeps the plan/minutes
+      // that money paid for. Deliberately doesn't try to claw back a
+      // precise number of already-used minutes; just drops the account to
+      // free, the same simplification subscription.cancelled makes. A
+      // refund is rare/manual enough that this is worth the simplicity.
+      case "refund.created": {
+        const payment = body.payload.payment?.entity;
+        const refund = body.payload.refund.entity;
+        const userId = payment?.notes?.user_id;
+        if (!userId) {
+          console.error("refund.created missing payment.notes.user_id", refund.id);
+          break;
+        }
+        if (await alreadyProcessed(eventType, refund.id)) break;
+
+        await admin.from("entitlements").update({ plan_id: "free" }).eq("user_id", userId);
+        // No-op for a refunded one-time purchase (that user never had a
+        // subscriptions row to begin with) — only meaningful when the
+        // refund is for a subscription charge.
+        await admin.from("subscriptions").update({ status: "canceled" }).eq("user_id", userId);
+        break;
+      }
+
+      // Nothing was ever granted for a failed payment, so there's no DB
+      // state to fix here — purely a heads-up so a declined card or
+      // insufficient-funds failure doesn't go unnoticed.
+      case "payment.failed": {
+        const payment = body.payload.payment.entity;
+        if (await alreadyProcessed(eventType, payment.id)) break;
+
+        const userId = payment.notes?.user_id;
+        const failedEmail = userId ? await lookupUserEmail(userId) : null;
+        await notifyOwner(
+          `❌ Payment failed — ${formatRupees(payment.amount)}`,
+          `<p>A payment attempt failed.</p><ul>
+            <li>Amount: ${formatRupees(payment.amount)}</li>
+            <li>Reason: ${payment.error_description ?? payment.error_reason ?? "unknown"}</li>
+            <li>Customer: ${failedEmail ?? userId ?? "unknown"}</li>
+            <li>Payment: ${payment.id}</li>
+          </ul>`,
+        );
         break;
       }
     }
