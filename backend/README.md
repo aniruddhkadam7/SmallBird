@@ -100,15 +100,16 @@ supabase functions deploy verify-otp
 ## Razorpay setup checklist
 
 `plans` has rows with `id`, `included_minutes`, `price_inr_paise`,
-`billing_type` matching the website exactly after `0008` is applied.
+`billing_type` matching the website exactly after `0013` is applied
+(`free` / `starter` / `pro` / `pro-plus` — no yearly tier).
 
 1. Create a Razorpay account, complete KYC. Test-mode keys work before KYC
    clears — enough to build and test everything below.
 2. Create two Razorpay **Plans** (Dashboard -> Subscriptions -> Plans) for
-   `pro-monthly` and `pro-annual` — Razorpay recurring billing needs a
-   pre-existing Razorpay-side plan id, separate from `public.plans.id`.
-3. When the website creates an Order (one-time, `interview-pass`) or a
-   Subscription (`pro-monthly`/`pro-annual`) server-side, it must set
+   `pro` and `pro-plus` — Razorpay recurring billing needs a pre-existing
+   Razorpay-side plan id, separate from `public.plans.id`.
+3. When the website creates an Order (one-time, `starter`) or a
+   Subscription (`pro`/`pro-plus`) server-side, it must set
    `notes: { user_id: "<supabase user id>", plan_id: "<id from public.plans>" }`
    — Razorpay's free-form metadata equivalent (max 15 keys). This function
    reads `user_id`/`plan_id` from there; there's no `stripe_customer_id`-style
