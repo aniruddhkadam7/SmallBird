@@ -34,10 +34,12 @@ Deno.serve(async (req) => {
 
   let email: string;
   let code: string;
+  let name: string | null;
   try {
     const body = await req.json();
     email = String(body.email ?? "").trim().toLowerCase();
     code = String(body.code ?? "").trim();
+    name = typeof body.name === "string" && body.name.trim() ? body.name.trim() : null;
   } catch {
     return json({ error: "Invalid request body" }, 400);
   }
@@ -78,12 +80,27 @@ Deno.serve(async (req) => {
 
   await admin.from("login_otps").update({ consumed: true }).eq("id", row.id);
 
-  const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({ type: "magiclink", email });
+  // `options.data` only seeds user_metadata for a brand-new user (same as
+  // signUp) — it's ignored here if this email already has an account, which
+  // is why an existing account with no name yet gets backfilled explicitly
+  // below once we know its user id.
+  const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+    type: "magiclink",
+    email,
+    options: name ? { data: { full_name: name } } : undefined,
+  });
   if (linkErr || !linkData) {
     console.error("verify-otp: generateLink failed", linkErr);
     return json({ error: "Internal error" }, 500);
   }
   const tokenHash = linkData.properties.hashed_token;
+
+  if (name && !linkData.user?.user_metadata?.full_name) {
+    const { error: updateErr } = await admin.auth.admin.updateUserById(linkData.user.id, {
+      user_metadata: { ...linkData.user.user_metadata, full_name: name },
+    });
+    if (updateErr) console.error("verify-otp: full_name backfill failed", updateErr);
+  }
 
   const verifyRes = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
     method: "POST",

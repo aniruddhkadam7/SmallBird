@@ -13,8 +13,8 @@ export function requestLoginOtp(email: string): Promise<void> {
   return invoke<void>("request_login_otp", { email });
 }
 
-export function verifyLoginOtp(email: string, code: string): Promise<AuthSessionInfo> {
-  return invoke<AuthSessionInfo>("verify_login_otp", { email, code });
+export function verifyLoginOtp(email: string, code: string, name?: string): Promise<AuthSessionInfo> {
+  return invoke<AuthSessionInfo>("verify_login_otp", { email, code, name: name || null });
 }
 
 // Opens the system browser for Google sign-in and resolves once it

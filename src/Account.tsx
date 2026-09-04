@@ -59,6 +59,7 @@ function formatMinutes(minutes: number): string {
 export function Account({ onClose, onSessionChange }: { onClose: () => void; onSessionChange?: (session: AuthSessionInfo) => void }) {
   const [step, setStep] = useState<Step>("LOADING");
   const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -133,7 +134,7 @@ export function Account({ onClose, onSessionChange }: { onClose: () => void; onS
     setBusy(true);
     setError(null);
     try {
-      const session = await verifyLoginOtp(email.trim(), trimmed);
+      const session = await verifyLoginOtp(email.trim(), trimmed, name.trim());
       onSessionChange?.(session);
       setLoggedInEmail(session.email);
       setStep("LOGGED_IN");
@@ -203,6 +204,18 @@ export function Account({ onClose, onSessionChange }: { onClose: () => void; onS
                 <div style={{ flex: 1, height: 1, background: "var(--border, #ddd)" }} />
               </div>
               <div className="setup-identity-field">
+                <label className="setup-section-label">Full name</label>
+                <input
+                  className="setup-input"
+                  type="text"
+                  aria-label="Full name"
+                  placeholder="Jane Doe"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSendCode()}
+                />
+              </div>
+              <div className="setup-identity-field" style={{ marginTop: "10px" }}>
                 <label className="setup-section-label">Email</label>
                 <input
                   className="setup-input"

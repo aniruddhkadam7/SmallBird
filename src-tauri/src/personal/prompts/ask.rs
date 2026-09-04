@@ -49,7 +49,7 @@ LENGTH AND DEPTH
 Before answering, classify the question into one of four depth tiers, from its wording, complexity, and the conversation so far — not from a fixed habit. Use the length/style guidance given to you below as an outer ceiling, not a quota to fill — a SHORT question stays short even if the ceiling is high.
 
 - SHORT — a factual, definitional, or direct yes/no-shaped question (\"What is X?\", \"Have you used Y?\", \"Do you know Z?\"). One short line or fragment. For a direct experience question (\"Have you worked on web applications?\"), lead with the direct answer (\"Yes —\") plus one concrete keyword detail — don't pad it into a story.
-- MEDIUM — a \"why\"/reasoning question, or a direct question that needs one layer of explanation (\"Why did you choose X?\", \"How exactly did you use Python?\"). A short summary line, then the reasoning as 2-4 terse bullets — not a full essay.
+- MEDIUM — a \"why\"/reasoning question, or a direct question that needs one layer of explanation (\"Why did you choose X?\", \"How exactly did you use Python?\"). A short summary line, then the real reasoning or mechanism as 3-6 terse bullets — genuine substance, not a full essay, but never just a label with no detail behind it.
 - LONG — a request for a real explanation of a process or a specific piece of it (\"How did you implement the system?\", \"What did you use for embeddings?\" as a follow-up). A structured, multi-part set of notes per FORMAT below — genuinely earns the space, don't compress it to one line.
 - VERY LONG / DETAILED — an explicit ask for the complete picture (\"Explain the complete RAG architecture\", \"Walk me through the entire implementation step by step\"). The fullest structured notes per FORMAT below, covering every real stage — don't truncate this one to save words.
 - CODE — the interviewer wants you to actually write code (\"Write a function that...\", \"Implement X in Python\", \"What would the SQL look like?\"), not talk about it. This tier is judged on completeness and correctness of the code, not a word count — see FORMAT 7 below.
@@ -66,11 +66,11 @@ Formatting is part of the answer, not optional. Determine the question type firs
 
 1. SIMPLE DEFINITION / ONE-LINER (\"What is X?\", \"Have you used Y?\"): one short line or fragment. No headings, no lists.
 
-2. WHY / COMPARISON (\"Why did you choose X over Y?\", \"Why does that matter?\"): a short summary line, then 2-4 short Markdown bullet points (each one `**label:** terse reason`), no closing sentence needed.
+2. WHY / COMPARISON (\"Why did you choose X over Y?\", \"Why does that matter?\"): a short summary line, then 3-6 short Markdown bullet points (each one `**label:** terse reason`), no closing sentence needed.
 
 3. HOW / PROCESS (\"How did you build X?\", \"How does the pipeline work?\"): a Markdown numbered list, one short step per line (\"1. ...\", \"2. ...\", etc.), each a fragment naming what happens — not a narrated sentence.
 
-4. ARCHITECTURE / SYSTEM DESIGN (\"Explain the architecture step by step\", \"Walk me through the system design\"): a short summary line, then a Markdown numbered list with one pipeline stage per step (e.g. data ingestion, chunking, embeddings, vector storage, retrieval, generation — using whatever stages actually apply to the system being discussed), each as `**stage:** terse detail`. A short trailing note is optional if genuinely useful.
+4. ARCHITECTURE / SYSTEM DESIGN (\"Explain the architecture step by step\", \"Walk me through the system design\", \"Explain the full flow\"): a short summary line, then a Markdown numbered list with one pipeline stage per step (e.g. data ingestion, chunking, embeddings, vector storage, retrieval, generation — using whatever stages actually apply to the system being discussed), each as `**stage:** terse detail`. Every stage's detail must name a concrete technique, tool, or parameter for that stage — never a vague restatement of the stage's own name. \"Documents split into pieces\" for a chunking step, or \"vectors compared\" for a ranking step, says nothing a candidate wouldn't already know from the stage name alone; say the actual thing instead — chunk size/overlap, the embedding model, the similarity metric, the index type, the reranking approach, whatever is real and specific to that stage, drawn from the candidate's background if it establishes one and from standard real-world practice otherwise. A short trailing note is optional if genuinely useful.
 
 5. PROJECT / EXPERIENCE (\"Tell me about your project\", \"Tell me about a time...\"): Markdown bold mini-labels, one terse phrase each, in this order — **Problem:**, **What I did:**, **How:**, **Tech:**, **Result:**. Only when the background genuinely establishes a concrete story for it (see HONESTY below); otherwise answer in terms of the approach itself rather than forcing a fabricated problem/result. Keep every label's phrase compressed — e.g. **Problem:** \"people had to dig through a huge JD manually before an interview\" not a full sentence describing the challenge. **Result:** \"people stopped missing stuff during prep\" not a narrated outcome.
 
@@ -166,8 +166,8 @@ fn humanization_instruction(humanization: &str) -> &'static str {
     }
 }
 
-const HOW_PROCESS_MARKERS: &[&str] = &["how did you build", "how does", "how do you", "how did you implement", "how did you create"];
-const ARCHITECTURE_MARKERS: &[&str] = &["architecture", "system design", "design of the system", "step by step", "step-by-step", "pipeline"];
+const HOW_PROCESS_MARKERS: &[&str] = &["how did you build", "how does", "how do you", "how did you implement", "how did you create", "walk me through", "walk us through", "describe how you", "explain how you"];
+const ARCHITECTURE_MARKERS: &[&str] = &["architecture", "system design", "design of the system", "step by step", "step-by-step", "pipeline", "full flow", "entire flow", "whole flow", "complete flow", "the flow", "workflow"];
 const VERY_LONG_SCOPE_WORDS: &[&str] = &["complete", "entire", "whole", "full"];
 const VERY_LONG_TOPIC_WORDS: &[&str] = &["architecture", "implementation", "system", "pipeline", "design", "flow", "workflow"];
 const VERY_LONG_PHRASES: &[&str] = &["from start to finish", "beginning to end", "in full detail", "in complete detail", "end to end", "end-to-end"];
@@ -236,14 +236,14 @@ fn classify_format(question: &str) -> Option<&'static str> {
     if ARCHITECTURE_MARKERS.iter().any(|m| lowered.contains(m)) {
         return Some("FORMAT 4 (architecture/system design): a short keyword summary line, then a Markdown numbered list (1. 2. 3. ...) with one `**stage:** terse detail` per step, then an optional short trailing note. Do not write this as a single paragraph, and never expand a bullet into a full sentence.");
     }
-    if HOW_PROCESS_MARKERS.iter().any(|m| lowered.contains(m)) {
-        return Some("FORMAT 3 (how/process): a short summary line, then a Markdown numbered list (1. 2. 3. ...), one terse step per line. Do not write this as a single paragraph, and never expand a step into a full sentence.");
-    }
     if PROJECT_MARKERS.iter().any(|m| lowered.contains(m)) {
         return Some("FORMAT 5 (project/experience): use inline Markdown bold mini-labels in order — **Problem:**, **What I did:**, **How:**, **Tech:**, **Result:** — each followed by a terse phrase, not a full sentence. Do not write this as a single paragraph.");
     }
+    if HOW_PROCESS_MARKERS.iter().any(|m| lowered.contains(m)) {
+        return Some("FORMAT 3 (how/process): a short summary line, then a Markdown numbered list (1. 2. 3. ...), one terse step per line. Do not write this as a single paragraph, and never expand a step into a full sentence.");
+    }
     if WHY_COMPARISON_MARKERS.iter().any(|m| lowered.contains(m)) {
-        return Some("FORMAT 2 (why/comparison): a short summary line, then 2-4 short Markdown bullet points (`**label:** terse reason`). No closing sentence needed.");
+        return Some("FORMAT 2 (why/comparison): a short summary line, then 3-6 short Markdown bullet points (`**label:** terse reason`), with real substance behind each reason. No closing sentence needed.");
     }
     if ENUMERATION_WORDS.iter().any(|w| word_in(&lowered, w)) {
         return Some("FORMAT 4-STYLE (enumeration): a short line naming how many there are, then a Markdown numbered list (1. 2. 3. ...) — one named item per line, each with a terse fragment of what it is. Do not write this as a single paragraph or name the items with no explanation.");
@@ -280,7 +280,7 @@ fn length_target(tier: &str) -> LengthTarget {
         },
         "long" => LengthTarget {
             prompt_text: "LONG (a short summary line plus roughly 4-7 terse bullets) — this genuinely earns the fuller, structured notes per the FORMAT above; do not compress it.",
-            max_tokens: 360,
+            max_tokens: 450,
         },
         "code" => LengthTarget {
             prompt_text: "CODE (word count doesn't apply) — at most one short framing line, then complete, correct, runnable code in a fenced block, then at most one short trailing note only if genuinely useful. Don't pad with unnecessary explanation, but never truncate the code itself to save space — a partial or pseudocode answer is not acceptable when real code was asked for.",
@@ -288,11 +288,25 @@ fn length_target(tier: &str) -> LengthTarget {
         },
         "very_long" => LengthTarget {
             prompt_text: "VERY LONG / DETAILED (a short summary line plus roughly 6-9 terse bullets) — the interviewer explicitly asked for the complete picture. Give the fullest structured notes per the FORMAT above, covering every real stage — don't truncate this one to save words.",
-            max_tokens: 540,
+            max_tokens: 700,
+        },
+        "unclassified" => LengthTarget {
+            prompt_text: DEFAULT_JUDGE_TEXT,
+            // Nothing in the question matched a known short/medium pattern, so
+            // this could genuinely be a LONG or VERY LONG question phrased in a
+            // way the keyword lists don't cover (e.g. "walk me through the
+            // system you built", "tell me about the design of X"). Give the
+            // model the same headroom as an explicit LONG classification and
+            // let its own depth judgment (see LENGTH AND DEPTH in the system
+            // prompt) decide how much of it to actually use — capping this at
+            // MEDIUM's 145 tokens would truncate a real deep-dive answer
+            // before the model could write it, regardless of what it judged.
+            // Kept equal to the "long" tier's budget above.
+            max_tokens: 450,
         },
         _ => LengthTarget {
-            prompt_text: "MEDIUM (a short summary line plus roughly 2-4 terse bullets) — state the choice/reasoning concisely. Stop there even if the ceiling below allows more.",
-            max_tokens: 145,
+            prompt_text: "MEDIUM (a short summary line plus roughly 3-6 terse bullets) — this is a reasoning/why question and deserves real substance, not just a token nod to the choice. Give the actual mechanism or trade-off behind the reasoning, not just the label of it.",
+            max_tokens: 220,
         },
     }
 }
@@ -346,7 +360,8 @@ fn classify_length(question: &str) -> (&'static str, u32) {
         return (t.prompt_text, t.max_tokens);
     }
 
-    (DEFAULT_JUDGE_TEXT, length_target("medium").max_tokens)
+    let t = length_target("unclassified");
+    (t.prompt_text, t.max_tokens)
 }
 
 fn context_blocks(request: &AskRequest) -> Vec<String> {
@@ -481,13 +496,13 @@ mod tests {
     #[test]
     fn classifies_architecture_question_as_long() {
         let (_, budget) = classify_length("Explain the architecture step by step");
-        assert_eq!(budget, 360);
+        assert_eq!(budget, 450);
     }
 
     #[test]
     fn classifies_explicit_full_picture_as_very_long() {
         let (_, budget) = classify_length("Walk me through the complete architecture");
-        assert_eq!(budget, 540);
+        assert_eq!(budget, 700);
     }
 
     #[test]
@@ -500,15 +515,16 @@ mod tests {
 
     #[test]
     fn enumeration_word_is_whole_word_only() {
-        // "prototype" must not match the "type" marker.
-        let (_, budget) = classify_length("Tell me about your prototype");
-        assert_ne!(budget, length_target("long").max_tokens.max(0)); // sanity: doesn't force "long" via a false enumeration match
+        // "prototype" must not match the "type" marker — it should fall
+        // through to the unclassified default instead of an enumeration match.
+        let (prompt_text, _) = classify_length("Tell me about your prototype");
+        assert_eq!(prompt_text, DEFAULT_JUDGE_TEXT);
     }
 
     #[test]
     fn enumeration_word_matches_whole_word() {
         let (_, budget) = classify_length("What are the types of caching?");
-        assert_eq!(budget, 360);
+        assert_eq!(budget, 450);
     }
 
     #[test]

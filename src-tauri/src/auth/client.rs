@@ -88,12 +88,12 @@ pub async fn request_otp(email: &str) -> Result<(), String> {
 /// Verifies the 4-digit code via the `verify-otp` Edge Function
 /// (backend/supabase/functions/verify-otp), which mints a real Supabase
 /// session server-side once the code checks out.
-pub async fn verify_otp(email: &str, code: &str) -> Result<AuthSession, String> {
+pub async fn verify_otp(email: &str, code: &str, name: Option<&str>) -> Result<AuthSession, String> {
     let response = client()
         .post(format!("{SUPABASE_URL}/functions/v1/verify-otp"))
         .header("apikey", SUPABASE_ANON_KEY)
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .json(&serde_json::json!({ "email": email, "code": code }))
+        .json(&serde_json::json!({ "email": email, "code": code, "name": name }))
         .send()
         .await
         .map_err(|e| format!("failed to reach Smallbird's auth service: {e}"))?;

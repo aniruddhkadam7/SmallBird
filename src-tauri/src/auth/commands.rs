@@ -12,8 +12,13 @@ pub async fn request_login_otp(email: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn verify_login_otp(state: State<'_, AppState>, email: String, code: String) -> Result<AuthSessionInfo, String> {
-    let session = client::verify_otp(&email, &code).await?;
+pub async fn verify_login_otp(
+    state: State<'_, AppState>,
+    email: String,
+    code: String,
+    name: Option<String>,
+) -> Result<AuthSessionInfo, String> {
+    let session = client::verify_otp(&email, &code, name.as_deref()).await?;
     let info = AuthSessionInfo::from(&session);
     let mut guard = state.auth_session.lock().map_err(|_| "session lock poisoned".to_string())?;
     *guard = Some(session);

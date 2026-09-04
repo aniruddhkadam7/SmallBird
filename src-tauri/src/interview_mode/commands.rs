@@ -4,6 +4,7 @@
 
 use tauri::{AppHandle, Emitter, State};
 
+use crate::auth::client::{SUPABASE_ANON_KEY, SUPABASE_URL};
 use crate::backend::{AskRequest, ConversationTurn};
 use crate::rag::RagClient;
 use crate::state::AppState;
@@ -107,6 +108,69 @@ pub async fn hide_interview_overlay(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn toggle_interview_overlay(app: AppHandle) -> Result<OverlayCaptureStatus, String> {
     run_on_main(&app, window::toggle_overlay_window).await
+}
+
+/// Website origin — base for both the plain dashboard URL (signed-out
+/// fallback) and the handoff URL below.
+const WEBSITE_ORIGIN: &str = "https://smallbird.in";
+
+/// Requests a one-time magic-link token from the `dashboard-handoff`
+/// Supabase function for the signed-in user, so the browser "Open Dashboard"
+/// opens can be signed in too instead of showing the website's own login
+/// screen for a session the user already has here. Returns `None` (never an
+/// `Err`) for anything that keeps this from working — no token to hand back,
+/// a network hiccup, the function being unreachable — since the plain
+/// dashboard URL is always a perfectly good fallback and this must never be
+/// what blocks the button.
+async fn fetch_dashboard_handoff_token(access_token: &str) -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct HandoffResponse {
+        #[serde(rename = "tokenHash")]
+        token_hash: Option<String>,
+    }
+
+    let response = reqwest::Client::new()
+        .post(format!("{SUPABASE_URL}/functions/v1/dashboard-handoff"))
+        .header("apikey", SUPABASE_ANON_KEY)
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .ok()?;
+
+    if !response.status().is_success() {
+        return None;
+    }
+    response.json::<HandoffResponse>().await.ok()?.token_hash
+}
+
+/// Opens the website's Interviews dashboard in the system browser — signed
+/// in already, when the user is signed in here and the handoff round-trip
+/// succeeds (see fetch_dashboard_handoff_token); otherwise just the plain
+/// dashboard URL, which shows the website's own sign-in prompt like any
+/// first-time visit. Uses the opener plugin directly from Rust rather than a
+/// frontend-invoked plugin command, same pattern as auth::oauth's
+/// login_with_google — no separate "opener" capability entry needed since
+/// this custom command is what's exposed to the frontend, not the plugin's
+/// own command.
+#[tauri::command]
+pub async fn open_dashboard(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    let url = match crate::auth::current_access_token(&state).await {
+        Ok(access_token) => match fetch_dashboard_handoff_token(&access_token).await {
+            // token_hash is a hex-encoded hash (Supabase's OTP hashed_token)
+            // — always in [0-9a-f], so it needs no percent-encoding here.
+            Some(token_hash) => format!(
+                "{WEBSITE_ORIGIN}/auth/handoff?token_hash={token_hash}&next=%2Fdashboard"
+            ),
+            None => format!("{WEBSITE_ORIGIN}/dashboard"),
+        },
+        Err(_) => format!("{WEBSITE_ORIGIN}/dashboard"),
+    };
+
+    app.opener()
+        .open_url(&url, None::<&str>)
+        .map_err(|e| format!("could not open dashboard: {e}"))
 }
 
 /// Applied immediately when the user flips "Always on top" in the overlay's

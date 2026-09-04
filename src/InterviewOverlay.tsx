@@ -193,6 +193,11 @@ export function InterviewOverlay() {
   const sttSpeaking = useSttSpeaking();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmingClose, setConfirmingClose] = useState(false);
+  // Shown after archiving a non-empty interview, in place of immediately
+  // hiding the overlay — gives the user a beat to jump straight to the
+  // synced transcript on the website dashboard instead of having to find
+  // their way there separately afterward.
+  const [showEndedSummary, setShowEndedSummary] = useState(false);
   // Shows the opacity percentage in the header for a moment after adjusting.
   const [opacityHint, setOpacityHint] = useState(false);
   const [settings, setSettings] = useState<OverlaySettings>(() => loadOverlaySettings());
@@ -540,6 +545,7 @@ export function InterviewOverlay() {
       setBusy(false);
       setError(null);
       setConfirmingClose(false);
+      setShowEndedSummary(false);
       setSettingsOpen(false);
       setMuted(false);
       committedRef.current = "";
@@ -814,11 +820,30 @@ export function InterviewOverlay() {
     });
   }, []);
 
-  // Archives the Q&A turns so far as one history entry, then hides the
-  // overlay. Turns still pending/failed are skipped — only completed
-  // exchanges are worth keeping. An empty result (nothing ever asked) is a
-  // no-op on the Rust side, so opening and closing without using it never
-  // clutters history.
+  // Actually hides the overlay window — the last step of ending an
+  // interview, whether that's immediate (nothing was ever asked, see
+  // requestClose) or after the user dismisses the post-interview summary
+  // below (Close, or Open Dashboard).
+  const dismissOverlay = useCallback(() => {
+    setShowEndedSummary(false);
+    invoke("hide_interview_overlay").catch(() => overlayWindow.hide());
+  }, []);
+
+  const openDashboard = useCallback(() => {
+    invoke("open_dashboard").catch((e) => console.error("Failed to open dashboard:", e));
+    dismissOverlay();
+  }, [dismissOverlay]);
+
+  // Archives the Q&A turns so far as one history entry. Turns still
+  // pending/failed are skipped — only completed exchanges are worth keeping.
+  // An empty result (nothing ever asked) is a no-op on the Rust side, so
+  // opening and closing without using it never clutters history.
+  //
+  // When there's something to show for it, this hands off to the "your
+  // transcript is ready" summary (see showEndedSummary) instead of hiding
+  // the overlay immediately — that's what lets the user jump straight to
+  // the synced dashboard from here rather than hunting for it afterward. An
+  // empty session has nothing worth a summary for, so it hides right away.
   //
   // The overlay window itself is never destroyed between interviews — Rust's
   // show_overlay_window reuses the existing webview (see interview_mode/
@@ -857,8 +882,12 @@ export function InterviewOverlay() {
     busyRef.current = false;
     setBusy(false);
 
-    invoke("hide_interview_overlay").catch(() => overlayWindow.hide());
-  }, [turns, settings.role, settings.company]);
+    if (completed.length > 0) {
+      setShowEndedSummary(true);
+    } else {
+      dismissOverlay();
+    }
+  }, [turns, settings.role, settings.company, dismissOverlay]);
 
   // Entry point for both the End button and Escape: conversations with at least
   // one exchange ask for confirmation first (closing mid-interview is easy to
@@ -941,6 +970,10 @@ export function InterviewOverlay() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (showEndedSummary) {
+        if (e.key === "Escape") dismissOverlay();
+        return;
+      }
       if (confirmingClose) {
         if (e.key === "Escape") setConfirmingClose(false);
         return;
@@ -992,7 +1025,7 @@ export function InterviewOverlay() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [askAI, analyzeScreen, goPrevTurn, goNextTurn, settingsOpen, confirmingClose, requestClose]);
+  }, [askAI, analyzeScreen, goPrevTurn, goNextTurn, settingsOpen, confirmingClose, showEndedSummary, dismissOverlay, requestClose]);
 
   const overlayStyle: React.CSSProperties = {
     fontSize: `${settings.fontSize}px`,
@@ -1198,7 +1231,22 @@ export function InterviewOverlay() {
         </p>
       )}
 
-      {confirmingClose ? (
+      {showEndedSummary ? (
+        <div className="overlay-confirm-close">
+          <p className="overlay-confirm-close-title">Interview ended</p>
+          <p className="overlay-confirm-close-body">
+            Your transcript has been saved — view it anytime from the dashboard.
+          </p>
+          <div className="overlay-confirm-close-actions">
+            <button className="overlay-text-button" onClick={dismissOverlay}>
+              Close
+            </button>
+            <button className="overlay-text-button primary" onClick={openDashboard}>
+              Open Dashboard
+            </button>
+          </div>
+        </div>
+      ) : confirmingClose ? (
         <div className="overlay-confirm-close">
           <p className="overlay-confirm-close-title">Is the interview over?</p>
           <p className="overlay-confirm-close-body">
