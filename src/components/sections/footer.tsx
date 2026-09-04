@@ -33,11 +33,11 @@ export function Footer() {
               AI assistance for important conversations.
             </p>
             <a
-              href="mailto:hello@smallbird.app"
+              href="mailto:support@smallbird.in"
               className="mt-4 inline-flex items-center gap-1.5 text-sm text-neutral-400 transition-colors hover:text-white"
             >
               <Mail className="h-3.5 w-3.5" />
-              hello@smallbird.app
+              support@smallbird.in
             </a>
           </div>
 
