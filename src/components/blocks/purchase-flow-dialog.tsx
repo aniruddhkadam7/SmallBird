@@ -44,6 +44,7 @@ function GoogleIcon() {
 export function PurchaseFlowDialog() {
   const { activeFlow, closeFlow, requestCode, verifyCode, signInWithGoogle, completePayment, busy, error } = usePurchaseFlow()
   const [email, setEmail] = useState("")
+  const [name, setName] = useState("")
   const [code, setCode] = useState("")
   const router = useRouter()
 
@@ -69,9 +70,22 @@ export function PurchaseFlowDialog() {
               className="space-y-4"
               onSubmit={(e) => {
                 e.preventDefault()
-                requestCode(email)
+                requestCode(email, name)
               }}
             >
+              <div className="space-y-1.5">
+                <label htmlFor="signup-name" className="text-sm font-medium text-foreground">
+                  Full name
+                </label>
+                <input
+                  id="signup-name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Jane Doe"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                />
+              </div>
               <div className="space-y-1.5">
                 <label htmlFor="signup-email" className="text-sm font-medium text-foreground">
                   Email address
