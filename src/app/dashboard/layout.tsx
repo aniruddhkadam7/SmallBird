@@ -1,7 +1,13 @@
+import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { DashboardSidebar } from "./sidebar"
 import { InterviewsList } from "./interviews-list"
+
+export const metadata: Metadata = {
+  title: "Dashboard",
+  robots: { index: false, follow: false },
+}
 
 // Logged-out visitors get bounced to the homepage rather than a bare
 // "please sign in" page here -- there's nowhere sensible to render a

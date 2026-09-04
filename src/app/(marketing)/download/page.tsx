@@ -1,7 +1,17 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { ArrowLeft, Download } from "lucide-react"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
+
+export const metadata: Metadata = {
+  title: "Download Smallbird for Windows",
+  description:
+    "Download Smallbird free for Windows — real-time AI assistance for interviews, built from your CV and the job description. macOS coming soon.",
+  alternates: {
+    canonical: "/download",
+  },
+}
 
 // Real platform marks (Microsoft's four-pane flag, Apple's silhouette)
 // rather than generic lucide stand-ins (a plain monitor outline read as

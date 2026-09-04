@@ -31,7 +31,7 @@ export function Nav() {
               className="text-2xl font-bold tracking-tight text-foreground"
               style={{ fontFamily: "var(--font-playfair-display)" }}
             >
-              SmallBird<sup className="ml-0.5 text-xs font-normal align-super">™</sup>
+              Smallbird<sup className="ml-0.5 text-xs font-normal align-super">™</sup>
             </span>
           </a>
           <nav className="hidden items-center gap-8 sm:flex">

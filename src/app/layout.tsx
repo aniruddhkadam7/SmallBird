@@ -4,6 +4,12 @@ import "./globals.css";
 import { GlassFilter } from "@/components/ui/liquid-glass-button";
 import { PurchaseFlowDialog } from "@/components/blocks/purchase-flow-dialog";
 import { PurchaseFlowProvider } from "@/lib/purchase-flow";
+import { siteName, siteUrl } from "@/lib/site";
+import { OrganizationJsonLd } from "@/components/seo/json-ld";
+
+const title = "Smallbird — Real-time AI Assistant for Interviews";
+const description =
+  "Smallbird gives you real-time AI assistance during interviews — with context from your CV and the job description. Free to download for Windows and macOS.";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,9 +27,37 @@ const playfairDisplay = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "Smallbird — AI Assistant",
-  description:
-    "Smallbird gives you real-time AI assistance during interviews — with context from your CV and the job description.",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: title,
+    template: "%s — Smallbird",
+  },
+  description,
+  keywords: [
+    "Smallbird",
+    "AI interview assistant",
+    "real-time interview help",
+    "AI interview copilot",
+    "interview AI tool",
+    "AI assistant for job interviews",
+  ],
+  applicationName: siteName,
+  authors: [{ name: siteName }],
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    type: "website",
+    url: siteUrl,
+    siteName,
+    title,
+    description,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+  },
   icons: {
     icon: "/smallbird-logo.png",
     shortcut: "/smallbird-logo.png",
@@ -40,6 +74,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} ${playfairDisplay.variable} antialiased`}
     >
       <body>
+        <OrganizationJsonLd />
         <PurchaseFlowProvider>
           <div id="top" className="relative">
             <GlassFilter />
