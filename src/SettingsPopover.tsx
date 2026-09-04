@@ -1,16 +1,14 @@
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
-import { PerformancePanel } from "./PerformancePanel";
+import { invoke } from "@tauri-apps/api/core";
 import { PersonalizationPanel } from "./PersonalizationPanel";
 import { AttachedDocumentsPanel } from "./AttachedDocumentsPanel";
-import { InterviewHistory } from "./InterviewHistory";
 
-type SettingsSection = "SESSIONS" | "PERSONALIZATION" | "PERFORMANCE" | "CONTEXT" | "PRIVACY" | "ABOUT";
+type SettingsSection = "SESSIONS" | "PERSONALIZATION" | "CONTEXT" | "PRIVACY" | "ABOUT";
 
 const SECTIONS: { key: SettingsSection; label: string }[] = [
   { key: "SESSIONS", label: "Sessions" },
   { key: "PERSONALIZATION", label: "Personalization" },
-  { key: "PERFORMANCE", label: "Performance" },
   { key: "CONTEXT", label: "Context / Documents" },
   { key: "PRIVACY", label: "Privacy" },
   { key: "ABOUT", label: "About / Version" },
@@ -18,21 +16,23 @@ const SECTIONS: { key: SettingsSection; label: string }[] = [
 
 interface Props {
   onClose: () => void;
-  historyRefreshKey: number;
 }
 
 /// Settings popover reached from the header's gear icon. Every section
-/// (including Performance) renders inline in settings-popover-content
-/// alongside the nav rail — Performance used to swap out the whole popover
-/// for its own separate shell, which hid the nav entirely with no way back
-/// to another section except closing and reopening Settings. Only sections
-/// with real content are listed here — General/Audio/Notifications were
-/// placeholder stubs and have been dropped. Sessions (past Interview
-/// history) and Personalization (answer tone/length/style) live
-/// here rather than as separate header buttons, alongside the app's other
-/// settings. API key management lives in the Account panel instead of here
-/// now that the app requires login rather than a locally-stored key.
-export function SettingsPopover({ onClose, historyRefreshKey }: Props) {
+/// renders inline in settings-popover-content alongside the nav rail. Only
+/// sections with real content are listed here — General/Audio/Notifications
+/// were placeholder stubs and have been dropped, and Performance (hardware
+/// detection + manual STT tuning) was removed since STT runs against
+/// Deepgram's cloud rather than a locally-sized thread pool, so there was no
+/// real tuning left for it to do. Sessions and Personalization
+/// (answer tone/length/style) live here rather than as separate header
+/// buttons, alongside the app's other settings. API key management lives in
+/// the Account panel instead of here now that the app requires login rather
+/// than a locally-stored key. Past interview transcripts are no longer
+/// listed here — they live on the website dashboard (see the "Open
+/// Dashboard" button on the post-interview screen in InterviewOverlay.tsx),
+/// so Sessions just links out there instead of duplicating that list.
+export function SettingsPopover({ onClose }: Props) {
   const [section, setSection] = useState<SettingsSection>("SESSIONS");
   const [appVersion, setAppVersion] = useState<string | null>(null);
 
@@ -66,9 +66,22 @@ export function SettingsPopover({ onClose, historyRefreshKey }: Props) {
           </div>
 
           <div className="settings-popover-content">
-            {section === "SESSIONS" && <InterviewHistory refreshKey={historyRefreshKey} />}
+            {section === "SESSIONS" && (
+              <div className="settings-sessions-panel">
+                <p className="setup-hint" style={{ margin: 0 }}>
+                  Your past interviews — transcripts and details — are saved to your account and viewable from the
+                  Smallbird dashboard on the web.
+                </p>
+                <button
+                  className="overlay-text-button primary"
+                  style={{ marginTop: 12 }}
+                  onClick={() => invoke("open_dashboard").catch((e) => console.error("Failed to open dashboard:", e))}
+                >
+                  Open Dashboard
+                </button>
+              </div>
+            )}
             {section === "PERSONALIZATION" && <PersonalizationPanel />}
-            {section === "PERFORMANCE" && <PerformancePanel />}
             {section === "CONTEXT" && <AttachedDocumentsPanel />}
             {section === "PRIVACY" && (
               <p className="setup-hint">

@@ -13,9 +13,10 @@ can be built and modified on its own.
   interview scoring — all calling your configured AI provider directly.
 - Speech-to-text via Deepgram Flux (cloud, streaming, low-latency) — audio
   goes only to Deepgram, encrypted, and nowhere else.
-- Local resume/CV and job-description text extraction (bundled, offline, no
-  cloud dependency) — the extracted text is sent directly to your LLM as
-  context, no search/retrieval involved.
+- Local resume/CV and job-description text extraction, in-process (no
+  external service/sidecar, offline, no cloud dependency) — the extracted
+  text is sent directly to your LLM as context, no search/retrieval
+  involved.
 - Your API keys are stored in Windows Credential Manager via the `keyring`
   crate — never in a file, never logged, never sent anywhere except
   directly to the provider you configure.
@@ -27,7 +28,7 @@ Smallbird Local (this repo)
         |
         +-- Tauri Desktop App (src/, src-tauri/)
         +-- Deepgram Flux STT client (src-tauri/src/stt/)
-        +-- Local document text extraction (sidecars/rag-lite/)
+        +-- Local document text extraction (src-tauri/src/documents.rs)
         +-- Direct AI provider client (src-tauri/src/personal/)
         +-- Your API keys (Windows Credential Manager)
         |
@@ -50,23 +51,6 @@ entitlement system anywhere in this repository.
 ```powershell
 npm install
 ```
-
-### Getting the RAG sidecar binary
-
-`sidecars/` is **not tracked in this git repository** — it's a prebuilt
-binary build input, not a source file. You need to place it yourself before
-`npm run tauri build` will produce a working EXE:
-
-```
-sidecars/rag-lite/                           <- rag-lite.exe + _internal/
-```
-
-Copy this directory in from wherever you have a working Smallbird desktop
-build (e.g. `apps/desktop/src-tauri/target/release/bundle`'s resource
-inputs in the original monorepo: `packages/rag/dist/rag-lite/` — copy the
-folder's *contents* directly into the path above, no extra nesting). Once
-copied, this never needs to change again unless you intentionally rebuild
-the sidecar executable from source.
 
 ## Development
 

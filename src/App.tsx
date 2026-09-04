@@ -14,7 +14,7 @@ import { Account } from "./Account";
 import { SettingsPopover } from "./SettingsPopover";
 import { LowEndHardwareBanner } from "./LowEndHardwareBanner";
 import { HeaderDropdown } from "./HeaderDropdown";
-import { answerStyleToOverlayFields, loadOverlaySettings, saveOverlaySettings } from "./overlaySettings";
+import { loadOverlaySettings, saveOverlaySettings } from "./overlaySettings";
 import { CompanySelect } from "./CompanySelect";
 import { Button, Spinner } from "./ui";
 import {
@@ -67,7 +67,6 @@ function App() {
   const [openPopover, setOpenPopover] = useState<Popover>(null);
   const [error, setError] = useState<string | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
-  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
   const [interviewContext, setInterviewContext] = useState<DocumentContextState>(() =>
     emptyDocumentContextState(INTERVIEW_CONTEXT_SECTIONS),
@@ -195,7 +194,6 @@ function App() {
   useEffect(() => {
     const unlisten = listen("interview-mode:overlay-closed", () => {
       setSessionState("IDLE");
-      setHistoryRefreshKey((k) => k + 1);
       // Closing the overlay via its own controls (✕ / "Yes, end interview" /
       // Escape) bypasses handleStop entirely, so this is the only place
       // that path ends the backend session — without it, the
@@ -225,9 +223,6 @@ function App() {
 
   const startInterview = useCallback(
     async (force = false) => {
-      const overlaySettings = loadOverlaySettings();
-      saveOverlaySettings({ ...overlaySettings, ...answerStyleToOverlayFields(overlaySettings.answerStyle) });
-
       uploadDocumentContext(INTERVIEW_CONTEXT_SECTIONS, interviewContext);
 
       // Mints the session's Deepgram key and starts the metered
@@ -265,6 +260,8 @@ function App() {
     setActiveElsewhereMessage(null);
     setSessionState("STARTING");
     closePopover();
+    setStartRole("");
+    setStartCompany("");
     try {
       const started = await startInterview();
       setSessionState(started ? "LISTENING" : "IDLE");
@@ -275,13 +272,13 @@ function App() {
   }, [startInterview, closePopover]);
 
   // Company/role for the "Start Interview" details prompt (START_SETUP
-  // popover below) — seeded from whatever was saved last time, so returning
-  // to the same interview doesn't require retyping. Persisted into
-  // OverlaySettings (the same store InterviewOverlay.tsx reads role/company
-  // from to build the AI's prompt context) only once Start is actually
-  // pressed, not on every keystroke.
-  const [startRole, setStartRole] = useState(() => loadOverlaySettings().role);
-  const [startCompany, setStartCompany] = useState(() => loadOverlaySettings().company);
+  // popover below) — always starts blank so each interview gets its own
+  // company/role instead of re-showing whatever was typed last time.
+  // Persisted into OverlaySettings (the same store InterviewOverlay.tsx
+  // reads role/company from to build the AI's prompt context) only once
+  // Start is actually pressed, not on every keystroke.
+  const [startRole, setStartRole] = useState("");
+  const [startCompany, setStartCompany] = useState("");
 
   const handleConfirmStart = useCallback(async () => {
     const current = loadOverlaySettings();
@@ -327,7 +324,6 @@ function App() {
       setError(String(e));
     } finally {
       setSessionState("IDLE");
-      setHistoryRefreshKey((k) => k + 1);
       // Fire-and-forget: finalizes the backend session (if one was
       // started) so its minutes get decremented. Never blocks Stop and
       // never surfaces an error to the user — a network blip here must
@@ -571,7 +567,7 @@ function App() {
             </button>
             {openPopover === "SETTINGS" && (
               <HeaderDropdown onClose={closePopover} className="header-dropdown-panel header-dropdown-settings">
-                <SettingsPopover onClose={closePopover} historyRefreshKey={historyRefreshKey} />
+                <SettingsPopover onClose={closePopover} />
               </HeaderDropdown>
             )}
           </div>

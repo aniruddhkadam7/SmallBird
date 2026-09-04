@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 
 use crate::audio::{PauseSignal, StopSignal};
 use crate::auth::AuthSession;
-use crate::rag::RagServiceHandle;
+use crate::documents::DocumentRecord;
 use crate::stt::SttSession;
 use crate::transcript::{RecordingState, TranscriptManager};
 
@@ -34,11 +35,10 @@ impl Default for CaptureSession {
 pub struct AppState {
     pub capture: Mutex<CaptureSession>,
     pub transcript: Mutex<TranscriptManager>,
-    /// `None` if the RAG service's venv wasn't found at startup (see
-    /// `rag::process::RagServiceHandle::spawn`) — document upload/search
-    /// commands report a clear "unavailable" error in that case rather than
-    /// panicking.
-    pub rag_service: Mutex<Option<RagServiceHandle>>,
+    /// Uploaded resume/CV, job-description, and additional-context documents
+    /// — keyed by document id, extracted in-process (see `documents.rs`).
+    /// In-memory only, cleared on app restart.
+    pub documents: Mutex<HashMap<String, DocumentRecord>>,
     /// The signed-in Supabase session, if any. `None` means logged out — the
     /// app requires login for every AI feature (no BYOK fallback). Refreshed
     /// transparently by `auth::current_access_token` when near expiry.

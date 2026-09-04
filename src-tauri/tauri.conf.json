@@ -40,9 +40,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": {
-      "../sidecars/rag-lite": "rag-lite"
-    },
     "windows": {
       "nsis": {
         "installerHooks": "./windows/hooks.nsh",

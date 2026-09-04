@@ -35,7 +35,6 @@ import {
   MoveIcon,
   ResizeIcon,
   SendIcon,
-  SpeakerIcon,
   StarIcon,
   ThumbsDownIcon,
   ThumbsUpIcon,
@@ -1055,11 +1054,11 @@ export function InterviewOverlay() {
       <div className="overlay-header overlay-action-bar" data-tauri-drag-region="deep">
         {/* Mic + system audio share one underlying capture/mute pipeline
             (see toggleMute/pause_recording — there's no separate on/off for
-            each source), so both are real buttons wired to the same toggle;
-            a lit red dot means that source is actually feeding the
-            transcript right now. This is also the overlay's only mute
-            control — the transcript bar used to have its own second mic
-            icon here, which was just a duplicate of this one. */}
+            each source). This single button mutes/unmutes both; a lit red
+            dot means the app is actually feeding the transcript right now.
+            This is also the overlay's only mute control — the transcript
+            bar used to have its own second mic icon here, which was just a
+            duplicate of this one. */}
         <button
           type="button"
           className="overlay-status-icon"
@@ -1068,16 +1067,6 @@ export function InterviewOverlay() {
           data-tooltip={muted ? "Unmute — resume transcribing" : "Mute — pause transcribing"}
         >
           {muted ? <MicOffIcon size={13} /> : <MicIcon size={13} />}
-          {captureActive && !muted && <span className="overlay-status-dot" />}
-        </button>
-        <button
-          type="button"
-          className="overlay-status-icon"
-          onClick={toggleMute}
-          disabled={!captureActive || muteBusy}
-          data-tooltip={muted ? "Unmute — resume transcribing" : "Mute — pause transcribing"}
-        >
-          <SpeakerIcon size={13} />
           {captureActive && !muted && <span className="overlay-status-dot" />}
         </button>
         <button

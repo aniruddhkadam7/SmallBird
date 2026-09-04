@@ -17,7 +17,7 @@ use super::{ask, ChatMessage};
 /// without being so large it slows down a short one.
 pub const MAX_TOKENS: u32 = 700;
 
-const INSTRUCTION: &str = "Look at the attached screenshot of what's currently on my screen during this interview — it might show a coding problem, a system-design/whiteboard diagram, written interview questions, or something else relevant to the interview. Identify what it is and answer/solve it directly, in the same terse cheat-sheet-notes STYLE and FORMAT rules as any other question in this interview. If it's a coding problem, write real working code per FORMAT 7. If nothing on screen looks like an interview question or problem (e.g. it's an unrelated app), say briefly what you actually see instead of forcing an answer.";
+const INSTRUCTION: &str = "Look at the attached screenshot of what's currently on my screen during this interview — it might show a coding problem, a system-design/whiteboard diagram, written interview questions, or something else relevant to the interview. Identify what it is and answer/solve it directly, in the same spoken-sentence STYLE and FORMAT rules as any other question in this interview. If it's a coding problem, write real working code per FORMAT 7. If nothing on screen looks like an interview question or problem (e.g. it's an unrelated app), say briefly what you actually see instead of forcing an answer.";
 
 pub fn build_messages(request: &AskRequest, image_png_base64: String) -> Vec<ChatMessage> {
     let mut messages = vec![ChatMessage::system(ask::SYSTEM_PROMPT)];

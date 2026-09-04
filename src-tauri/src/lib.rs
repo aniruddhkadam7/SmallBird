@@ -6,6 +6,7 @@ pub mod audio;
 mod auth;
 mod backend;
 mod commands;
+mod documents;
 // Public so `src/bin/hw_probe.rs` can reference `PerformanceConfig` without
 // a re-export chain.
 pub mod hardware;
@@ -15,8 +16,6 @@ mod main_window;
 mod notes_mode;
 mod overlay_window;
 mod personal;
-mod process_util;
-mod rag;
 mod state;
 mod tls_init;
 // Public alongside `audio` so `src/bin/pipeline_test.rs` can drive the real
@@ -90,28 +89,6 @@ pub fn run() {
             if let Err(err) = app.global_shortcut().register("Ctrl+Shift+Space") {
                 log::warn!("failed to register Ctrl+Shift+Space global hotkey: {err}");
             }
-            // Spawn the local document-extraction service in the background;
-            // the app remains usable for recording/transcription immediately
-            // even while this is still starting up or if it's unavailable
-            // entirely (see rag::process::RagServiceHandle::spawn).
-            let handle = app.handle().clone();
-            let handle_for_spawn = handle.clone();
-            std::thread::spawn(move || match rag::RagServiceHandle::spawn(Some(&handle_for_spawn)) {
-                Ok(service) => {
-                    if service.is_some() {
-                        rag::wait_until_healthy_default();
-                    }
-                    let state = handle.state::<AppState>();
-                    let lock_result = state.rag_service.lock();
-                    if let Ok(mut slot) = lock_result {
-                        *slot = service;
-                    }
-                }
-                Err(err) => {
-                    log::error!("failed to start document extraction service: {err}");
-                }
-            });
-
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -129,12 +106,11 @@ pub fn run() {
             commands::export_transcript_json,
             commands::check_backend_connection,
             commands::analyze_interview,
-            commands::check_rag_connection,
             commands::analyze_setup_context,
-            commands::upload_document,
-            commands::get_document_text,
-            commands::list_documents,
-            commands::delete_document,
+            documents::upload_document,
+            documents::get_document_text,
+            documents::list_documents,
+            documents::delete_document,
             commands::quit_app,
             interview_mode::commands::show_interview_overlay,
             interview_mode::commands::hide_interview_overlay,
@@ -158,9 +134,7 @@ pub fn run() {
             notes_mode::store::search_notes,
             notes_mode::ai::summarize_note,
             notes_mode::ai::ask_about_notes,
-            hardware::commands::get_hardware_profile,
             hardware::commands::get_performance_mode,
-            hardware::commands::set_performance_mode,
             main_window::set_popover_content_height,
             auth::commands::request_login_otp,
             auth::commands::verify_login_otp,

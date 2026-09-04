@@ -205,6 +205,9 @@ body.overlay-window #root {
   font-size: 13px;
   flex: 0 0 auto;
   cursor: pointer;
+  /* See .overlay-pill-button's comment above — isolates this button's hover
+     repaint from the header's continuously-animating audio badge. */
+  contain: paint;
 }
 
 .overlay-status-icon:hover:not(:disabled) {
@@ -257,6 +260,12 @@ body.overlay-window #root {
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
+  /* Isolates this button's own hover repaint so it doesn't compound, on the
+     same frame, with the audio-level badge's continuous breathe/bounce
+     animation elsewhere in the header — see the layer-isolation comment on
+     .audio-level-bars above for why that compounding is what causes visible
+     cursor jitter over buttons during an active screen share. */
+  contain: paint;
 }
 
 .overlay-pill-button:hover:not(:disabled) {
@@ -272,6 +281,12 @@ body.overlay-window #root {
 .overlay-pill-button.on {
   background: var(--accent);
   color: #08131f;
+}
+
+.overlay-pill-button.on:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  filter: brightness(1.1);
 }
 
 .overlay-pill-button.end {
@@ -312,6 +327,17 @@ body.overlay-window #root {
   background: transparent;
   transform: scale(0.92);
   transition: background-color 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* This badge's breathe animation (below, via .active) runs continuously
+     for the whole meeting, not just on interaction. Promoting it to its own
+     compositor layer keeps that continuous repaint scoped to the badge
+     itself instead of forcing the whole overlay window to recomposite every
+     frame — on Windows that whole-window recomposition is what compounds
+     with a button's own hover repaint and shows up as the mouse cursor
+     visibly jittering when hovering buttons during an active screen share
+     (the overlay is excluded from the share via WDA_EXCLUDEFROMCAPTURE,
+     which makes DWM's per-frame dual-composition work more expensive). */
+  will-change: transform, opacity;
+  contain: paint;
 }
 
 /* A soft lit badge while actually listening, gently breathing rather than a
@@ -340,6 +366,10 @@ body.overlay-window #root {
   transform: scaleY(0.22);
   transform-origin: bottom;
   transition: transform 0.2s ease, background-color 0.2s ease;
+  /* Same layer isolation as .audio-level-bars above, and for the same
+     reason — .active adds an infinite bounce animation to each bar. */
+  will-change: transform;
+  contain: paint;
 }
 
 .audio-level-bars.active .audio-level-bar {
@@ -482,6 +512,9 @@ body.overlay-window #root {
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
+  /* See .overlay-pill-button's comment above — isolates this button's hover
+     repaint from the header's continuously-animating audio badge. */
+  contain: paint;
 }
 
 /* Purely visual "drag handle" glyph — see the JSX comment where it's used.

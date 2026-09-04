@@ -72,25 +72,15 @@ export interface AnalysisProgressEvent {
 
 export type DocumentType = "RESUME" | "JOB_DESCRIPTION" | "ADDITIONAL_CONTEXT";
 
-export type DocumentStatus =
-  | "UPLOADING"
-  | "EXTRACTING"
-  | "CLEANING"
-  | "CHUNKING"
-  | "EMBEDDING"
-  | "INDEXING"
-  | "READY"
-  | "ERROR";
+export type DocumentStatus = "READY" | "ERROR";
 
 export interface DocumentMetadata {
   document_id: string;
   filename: string;
   document_type: string;
   file_size: number;
-  content_hash: string;
   created_at: number;
   updated_at: number;
   status: string;
-  chunk_count: number;
   error_message: string | null;
 }

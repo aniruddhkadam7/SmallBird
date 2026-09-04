@@ -55,6 +55,13 @@ keyring = { version = "3", features = ["windows-native"] }
 # by every HTTPS reqwest::Client in this crate, including the direct AI
 # provider calls in src/personal/providers/.
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
+# In-process resume/CV and job-description text extraction (see
+# src/documents.rs) — replaces the old rag-lite Python sidecar entirely, so
+# document upload no longer depends on an external process/binary being
+# present.
+pdf-extract = "0.7"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+regex = "1"
 # "sync"/"macros" added for stt::client's Deepgram WebSocket task (tokio::sync
 # mpsc/oneshot channels bridging the sync pipeline thread to the async
 # connection task, and tokio::select! in its read/write pump).
@@ -63,11 +70,6 @@ tokio = { version = "1", features = ["time", "sync", "macros"] }
 # "ring" crypto provider already installed process-wide at startup (see
 # tls_init.rs) rather than pulling in a second TLS stack.
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
-# Already pulled in transitively by rustls's "ring" feature above — declared
-# directly only so its CSPRNG (SystemRandom) can be used to generate the RAG
-# service's per-launch internal auth token (see src/rag/process.rs). Adds no
-# new crate to the dependency tree.
-ring = "0.17"
 xcap = "0.9.8"
 base64 = "0.23.1"
 

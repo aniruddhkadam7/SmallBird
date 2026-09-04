@@ -3,15 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import type { DocumentMetadata } from "./types";
 import { StatusDot } from "./ui";
 
-const DOC_STATUS_TONE: Record<string, "success" | "danger" | "warning" | "neutral"> = {
+const DOC_STATUS_TONE: Record<string, "success" | "danger" | "neutral"> = {
   READY: "success",
   ERROR: "danger",
-  UPLOADING: "warning",
-  EXTRACTING: "warning",
-  CLEANING: "warning",
-  CHUNKING: "warning",
-  EMBEDDING: "warning",
-  INDEXING: "warning",
 };
 
 function formatBytes(bytes: number) {
@@ -20,7 +14,9 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/// Lists documents actually uploaded to the document extraction service. Settings'
+/// Lists documents extracted in-process (see src-tauri/src/documents.rs) —
+/// no external service to be unavailable, so this only ever shows either
+/// what's actually been uploaded or an empty state. Settings'
 /// Context/Documents section used to be a static paragraph pointing back at
 /// the header's Context (📎) picker with no way to see what had actually
 /// been attached. A file picked in that popover only uploads once a session

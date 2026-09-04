@@ -6,7 +6,6 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::auth::client::{SUPABASE_ANON_KEY, SUPABASE_URL};
 use crate::backend::{AskRequest, ConversationTurn};
-use crate::rag::RagClient;
 use crate::state::AppState;
 
 use super::window::{self, OverlayCaptureStatus};
@@ -40,7 +39,7 @@ pub struct AskOptions {
 }
 
 fn default_answer_length() -> String {
-    "default".to_string()
+    "detailed".to_string()
 }
 
 fn default_response_style() -> String {
@@ -222,43 +221,13 @@ where
     .map_err(|e| format!("main-thread task panicked: {e}"))?
 }
 
-/// Fetches the full extracted text of the most recently uploaded document of
-/// `document_type` (RESUME, JOB_DESCRIPTION, or ADDITIONAL_CONTEXT). These are
-/// short enough to just read in full — sent directly to the LLM as context.
-/// Returns `None` on any failure (extraction service unavailable, no
-/// matching document, still extracting) — this must never fail the ask
-/// itself, only mean the answer proceeds without that document.
-///
-/// `service_available` short-circuits before touching the network at all
-/// when the extraction service is known not to be running (see
-/// `AppState.rag_service`) — a connect attempt to a port nothing is
-/// listening on doesn't fail instantly on Windows (observed: it sits in
-/// `SYN_SENT` until the request's own timeout elapses), so without this
-/// check every single question would pay a multi-second real-network delay
-/// for a call that could never succeed.
-async fn fetch_document_full_text(document_type: &str, service_available: bool) -> Option<String> {
-    if !service_available {
-        return None;
-    }
-    let client = RagClient::new();
-    let documents = client.list_documents(None).await.ok()?;
-    let latest = documents
-        .into_iter()
-        .filter(|d| d.document_type == document_type && d.status == "READY")
-        .max_by(|a, b| a.updated_at.total_cmp(&b.updated_at))?;
-    client.get_document_text(&latest.document_id).await.ok().flatten()
-}
-
 /// Runs the ASK AI flow for a single question: question -> ONE LLM call ->
 /// stream.
 ///
 /// The uploaded CV, job description, and additional context, if any, are
-/// fetched as full text (see `fetch_document_full_text`) and sent on every
-/// question. The three fetches run truly concurrently via `tokio::join!` —
-/// creating a future (`fetch_document_full_text(...)` bound to a variable)
-/// does not start it running; only polling/awaiting it does, so awaiting them
-/// one after another would needlessly multiply the latency of independent
-/// round-trips.
+/// read as full text (see `documents::latest_ready_text`) and sent on every
+/// question — a plain in-memory lookup now that document extraction runs
+/// in-process rather than via an external service.
 ///
 /// Streams back as `interview-mode:answer-delta` events, finishing with
 /// `interview-mode:answer-complete`. Only ever invoked by the frontend in
@@ -283,12 +252,9 @@ pub async fn ask_interview_question(
 
     let history = trim_history(history.unwrap_or_default());
 
-    let service_available = state.rag_service.lock().map(|slot| slot.is_some()).unwrap_or(false);
-    let (resume_text, uploaded_job_description, uploaded_additional_context) = tokio::join!(
-        fetch_document_full_text("RESUME", service_available),
-        fetch_document_full_text("JOB_DESCRIPTION", service_available),
-        fetch_document_full_text("ADDITIONAL_CONTEXT", service_available)
-    );
+    let resume_text = crate::documents::latest_ready_text(&state, "RESUME");
+    let uploaded_job_description = crate::documents::latest_ready_text(&state, "JOB_DESCRIPTION");
+    let uploaded_additional_context = crate::documents::latest_ready_text(&state, "ADDITIONAL_CONTEXT");
 
     let request = AskRequest {
         question: trimmed.to_string(),
@@ -360,19 +326,12 @@ pub async fn analyze_screen_question(
     let options = options.unwrap_or_default();
     let history = trim_history(history.unwrap_or_default());
 
-    // Captured (and access-token-checked) before the RAG fetches below, not
-    // because either depends on the other, but so a capture failure (no
-    // monitor found, driver issue) surfaces immediately rather than after
-    // paying for document fetches that would otherwise go to waste.
     let png_bytes = crate::interview_mode::screen::capture_primary_screen_png()?;
     let image_base64 = base64::engine::general_purpose::STANDARD.encode(png_bytes);
 
-    let service_available = state.rag_service.lock().map(|slot| slot.is_some()).unwrap_or(false);
-    let (resume_text, uploaded_job_description, uploaded_additional_context) = tokio::join!(
-        fetch_document_full_text("RESUME", service_available),
-        fetch_document_full_text("JOB_DESCRIPTION", service_available),
-        fetch_document_full_text("ADDITIONAL_CONTEXT", service_available)
-    );
+    let resume_text = crate::documents::latest_ready_text(&state, "RESUME");
+    let uploaded_job_description = crate::documents::latest_ready_text(&state, "JOB_DESCRIPTION");
+    let uploaded_additional_context = crate::documents::latest_ready_text(&state, "ADDITIONAL_CONTEXT");
 
     let request = AskRequest {
         question: ANALYZE_SCREEN_QUESTION_LABEL.to_string(),

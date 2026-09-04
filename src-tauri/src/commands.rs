@@ -6,7 +6,6 @@ use crate::audio::{
     AudioDeviceInfo, AudioDeviceManager, AudioSource, PauseSignal, StopSignal, SystemAudioCapture,
 };
 use crate::backend::{InterviewAnalysisRequest, SetupAnalysisRequest, SetupAnalysisResponse};
-use crate::rag::{DocumentMetadata, RagClient};
 use crate::state::AppState;
 use crate::stt::SttClient;
 use crate::transcript::{InterviewSession, RecordingState, TranscriptSegment};
@@ -812,36 +811,6 @@ fn format_relative_timestamp(ms: u64) -> String {
     }
 }
 
-fn document_extraction_unavailable_err() -> String {
-    "The document extraction service is not available (it may still be starting up, or the \
-     sidecars/rag-lite binary was not found — see README.md's \"Getting the \
-     RAG sidecar binary\" section)"
-        .to_string()
-}
-
-/// Every document command below checks `state.rag_service` is `Some` before
-/// making any HTTP call — this is what makes "extraction service
-/// unavailable" a clean user-facing error rather than a raw
-/// connection-refused message, and it's also what lets the rest of the app
-/// (recording, transcript, export, analyze) keep working normally even if
-/// the extraction service's environment was never set up.
-fn ensure_rag_available(state: &State<'_, AppState>) -> Result<(), String> {
-    let slot = state.rag_service.lock().map_err(|e| e.to_string())?;
-    if slot.is_none() {
-        return Err(document_extraction_unavailable_err());
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn check_rag_connection(state: State<'_, AppState>) -> Result<bool, String> {
-    if ensure_rag_available(&state).is_err() {
-        return Ok(false);
-    }
-    let client = RagClient::new();
-    Ok(client.health_check().await.is_ok())
-}
-
 /// New Interview setup page's auto-analysis: summarizes pasted/uploaded CV
 /// and job-description text into a short "Interview Focus" for the setup
 /// page to display — unlike the commands below it does not require the
@@ -855,53 +824,6 @@ pub async fn analyze_setup_context(
     let request = SetupAnalysisRequest { resume_text, job_description_text };
     let access_token = crate::auth::current_access_token(&state).await?;
     crate::personal::DirectLlmClient::new(None, access_token).analyze_setup(&request).await
-}
-
-#[tauri::command]
-pub async fn upload_document(
-    state: State<'_, AppState>,
-    filename: String,
-    bytes: Vec<u8>,
-    document_type: String,
-    agent_id: Option<String>,
-) -> Result<DocumentMetadata, String> {
-    ensure_rag_available(&state)?;
-    let client = RagClient::new();
-    client
-        .upload_document(filename, bytes, &document_type, agent_id.as_deref())
-        .await
-}
-
-/// Polled by the New Interview setup page after uploading a PDF/DOCX resume
-/// or job description, so its auto-analysis summary can use the file's real
-/// extracted text instead of being limited to pasted/plain-text input.
-/// Returns `None` while the RAG service is still extracting/chunking/
-/// embedding the document — the frontend treats that as "try again shortly."
-#[tauri::command]
-pub async fn get_document_text(
-    state: State<'_, AppState>,
-    document_id: String,
-) -> Result<Option<String>, String> {
-    ensure_rag_available(&state)?;
-    let client = RagClient::new();
-    client.get_document_text(&document_id).await
-}
-
-#[tauri::command]
-pub async fn list_documents(
-    state: State<'_, AppState>,
-    agent_id: Option<String>,
-) -> Result<Vec<DocumentMetadata>, String> {
-    ensure_rag_available(&state)?;
-    let client = RagClient::new();
-    client.list_documents(agent_id.as_deref()).await
-}
-
-#[tauri::command]
-pub async fn delete_document(state: State<'_, AppState>, document_id: String) -> Result<(), String> {
-    ensure_rag_available(&state)?;
-    let client = RagClient::new();
-    client.delete_document(&document_id).await
 }
 
 /// Terminates the whole process, not just the calling window. The Interview

@@ -9,12 +9,6 @@ export type ResponseStyle = "natural" | "technical" | "concise";
 export type OverlayDensity = "compact" | "comfortable";
 export type OverlaySize = "small" | "medium" | "large";
 export type EnglishLevel = "simple" | "professional" | "advanced";
-// The setup page's "Answer style" control — a distinct axis from
-// ResponseStyle (which stays "natural" | "technical" | "concise" and is only
-// ever set from the overlay's own Settings panel). This one maps onto
-// ResponseStyle + AnswerLength together when Start Interview is pressed; see
-// answerStyleToOverlayFields() below.
-export type AnswerStyle = "natural" | "concise" | "detailed";
 export type Humanization = "natural" | "conversational" | "formal";
 
 export interface OverlaySettings {
@@ -28,7 +22,6 @@ export interface OverlaySettings {
   company: string;
   jobDescription: string;
   englishLevel: EnglishLevel;
-  answerStyle: AnswerStyle;
   humanization: Humanization;
   // When on, a completed interviewer question is sent to Ask AI automatically
   // a short debounce after the interviewer stops talking — see the
@@ -50,35 +43,16 @@ export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
   size: "large",
   fontSize: 14,
   density: "comfortable",
-  answerLength: "default",
+  answerLength: "detailed",
   responseStyle: "natural",
   role: "",
   company: "",
   jobDescription: "",
   englishLevel: "simple",
-  answerStyle: "natural",
   humanization: "natural",
   autoAI: false,
   captureProtection: true,
 };
-
-/// Maps the setup page's single "Answer style" control onto the two
-/// lower-level fields the backend already understands, so no new backend
-/// axis is needed for it (see apps/backend/app/services/ask_service.py).
-export function answerStyleToOverlayFields(style: AnswerStyle): {
-  responseStyle: ResponseStyle;
-  answerLength: AnswerLength;
-} {
-  switch (style) {
-    case "concise":
-      return { responseStyle: "concise", answerLength: "brief" };
-    case "detailed":
-      return { responseStyle: "natural", answerLength: "detailed" };
-    case "natural":
-    default:
-      return { responseStyle: "natural", answerLength: "default" };
-  }
-}
 
 /// Fraction of the primary monitor's shorter dimension the overlay window
 /// occupies for each Small/Medium/Large choice. Shared between the settings
@@ -106,7 +80,11 @@ const STORAGE_KEY = "interview-mode:overlay-settings";
 // v4: added englishLevel/answerStyle/humanization (New Interview setup
 // page's Answer Style controls) — purely additive, no migration needed since
 // loadOverlaySettings() already merges stored settings over the defaults.
-const SETTINGS_VERSION = 4;
+// v5: default answer length changed from "default" to "detailed", and the
+// dead answerStyle field (nothing in the UI ever set it) was dropped — see
+// migration below, same "only move what the user never touched" heuristic
+// v3 used for opacity/size.
+const SETTINGS_VERSION = 5;
 const MIN_USABLE_OPACITY = 0.15;
 
 export function loadOverlaySettings(): OverlaySettings {
@@ -131,6 +109,9 @@ export function loadOverlaySettings(): OverlaySettings {
       if (parsed?.size === "medium" || parsed?.size === undefined) {
         merged.size = DEFAULT_OVERLAY_SETTINGS.size;
       }
+    }
+    if (storedVersion < 5 && (parsed?.answerLength === "default" || parsed?.answerLength === undefined)) {
+      merged.answerLength = DEFAULT_OVERLAY_SETTINGS.answerLength;
     }
     // Clamp regardless of provenance — a hand-edited or corrupted value of 0
     // would render an invisible overlay the user cannot find to fix.

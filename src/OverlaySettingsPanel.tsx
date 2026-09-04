@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   DEFAULT_OVERLAY_SETTINGS,
   SIZE_FRACTIONS,
-  type AnswerLength,
   type OverlayDensity,
   type OverlaySettings,
   type OverlaySize,
@@ -108,21 +107,6 @@ export function OverlaySettingsPanel({
 
       <div className="overlay-settings-section">
         <span className="overlay-settings-label">Answer</span>
-
-        <div className="overlay-settings-row">
-          <span>Answer length</span>
-          <Select
-            className="select-overlay"
-            value={settings.answerLength}
-            onChange={(v: AnswerLength) => set("answerLength", v)}
-            aria-label="Answer length"
-            options={[
-              { value: "brief", label: "Brief (1-3 sentences)" },
-              { value: "default", label: "Default (~50-120 words)" },
-              { value: "detailed", label: "Detailed" },
-            ]}
-          />
-        </div>
 
         <div className="overlay-settings-row">
           <span>Response style</span>
