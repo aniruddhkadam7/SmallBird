@@ -162,7 +162,7 @@ fn english_level_instruction(english_level: &str) -> &'static str {
     match english_level {
         "professional" => "Use clear, professional vocabulary appropriate for a workplace interview — correct and precise, still spoken as natural sentences.",
         "advanced" => "You may use more advanced/precise vocabulary where it genuinely fits, but it should still sound like natural speech, not a written paper.",
-        _ => "Use simple, everyday words in real sentences — common terms, nothing that sounds like a textbook or a formal report.",
+        _ => "Use SIMPLE, EVERYDAY WORDS — the vocabulary an ordinary person uses when talking, not a textbook, a report, or a corporate memo. If there's a short, plain, common word for something, use that instead of the fancier one, even if the fancier one is technically more \"correct\" — say \"uses\" not \"utilizes\", \"helps\" not \"facilitates\", \"start\" not \"initiate\", \"a lot\" not \"significantly\", \"good\" not \"robust\"/\"optimal\", \"send\" not \"transmit\", \"works well with\" not \"complements\"/\"synergizes with\". Avoid stacked abstract nouns and formal connective phrases (\"combines the strengths of\", \"in order to\", \"leverages\", \"encompasses\", \"facilitates\", \"in the context of\", \"with respect to\") — say the same thing the way you'd actually say it out loud to a friend. Technical terms/names (RAG, API, the actual tool or model name) stay exactly as they are — this is about the plain words wrapped around them, not dumbing down the substance.",
     }
 }
 

@@ -822,15 +822,40 @@ body.overlay-window #root {
 
 .chat-markdown ul,
 .chat-markdown ol {
+  /* Deliberately NOT `display: flex` — a flex container never generates
+     ::marker boxes for its children even when they compute to
+     `display: list-item`, so the numbers/bullets vanished entirely
+     regardless of how correct the underlying Markdown was (bold labels
+     still rendered fine since <strong> is unrelated to list markup). The
+     vertical gap between items is done with margin instead, so the
+     browser's real list-item rendering — and its numbering — stays intact. */
   margin: 0;
   padding-left: 1.15em;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+}
+
+/* Tailwind's Preflight base (`@import "tailwindcss"` in tailwind.css) resets
+   EVERY ol/ul's `list-style` to `none` globally — a second, independent
+   cause of the same missing-numbers/bullets symptom. A more specific
+   selector like `.chat-markdown ol` doesn't automatically win against that
+   for a property it never sets itself: the cascade resolves `list-style`
+   per-property, and Preflight's plain `ol, ul` selector is the only rule
+   that touches it at all, so it applies regardless of the fix above. Each
+   restored explicitly, rather than a shared `list-style: revert`, so ul/ol
+   don't swap marker shapes with each other. */
+.chat-markdown ol {
+  list-style: decimal;
+}
+
+.chat-markdown ul {
+  list-style: disc;
 }
 
 .chat-markdown li {
   padding-left: 2px;
+}
+
+.chat-markdown li + li {
+  margin-top: 2px;
 }
 
 .chat-markdown li > p {
