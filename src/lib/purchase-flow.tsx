@@ -14,6 +14,7 @@ export const PLAN_LABELS: Record<PlanId, string> = {
 }
 
 export type FlowStep = "signup" | "verify" | "payment" | "processing" | "done"
+export type AuthMode = "login" | "signup"
 
 interface PurchaseFlowState {
   signedUp: boolean
@@ -23,8 +24,8 @@ interface PurchaseFlowState {
   canDownload: boolean
   busy: boolean
   error: string | null
-  activeFlow: { plan: PlanId; step: FlowStep } | null
-  startFlow: (plan: PlanId) => void
+  activeFlow: { plan: PlanId; step: FlowStep; authMode: AuthMode } | null
+  startFlow: (plan: PlanId, authMode?: AuthMode) => void
   requestDashboardAccess: () => void
   requestCode: (email: string, name: string) => Promise<void>
   verifyCode: (email: string, code: string) => Promise<void>
@@ -61,7 +62,7 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
   const [purchased, setPurchased] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [activeFlow, setActiveFlow] = useState<{ plan: PlanId; step: FlowStep } | null>(null)
+  const [activeFlow, setActiveFlow] = useState<{ plan: PlanId; step: FlowStep; authMode: AuthMode } | null>(null)
   // Held between requestCode and verifyCode — signInWithOtp's `data` only
   // seeds user_metadata for a brand-new account, so a returning user who
   // doesn't have a name stored yet needs it applied via updateUser once
@@ -94,7 +95,7 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
         sessionStorage.removeItem("smallbird:pending-plan")
         setSelectedPlan(pendingPlan)
         if (PAID_PLAN_IDS.has(pendingPlan)) {
-          setActiveFlow({ plan: pendingPlan, step: "payment" })
+          setActiveFlow({ plan: pendingPlan, step: "payment", authMode: "signup" })
         } else {
           setPurchased(true)
         }
@@ -102,12 +103,12 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  const startFlow = (plan: PlanId) => {
+  const startFlow = (plan: PlanId, authMode: AuthMode = "signup") => {
     setError(null)
     setSelectedPlan(plan)
     const step: FlowStep = signedUp ? (PAID_PLAN_IDS.has(plan) ? "payment" : "done") : "signup"
     if (step === "done") setPurchased(true)
-    setActiveFlow({ plan, step })
+    setActiveFlow({ plan, step, authMode })
   }
 
   // Used by CTAs that link straight to a gated page (e.g. the hero's
@@ -173,10 +174,10 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
 
       if (!activeFlow) return
       if (PAID_PLAN_IDS.has(activeFlow.plan)) {
-        setActiveFlow({ plan: activeFlow.plan, step: "payment" })
+        setActiveFlow({ plan: activeFlow.plan, step: "payment", authMode: activeFlow.authMode })
       } else {
         setPurchased(true)
-        setActiveFlow({ plan: activeFlow.plan, step: "done" })
+        setActiveFlow({ plan: activeFlow.plan, step: "done", authMode: activeFlow.authMode })
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

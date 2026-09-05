@@ -1,7 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { ArrowRight, Play } from "lucide-react"
+import { ArrowRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Glow } from "@/components/ui/glow"
@@ -16,10 +16,6 @@ interface HeroWithMockupProps {
     text: string
     href: string
   }
-  secondaryCta?: {
-    text: string
-    href: string
-  }
   mockup: ReactNode
   className?: string
 }
@@ -29,7 +25,6 @@ export function HeroWithMockup({
   title,
   description,
   primaryCta = { text: "Dashboard", href: "/dashboard" },
-  secondaryCta = { text: "Demo", href: "#product-demo" },
   mockup,
   className,
 }: HeroWithMockupProps) {
@@ -80,7 +75,6 @@ export function HeroWithMockup({
             <div className="relative z-10 flex flex-wrap items-center justify-center gap-3 animate-appear opacity-0 [animation-delay:320ms] md:justify-start">
               <LiquidButton
                 size="lg"
-                className="bg-green-200 hover:bg-green-300"
                 onClick={() => {
                   if (primaryCta.href === "/dashboard") {
                     requestDashboardAccess()
@@ -91,16 +85,6 @@ export function HeroWithMockup({
               >
                 {primaryCta.text}
                 <ArrowRight className="h-4 w-4" />
-              </LiquidButton>
-              <LiquidButton
-                size="lg"
-                variant="outline"
-                onClick={() => {
-                  window.location.href = secondaryCta.href
-                }}
-              >
-                <Play className="h-4 w-4 fill-current" />
-                {secondaryCta.text}
               </LiquidButton>
             </div>
           </div>

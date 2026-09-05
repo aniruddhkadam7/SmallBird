@@ -60,7 +60,7 @@ export function PurchaseFlowDialog() {
         {activeFlow.step === "signup" ? (
           <>
             <DialogHeader>
-              <DialogTitle>Log in or sign up</DialogTitle>
+              <DialogTitle>{activeFlow.authMode === "login" ? "Log in" : "Create your account"}</DialogTitle>
               <DialogDescription>
                 Continuing with <span className="font-medium text-foreground">{planLabel}</span> ({priceSummary}).
                 We'll email you a 6-digit code — no password needed.
@@ -73,19 +73,21 @@ export function PurchaseFlowDialog() {
                 requestCode(email, name)
               }}
             >
-              <div className="space-y-1.5">
-                <label htmlFor="signup-name" className="text-sm font-medium text-foreground">
-                  Full name
-                </label>
-                <input
-                  id="signup-name"
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Jane Doe"
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                />
-              </div>
+              {activeFlow.authMode === "login" ? null : (
+                <div className="space-y-1.5">
+                  <label htmlFor="signup-name" className="text-sm font-medium text-foreground">
+                    Full name
+                  </label>
+                  <input
+                    id="signup-name"
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Jane Doe"
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  />
+                </div>
+              )}
               <div className="space-y-1.5">
                 <label htmlFor="signup-email" className="text-sm font-medium text-foreground">
                   Email address

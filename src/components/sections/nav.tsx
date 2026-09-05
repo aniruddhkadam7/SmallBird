@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { Download } from "lucide-react"
@@ -9,6 +10,14 @@ import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { LiquidGlassContainer } from "@/components/ui/liquid-glass-container"
 import { AccountMenu } from "@/components/blocks/account-menu"
 import { usePurchaseFlow } from "@/lib/purchase-flow"
+
+// Smallbird is a Windows desktop app — there's nothing to install on a
+// phone, so a mobile tap on Download explains that instead of navigating
+// to a page whose only action doesn't work on the device the visitor is on.
+function isMobileDevice() {
+  if (typeof navigator === "undefined") return false
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+}
 
 const links = [
   { label: "Features", href: "/#features" },
@@ -20,6 +29,7 @@ const links = [
 export function Nav() {
   const router = useRouter()
   const { signedUp, startFlow } = usePurchaseFlow()
+  const [showMobileNotice, setShowMobileNotice] = useState(false)
 
   return (
     <header className="sticky top-4 z-50 flex justify-center px-4">
@@ -48,16 +58,36 @@ export function Nav() {
               </a>
             ))}
           </nav>
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="relative flex items-center gap-2 sm:gap-3">
             <LiquidButton
               size="sm"
               variant="outline"
-              onClick={() => router.push("/download")}
-              className="hidden sm:inline-flex"
+              onClick={() => {
+                if (isMobileDevice()) {
+                  setShowMobileNotice(true)
+                  return
+                }
+                router.push("/download")
+              }}
             >
               <Download className="h-3.5 w-3.5" />
               Download
             </LiquidButton>
+            {showMobileNotice ? (
+              <div
+                role="alert"
+                className="absolute right-0 top-full z-50 mt-2 w-56 rounded-lg border border-border bg-popover p-3 text-xs text-popover-foreground shadow-lg"
+              >
+                Smallbird is a desktop app — open this page on your PC to download it.
+                <button
+                  type="button"
+                  onClick={() => setShowMobileNotice(false)}
+                  className="mt-2 block text-xs font-medium text-foreground/70 underline"
+                >
+                  Got it
+                </button>
+              </div>
+            ) : null}
             {signedUp ? (
               <>
                 <LiquidButton
@@ -75,13 +105,13 @@ export function Nav() {
                 <LiquidButton
                   size="sm"
                   variant="outline"
-                  onClick={() => startFlow("free")}
+                  onClick={() => startFlow("free", "login")}
                   className="hidden sm:inline-flex"
                 >
                   Log in
                 </LiquidButton>
-                <LiquidButton size="sm" onClick={() => startFlow("free")}>
-                  Register
+                <LiquidButton size="sm" onClick={() => startFlow("free", "signup")}>
+                  Sign up
                 </LiquidButton>
               </>
             )}
