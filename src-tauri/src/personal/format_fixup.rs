@@ -27,17 +27,22 @@ pub fn ensure_markdown_structure(answer: &str) -> String {
     let bold_label_re = Regex::new(r"^\*\*([A-Za-z0-9 /&'-]{1,40}):\*\*\s+(.+)$").expect("static regex is valid");
 
     let lines: Vec<&str> = answer.lines().collect();
+    // Matched against the trimmed form of each line — some models indent
+    // these sub-points with literal leading spaces, which would otherwise
+    // defeat the `^` anchor and leave the whole answer unrewritten even
+    // though it's the exact same "Label: sentence" shape underneath.
+    let trimmed: Vec<&str> = lines.iter().map(|line| line.trim_start()).collect();
 
-    let plain_match_count = lines.iter().filter(|line| plain_label_re.is_match(line)).count();
+    let plain_match_count = trimmed.iter().filter(|line| plain_label_re.is_match(line)).count();
     if plain_match_count >= 2 {
-        return number_matching_lines(&lines, |line| {
+        return number_matching_lines(&lines, &trimmed, |line| {
             plain_label_re.captures(line).map(|caps| (caps[1].to_string(), caps[2].to_string()))
         });
     }
 
-    let bold_match_count = lines.iter().filter(|line| bold_label_re.is_match(line)).count();
+    let bold_match_count = trimmed.iter().filter(|line| bold_label_re.is_match(line)).count();
     if bold_match_count >= 2 {
-        return number_matching_lines(&lines, |line| {
+        return number_matching_lines(&lines, &trimmed, |line| {
             bold_label_re.captures(line).map(|caps| (caps[1].to_string(), caps[2].to_string()))
         });
     }
@@ -46,14 +51,19 @@ pub fn ensure_markdown_structure(answer: &str) -> String {
 }
 
 /// Shared rewrite step for both label shapes above: walks the answer's
-/// lines, and for every one `extract` recognizes as a (label, rest) pair,
-/// emits it as a numbered, bolded list item; every other line passes
-/// through unchanged.
-fn number_matching_lines(lines: &[&str], extract: impl Fn(&str) -> Option<(String, String)>) -> String {
+/// lines (matching against their trimmed form, so indentation doesn't
+/// block detection), and for every one `extract` recognizes as a (label,
+/// rest) pair, emits it as a numbered, bolded list item; every other line
+/// passes through unchanged (in its original, untrimmed form).
+fn number_matching_lines(
+    lines: &[&str],
+    trimmed: &[&str],
+    extract: impl Fn(&str) -> Option<(String, String)>,
+) -> String {
     let mut out = String::new();
     let mut step = 0u32;
-    for line in lines {
-        if let Some((label, rest)) = extract(line) {
+    for (line, trimmed_line) in lines.iter().zip(trimmed) {
+        if let Some((label, rest)) = extract(trimmed_line) {
             step += 1;
             out.push_str(&format!("{step}. **{label}:** {rest}\n"));
         } else {
@@ -109,6 +119,20 @@ mod tests {
         assert!(out.contains("3. **Retrieval:** Relevant chunks are retrieved via similarity search."));
         assert!(out.starts_with("RAG is a system architecture"));
         assert!(out.ends_with("This grounds the response in real data."));
+    }
+
+    #[test]
+    fn adds_numbering_to_indented_label_lines() {
+        // Reported live from the Interview Mode overlay: the model indented
+        // each sub-point with leading spaces, which used to defeat the `^`
+        // anchor entirely and leave the whole answer as flat, unnumbered
+        // (and un-bolded) paragraphs.
+        let input = "RAG combines retrieval with generation. Here's how it works:\n    Document Ingestion: First, the system ingests documents.\n    Chunking: The documents are split into pieces.\n    Retrieval: Relevant chunks are retrieved via similarity search.";
+        let out = ensure_markdown_structure(input);
+        assert!(out.contains("1. **Document Ingestion:** First, the system ingests documents."));
+        assert!(out.contains("2. **Chunking:** The documents are split into pieces."));
+        assert!(out.contains("3. **Retrieval:** Relevant chunks are retrieved via similarity search."));
+        assert!(out.starts_with("RAG combines retrieval with generation."));
     }
 
     #[test]
