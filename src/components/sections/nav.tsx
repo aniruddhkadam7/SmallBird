@@ -49,6 +49,12 @@ export function Nav() {
             ))}
           </nav>
           <div className="relative flex items-center gap-2 sm:gap-3">
+            <a
+              href="/pricing"
+              className="text-sm font-medium text-foreground/80 transition-colors hover:text-foreground lg:hidden"
+            >
+              Pricing
+            </a>
             <LiquidButton
               size="sm"
               variant="outline"
