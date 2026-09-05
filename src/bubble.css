@@ -1,0 +1,63 @@
+/* Floating logo bubble — minimize/close collapse into this instead of a real
+   OS minimize (see bubble_window.rs). Must stay fully transparent outside the
+   circle itself, same reasoning as overlay.css. */
+
+html.bubble-window,
+body.bubble-window,
+body.bubble-window #root {
+  background: transparent !important;
+  margin: 0;
+}
+
+.bubble-root {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bubble-logo-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  cursor: grab;
+  /* Dragging is handled manually via pointer events (BubbleWidget.tsx) —
+     this stops the browser's own touch scroll/pan gestures from competing
+     with that on touch-capable displays. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  background: #ffffff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.bubble-logo-btn img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.bubble-close-btn {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  background: #e5484d;
+  color: #ffffff;
+  font-size: 11px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
