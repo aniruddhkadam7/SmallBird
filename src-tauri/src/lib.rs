@@ -5,6 +5,7 @@ mod analyzer;
 pub mod audio;
 mod auth;
 mod backend;
+mod bubble_window;
 mod commands;
 mod documents;
 // Public so `src/bin/hw_probe.rs` can reference `PerformanceConfig` without
@@ -42,11 +43,28 @@ pub fn run() {
         // immediately and this callback just brings the existing app to the
         // front instead.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            let focus_target = app
+            let overlay_visible = app
                 .get_webview_window(interview_mode::OVERLAY_WINDOW_LABEL)
-                .filter(|w| w.is_visible().unwrap_or(false))
-                .or_else(|| app.get_webview_window(main_window::MAIN_WINDOW_LABEL));
-            if let Some(window) = focus_target {
+                .is_some_and(|w| w.is_visible().unwrap_or(false));
+            if overlay_visible {
+                if let Some(window) = app.get_webview_window(interview_mode::OVERLAY_WINDOW_LABEL) {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+                return;
+            }
+            // The main window is hidden (not just unminimized) while the
+            // floating bubble is up (see `bubble_window`) — restoring
+            // through it rather than a plain main.show() also hides the
+            // bubble, instead of leaving both on screen at once.
+            let bubble_visible = app
+                .get_webview_window(bubble_window::BUBBLE_WINDOW_LABEL)
+                .is_some_and(|w| w.is_visible().unwrap_or(false));
+            if bubble_visible {
+                let _ = bubble_window::restore_from_bubble(app);
+                return;
+            }
+            if let Some(window) = app.get_webview_window(main_window::MAIN_WINDOW_LABEL) {
                 let _ = window.show();
                 let _ = window.set_focus();
             }
@@ -79,6 +97,26 @@ pub fn run() {
             app.manage(performance_state);
 
             main_window::apply_light_titlebar(&app.handle().clone());
+
+            // Exclude the main window from screen captures/screen-share too,
+            // not just the Interview Mode overlay (see
+            // `windows_capture_protection` for what this does and does not
+            // cover — the window stays normally visible locally, it's only
+            // omitted from what capture pipelines record/stream). Applied
+            // BEFORE `position_top_center`'s show()/set_focus(): setting
+            // display affinity on this transparent, undecorated window
+            // while it's already shown was observed to knock DWM into
+            // minimizing it (its rect ends up at the classic off-screen
+            // iconic placement) — doing it first, while the window is still
+            // hidden (tauri.conf.json's `"visible": false`), avoids that.
+            // Best-effort: an older Windows build without the API just
+            // leaves the window normally capturable.
+            if let Some(main_window) = app.get_webview_window(main_window::MAIN_WINDOW_LABEL) {
+                if let Err(err) = windows_capture_protection::enable_capture_exclusion(&main_window) {
+                    log::warn!("failed to exclude main window from screen capture: {err}");
+                }
+            }
+
             main_window::position_top_center(&app.handle().clone());
 
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
@@ -89,6 +127,8 @@ pub fn run() {
             if let Err(err) = app.global_shortcut().register("Ctrl+Shift+Space") {
                 log::warn!("failed to register Ctrl+Shift+Space global hotkey: {err}");
             }
+
+            bubble_window::ensure_bubble_window(&app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -112,6 +152,9 @@ pub fn run() {
             documents::list_documents,
             documents::delete_document,
             commands::quit_app,
+            commands::minimize_to_bubble,
+            commands::restore_from_bubble,
+            commands::drag_bubble_window,
             interview_mode::commands::show_interview_overlay,
             interview_mode::commands::hide_interview_overlay,
             interview_mode::commands::toggle_interview_overlay,

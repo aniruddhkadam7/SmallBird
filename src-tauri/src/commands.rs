@@ -837,3 +837,88 @@ pub async fn analyze_setup_context(
 pub fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
+
+/// Called from the title bar's Minimize button instead of a real OS
+/// minimize: the main window is `skip_taskbar` (see main_window.rs), so a
+/// genuinely minimized window would have no taskbar entry to restore it
+/// from. Collapses to the small floating logo bubble instead — see
+/// `bubble_window`.
+///
+/// Window creation/show/hide on Windows must happen on the main thread (the
+/// one that owns the window message loop). Tauri dispatches non-async
+/// `#[tauri::command]`s onto its blocking thread pool instead, so calling
+/// `bubble_window`'s `WebviewWindowBuilder`/`show`/`hide` calls directly from
+/// here deadlocked silently — the click reached this command (logged) and
+/// then just hung forever, which is exactly what read as "nothing happens"
+/// when tapping Minimize/Close. Routed through `run_on_main` (same fix
+/// `interview_mode::commands` already uses for its overlay window) instead.
+#[tauri::command]
+pub async fn minimize_to_bubble(app: tauri::AppHandle) -> Result<(), String> {
+    log::info!("minimize_to_bubble: invoked");
+    let result = run_on_main(&app, |app| crate::bubble_window::show_bubble_window(app)).await;
+    if let Err(err) = &result {
+        log::warn!("minimize_to_bubble: failed: {err}");
+    }
+    result
+}
+
+/// Called when the bubble's logo is clicked, to bring the main window back.
+/// See `minimize_to_bubble`'s doc comment for why this runs via `run_on_main`.
+#[tauri::command]
+pub async fn restore_from_bubble(app: tauri::AppHandle) -> Result<(), String> {
+    log::info!("restore_from_bubble: invoked");
+    let result = run_on_main(&app, |app| crate::bubble_window::restore_from_bubble(app)).await;
+    if let Err(err) = &result {
+        log::warn!("restore_from_bubble: failed: {err}");
+    }
+    result
+}
+
+/// Called from BubbleWidget.tsx once a press-and-move on the logo has
+/// crossed the drag threshold. Goes through a dedicated command (rather than
+/// the frontend calling the webview API's own `startDragging()` directly) so
+/// a failure actually surfaces in these logs instead of silently doing
+/// nothing — which is indistinguishable, from the user's side, from the drag
+/// simply not being wired up at all.
+#[tauri::command]
+pub async fn drag_bubble_window(app: tauri::AppHandle) -> Result<(), String> {
+    log::info!("drag_bubble_window: invoked");
+    let result = run_on_main(&app, |app| {
+        let window = app
+            .get_webview_window(crate::bubble_window::BUBBLE_WINDOW_LABEL)
+            .ok_or_else(|| "bubble window not open".to_string())?;
+        window.start_dragging().map_err(|e| e.to_string())
+    })
+    .await;
+    if let Err(err) = &result {
+        log::warn!("drag_bubble_window: failed: {err}");
+    }
+    result
+}
+
+/// Runs `f` on the main thread (required for window creation/show/hide on
+/// Windows) and brings the result back to the calling async command via a
+/// channel, so the IPC call completes normally instead of deadlocking. Same
+/// helper `interview_mode::commands` keeps privately for its own overlay
+/// window commands — duplicated here rather than shared across modules for
+/// one function this small.
+async fn run_on_main<T, F>(app: &tauri::AppHandle, f: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce(&tauri::AppHandle) -> Result<T, String> + Send + 'static,
+{
+    let (tx, rx) = std::sync::mpsc::channel();
+    let app_for_main = app.clone();
+    app.run_on_main_thread(move || {
+        let result = f(&app_for_main);
+        let _ = tx.send(result);
+    })
+    .map_err(|e| format!("failed to schedule work on main thread: {e}"))?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        rx.recv()
+            .map_err(|e| format!("main-thread task did not respond: {e}"))?
+    })
+    .await
+    .map_err(|e| format!("main-thread task panicked: {e}"))?
+}

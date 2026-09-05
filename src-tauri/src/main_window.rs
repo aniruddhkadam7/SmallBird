@@ -67,6 +67,7 @@ pub fn position_top_center(app: &AppHandle) {
         let _ = window.set_position(LogicalPosition::new(x, y));
     }
     let _ = window.show();
+    let _ = window.set_focus();
 }
 
 /// No-op: the main window's real size is fixed (tauri.conf.json) and never

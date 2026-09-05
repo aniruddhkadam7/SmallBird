@@ -336,8 +336,12 @@ function App() {
   const startLabel =
     sessionState === "STARTING" ? "Starting…" : sessionState === "LISTENING" ? "Listening" : "Start";
 
+  // A real OS minimize would leave no way back in: the main window is
+  // `skip_taskbar` (tauri.conf.json), so there'd be no taskbar entry to
+  // restore it from. Collapsing to the floating logo bubble instead keeps a
+  // visible, clickable way back — see bubble_window.rs.
   const handleMinimize = useCallback(() => {
-    getCurrentWindow().minimize();
+    invoke("minimize_to_bubble");
   }, []);
   const handleToggleMaximize = useCallback(() => {
     getCurrentWindow().toggleMaximize();
