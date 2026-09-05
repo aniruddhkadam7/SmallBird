@@ -286,6 +286,17 @@ function App() {
     await handleStart();
   }, [startRole, startCompany, handleStart]);
 
+  // "Skip" on the details prompt — must also clear any role/company saved
+  // from a *previous* interview. Without this, skipping just reused
+  // whatever was last saved via handleConfirmStart (the only other writer
+  // of these fields), so an old company kept showing up on interviews
+  // where the user deliberately chose not to set one this time.
+  const handleSkipStart = useCallback(async () => {
+    const current = loadOverlaySettings();
+    saveOverlaySettings({ ...current, role: "", company: "" });
+    await handleStart();
+  }, [handleStart]);
+
   // "End other session & continue" from the activeElsewhereMessage banner.
   const handleForceStart = useCallback(async () => {
     setActiveElsewhereMessage(null);
@@ -544,7 +555,7 @@ function App() {
                         </p>
                       </div>
                       <div className="popover-footer">
-                        <Button variant="ghost" onClick={handleStart}>
+                        <Button variant="ghost" onClick={handleSkipStart}>
                           Skip
                         </Button>
                         <Button variant="primary" onClick={handleConfirmStart}>

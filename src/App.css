@@ -1,3 +1,15 @@
+/* Matches the company website's wordmark font (next/font/google Playfair
+   Display there) -- self-hosted here since the desktop app can't rely on
+   next/font's build-time fetch, and a runtime Google Fonts request isn't
+   worth it for four characters of brand text. */
+@font-face {
+  font-family: "Playfair Display";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./assets/fonts/PlayfairDisplay-Bold.woff2") format("woff2");
+}
+
 :root {
   font-family: "Segoe UI", Inter, Avenir, Helvetica, Arial, sans-serif;
   font-size: 15px;
@@ -238,10 +250,10 @@ body.compact-transparent {
 
 .header-product {
   font-size: 1.15rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.01em;
   line-height: 1.2;
-  font-family: "Segoe UI", Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-family: "Playfair Display", "Segoe UI", Inter, Avenir, Helvetica, Arial, sans-serif;
   color: var(--text);
 }
 
