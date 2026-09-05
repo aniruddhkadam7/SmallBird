@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Briefcase, Download, FileText, LayoutGrid, List, MoreVertical, Search, X } from "lucide-react"
+import { Briefcase, Download, FileText, LayoutGrid, List, MessageCircleQuestion, MoreVertical, Search, X } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { logoUrlForDomain, resolveCompanyDomain } from "@/lib/company-logo"
@@ -22,6 +22,10 @@ interface Transcript {
 
 function formatDate(ms: number) {
   return new Date(ms).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()
+}
+
+function formatTime(ms: number) {
+  return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
 }
 
 function formatDuration(startedMs: number, endedMs: number) {
@@ -152,7 +156,9 @@ function InterviewCard({ transcript, onView }: { transcript: Transcript; onView:
   return (
     <div className="relative flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
       <div className="flex items-start justify-between gap-2">
-        <div className="text-xs text-muted-foreground">{formatDate(transcript.started_at_ms)}</div>
+        <div className="text-xs text-muted-foreground">
+          {formatDate(transcript.started_at_ms)} · {formatTime(transcript.started_at_ms)}
+        </div>
         <button
           type="button"
           aria-label="More options"
@@ -178,6 +184,10 @@ function InterviewCard({ transcript, onView }: { transcript: Transcript; onView:
         <span className="flex items-center gap-1 rounded-full bg-foreground/10 px-2 py-1 text-xs font-medium text-foreground">
           <FileText className="h-3 w-3" />
           Transcript
+        </span>
+        <span className="flex items-center gap-1 rounded-full bg-foreground/10 px-2 py-1 text-xs font-medium text-foreground">
+          <MessageCircleQuestion className="h-3 w-3" />
+          {transcript.turns.length} question{transcript.turns.length === 1 ? "" : "s"}
         </span>
       </div>
 

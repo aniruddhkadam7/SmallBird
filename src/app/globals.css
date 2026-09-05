@@ -185,8 +185,13 @@
   animation: marquee 45s linear infinite;
 }
 
-.animate-marquee:hover {
-  animation-play-state: paused;
+/* Only pause-on-hover for devices that actually have hover (mouse/trackpad) --
+   on touch devices a tap fires :hover with no corresponding "leave" to clear
+   it, so the marquee would stay paused after a single tap and never resume. */
+@media (hover: hover) {
+  .animate-marquee:hover {
+    animation-play-state: paused;
+  }
 }
 
 @keyframes divider-glow {

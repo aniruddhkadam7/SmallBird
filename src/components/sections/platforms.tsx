@@ -48,7 +48,7 @@ function PlatformCard({ platform: p }: { platform: (typeof platforms)[number] })
 export function Platforms() {
   return (
     <section className="border-t border-border py-14 px-4 sm:py-20">
-      <div className="mx-auto max-w-4xl text-center">
+      <div className="mx-auto max-w-5xl text-center">
         <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
           Supported <span className="text-primary">with</span>
         </h2>
@@ -57,9 +57,10 @@ export function Platforms() {
           Works quietly on the video calls you already use
         </div>
 
-        {/* Mobile: auto-scrolling marquee (list duplicated once for a seamless loop) */}
+        {/* Mobile/tablet: auto-scrolling marquee (list duplicated once for a seamless loop) --
+            kept up to lg since the full row only fits in one line from there up. */}
         <div
-          className="relative mt-10 overflow-hidden sm:hidden"
+          className="relative mt-10 overflow-hidden lg:hidden"
           style={{
             maskImage: "linear-gradient(to right, transparent, black 5%, black 95%, transparent)",
             WebkitMaskImage: "linear-gradient(to right, transparent, black 5%, black 95%, transparent)",
@@ -72,8 +73,9 @@ export function Platforms() {
           </div>
         </div>
 
-        {/* Desktop: static centered row, everything already fits without scrolling */}
-        <div className="mt-10 hidden gap-3 sm:flex sm:flex-wrap sm:justify-center">
+        {/* Desktop: static single-line row, no wrap -- the container is wide
+            enough from lg up to fit all of them without dropping to a marquee. */}
+        <div className="mt-10 hidden flex-nowrap justify-center gap-3 lg:flex">
           {platforms.map((p) => (
             <PlatformCard key={p.name} platform={p} />
           ))}
