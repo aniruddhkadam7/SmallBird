@@ -86,7 +86,7 @@ export function Privacy() {
           </p>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} orientation="vertical" className="mt-14 lg:grid lg:grid-cols-[1fr_1.3fr] lg:items-center lg:gap-10">
+        <Tabs value={activeTab} onValueChange={setActiveTab} orientation="vertical" className="mt-14 flex-col lg:grid lg:grid-cols-[1fr_1.3fr] lg:items-center lg:gap-10">
           <TabsList variant="line" className="h-auto w-full flex-col items-stretch gap-2 bg-transparent p-0">
             {points.map((point, i) => (
               <TabsTrigger

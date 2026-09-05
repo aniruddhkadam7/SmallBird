@@ -34,17 +34,17 @@ export function Nav() {
   return (
     <header className="sticky top-4 z-50 flex justify-center px-4">
       <LiquidGlassContainer className="w-full max-w-7xl">
-        <div className="flex h-16 w-full items-center justify-between gap-4 px-6">
-          <a href="/" className="flex items-center gap-2">
+        <div className="flex h-16 w-full items-center justify-between gap-2 px-3 sm:gap-4 sm:px-6">
+          <a href="/" className="flex shrink-0 items-center gap-2">
             <Image src={logo} alt="Smallbird" className="h-6 w-auto" priority />
             <span
-              className="text-2xl font-bold tracking-tight text-foreground"
+              className="hidden text-2xl font-bold tracking-tight text-foreground sm:inline"
               style={{ fontFamily: "var(--font-playfair-display)" }}
             >
               Smallbird<sup className="ml-0.5 text-xs font-normal align-super">™</sup>
             </span>
           </a>
-          <nav className="hidden items-center gap-8 sm:flex">
+          <nav className="hidden items-center gap-6 lg:flex xl:gap-8">
             {links.map((link) => (
               <a
                 key={link.label}
@@ -90,12 +90,7 @@ export function Nav() {
             ) : null}
             {signedUp ? (
               <>
-                <LiquidButton
-                  size="sm"
-                  variant="outline"
-                  onClick={() => router.push("/dashboard")}
-                  className="hidden sm:inline-flex"
-                >
+                <LiquidButton size="sm" variant="outline" onClick={() => router.push("/dashboard")}>
                   Dashboard
                 </LiquidButton>
                 <AccountMenu />
@@ -106,7 +101,7 @@ export function Nav() {
                   size="sm"
                   variant="outline"
                   onClick={() => startFlow("free", "login")}
-                  className="hidden sm:inline-flex"
+                  className="hidden lg:inline-flex"
                 >
                   Log in
                 </LiquidButton>
