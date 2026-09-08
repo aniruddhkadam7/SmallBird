@@ -2,12 +2,16 @@
 //! window label — used by Interview Mode via `interview_mode::window`, which
 //! just calls through to this module with its own label/title baked in.
 
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+
 use tauri::{
     window::Color, AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
 };
 
 use crate::main_window::MAIN_WINDOW_LABEL;
+use crate::state::AppState;
 use crate::windows_capture_protection;
 
 const OVERLAY_FALLBACK_SIDE: f64 = 560.0;
@@ -78,6 +82,7 @@ pub struct OverlayCaptureStatus {
 /// closed. `title` is the OS window title; `label` gives this overlay its
 /// own window identity.
 pub fn show_overlay_window(app: &AppHandle, label: &str, title: &str) -> Result<OverlayCaptureStatus, String> {
+    let desired = capture_protection_desired(app);
     let excluded = if let Some(existing) = app.get_webview_window(label) {
         // Reset the frontend's session-scoped React state before showing a
         // *reused* overlay window (the WebView2 process/DOM is never torn
@@ -91,16 +96,21 @@ pub fn show_overlay_window(app: &AppHandle, label: &str, title: &str) -> Result<
         center_overlay_on_screen(&existing, false);
         existing.show().map_err(|e| e.to_string())?;
         existing.set_focus().map_err(|e| e.to_string())?;
-        windows_capture_protection::enable_capture_exclusion(&existing).is_ok()
+        // Only reassert exclusion if the user hasn't explicitly turned it
+        // off — reusing this window (close/reopen) must not silently
+        // override a prior "Screen Capture Protection: off" choice.
+        apply_desired_exclusion(&existing, desired)
     } else {
         let window = build_overlay_window(app, label, title)?;
         center_overlay_on_screen(&window, true);
 
-        let excluded = windows_capture_protection::enable_capture_exclusion(&window).is_ok();
-        if excluded {
-            log::info!("overlay '{label}': screen-capture exclusion ENABLED");
-        } else {
-            log::warn!("overlay '{label}': screen-capture exclusion FAILED/UNAVAILABLE");
+        let excluded = apply_desired_exclusion(&window, desired);
+        if desired {
+            if excluded {
+                log::info!("overlay '{label}': screen-capture exclusion ENABLED");
+            } else {
+                log::warn!("overlay '{label}': screen-capture exclusion FAILED/UNAVAILABLE");
+            }
         }
 
         window.show().map_err(|e| e.to_string())?;
@@ -174,6 +184,13 @@ pub fn set_overlay_always_on_top(app: &AppHandle, label: &str, enabled: bool) ->
 /// entirely, not just live with whichever behavior their capture pipeline
 /// happens to pick.
 pub fn set_overlay_capture_exclusion(app: &AppHandle, label: &str, enabled: bool) -> Result<OverlayCaptureStatus, String> {
+    // Record the user's actual intent first — the watchdog (see
+    // `spawn_capture_protection_watchdog`) reads this on every tick, so it
+    // has to be updated before/regardless of whether the immediate Win32
+    // call below succeeds.
+    if let Some(state) = app.try_state::<AppState>() {
+        state.overlay_capture_protection_desired.store(enabled, Ordering::Relaxed);
+    }
     let Some(window) = app.get_webview_window(label) else {
         return Err(format!("overlay window '{label}' is not open"));
     };
@@ -184,6 +201,80 @@ pub fn set_overlay_capture_exclusion(app: &AppHandle, label: &str, enabled: bool
         windows_capture_protection::disable_capture_exclusion(&window)?;
         Ok(OverlayCaptureStatus { excluded: false })
     }
+}
+
+fn capture_protection_desired(app: &AppHandle) -> bool {
+    app.try_state::<AppState>()
+        .map(|s| s.overlay_capture_protection_desired.load(Ordering::Relaxed))
+        .unwrap_or(true)
+}
+
+/// Applies (or removes) capture exclusion on `window` to match `desired`,
+/// returning whether it ends up excluded. Centralizes the "respect the
+/// user's toggle, don't just always turn exclusion on" logic shared by
+/// `show_overlay_window` and the watchdog below.
+fn apply_desired_exclusion(window: &WebviewWindow, desired: bool) -> bool {
+    if desired {
+        windows_capture_protection::enable_capture_exclusion(window).is_ok()
+    } else {
+        let _ = windows_capture_protection::disable_capture_exclusion(window);
+        false
+    }
+}
+
+/// Periodically re-asserts the overlay's screen-capture exclusion while it's
+/// visible, guarding against `SetWindowDisplayAffinity` silently reverting
+/// (observed after monitor/DPI changes, GPU driver resets, and waking from
+/// sleep — none of which fire an event this process can hook). Idempotent
+/// and cheap, so re-applying on a timer is safe even when nothing actually
+/// reset. Only re-applies when the user's own toggle (tracked in
+/// `AppState::overlay_capture_protection_desired`) wants it on — never
+/// fights an explicit "off".
+///
+/// This does NOT fix the separate, unrelated platform limitation where some
+/// legacy/GDI-based capture pipelines render an excluded window as a solid
+/// black rectangle instead of properly omitting it (see
+/// `windows_capture_protection`'s module docs) — that's a Windows compositor
+/// behavior with no software workaround from this side, which is why the
+/// Settings panel's toggle exists as an escape hatch. This watchdog only
+/// guards against exclusion silently *not being active at all* when it was
+/// supposed to be.
+pub fn spawn_capture_protection_watchdog(app: AppHandle, label: &'static str) {
+    tauri::async_runtime::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(3));
+        loop {
+            interval.tick().await;
+            let Some(window) = app.get_webview_window(label) else {
+                continue;
+            };
+            if !window.is_visible().unwrap_or(false) {
+                continue;
+            }
+            let desired = capture_protection_desired(&app);
+            if desired {
+                let _ = windows_capture_protection::enable_capture_exclusion(&window);
+            }
+        }
+    });
+}
+
+/// Same self-healing reassertion as `spawn_capture_protection_watchdog`, but
+/// for windows with no user-facing on/off toggle (the main window) —
+/// unconditionally keeps exclusion asserted whenever the window is visible,
+/// no `AppState` flag to consult.
+pub fn spawn_unconditional_capture_protection_watchdog(app: AppHandle, label: &'static str) {
+    tauri::async_runtime::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(3));
+        loop {
+            interval.tick().await;
+            let Some(window) = app.get_webview_window(label) else {
+                continue;
+            };
+            if window.is_visible().unwrap_or(false) {
+                let _ = windows_capture_protection::enable_capture_exclusion(&window);
+            }
+        }
+    });
 }
 
 pub fn resize_overlay(app: &AppHandle, label: &str, fraction: f64) -> Result<(), String> {
@@ -273,4 +364,14 @@ fn center_overlay_on_screen(window: &WebviewWindow, apply_default_size: bool) {
     let x = monitor_pos.x + (monitor_size.width - width) / 2.0;
     let y = monitor_pos.y + TOP_MARGIN;
     let _ = window.set_position(LogicalPosition::new(x, y));
+
+    // Moving/resizing to a (possibly different-DPI) monitor is one of the
+    // known triggers for Windows silently dropping WDA_EXCLUDEFROMCAPTURE —
+    // reassert immediately rather than waiting for the watchdog's next tick,
+    // so there's no window where a dragged-to-another-monitor overlay is
+    // briefly capturable. Respects the user's own toggle, same as the
+    // watchdog.
+    if capture_protection_desired(window.app_handle()) {
+        let _ = windows_capture_protection::enable_capture_exclusion(window);
+    }
 }

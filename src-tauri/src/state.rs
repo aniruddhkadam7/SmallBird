@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 
@@ -31,7 +32,6 @@ impl Default for CaptureSession {
     }
 }
 
-#[derive(Default)]
 pub struct AppState {
     pub capture: Mutex<CaptureSession>,
     pub transcript: Mutex<TranscriptManager>,
@@ -49,4 +49,28 @@ pub struct AppState {
     /// needs, cleared by `end_backend_session` (reports usage, stops the
     /// heartbeat loop).
     pub stt_session: Mutex<Option<SttSession>>,
+    /// Whether the Interview Mode overlay *should* currently be excluded
+    /// from screen capture — the user's intent, not a read of the live OS
+    /// state. `SetWindowDisplayAffinity` has been observed to silently drop
+    /// back to normal (capturable) after monitor/DPI changes, GPU driver
+    /// resets, or waking from sleep, with no notification when it happens —
+    /// so a background watchdog (see `overlay_window::spawn_capture_protection_watchdog`)
+    /// re-asserts exclusion on a timer, and needs this flag to know whether
+    /// re-asserting is actually wanted (the user's own "Screen Capture
+    /// Protection" toggle can turn it off on purpose, which the watchdog
+    /// must not fight). Starts `true`: capture protection is on by default.
+    pub overlay_capture_protection_desired: AtomicBool,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            capture: Mutex::default(),
+            transcript: Mutex::default(),
+            documents: Mutex::default(),
+            auth_session: Mutex::default(),
+            stt_session: Mutex::default(),
+            overlay_capture_protection_desired: AtomicBool::new(true),
+        }
+    }
 }

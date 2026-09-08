@@ -38,3 +38,9 @@ pub fn resize_overlay(app: &AppHandle, fraction: f64) -> Result<(), String> {
 pub fn is_capture_excluded(app: &AppHandle) -> bool {
     overlay_window::is_capture_excluded(app, OVERLAY_WINDOW_LABEL)
 }
+
+/// See `overlay_window::spawn_capture_protection_watchdog` — self-heals the
+/// overlay's capture exclusion if Windows silently drops it.
+pub fn spawn_capture_protection_watchdog(app: AppHandle) {
+    overlay_window::spawn_capture_protection_watchdog(app, OVERLAY_WINDOW_LABEL);
+}

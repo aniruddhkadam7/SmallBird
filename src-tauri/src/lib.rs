@@ -119,6 +119,18 @@ pub fn run() {
 
             main_window::position_top_center(&app.handle().clone());
 
+            // Self-healing capture exclusion: `SetWindowDisplayAffinity` has
+            // been observed to silently revert (monitor/DPI change, GPU
+            // driver reset, wake from sleep) with no event this process can
+            // hook, so both windows periodically reassert it while visible
+            // rather than relying on the one-time call above/at overlay-open
+            // time. See `overlay_window::spawn_capture_protection_watchdog`.
+            overlay_window::spawn_unconditional_capture_protection_watchdog(
+                app.handle().clone(),
+                main_window::MAIN_WINDOW_LABEL,
+            );
+            interview_mode::spawn_capture_protection_watchdog(app.handle().clone());
+
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
             // Ctrl+Shift+Space: show/hide the Interview Mode overlay (spec
             // section 19/21). Registration failure (e.g. the combination is
