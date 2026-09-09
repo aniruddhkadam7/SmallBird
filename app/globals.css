@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: 222 47% 11%;
+  --surface: 0 0% 100%;
+  --subtle: 210 40% 98%;
+  --border: 214 32% 91%;
+  --muted: 215 16% 47%;
+  --accent: 243 75% 59%;
+  --accent-hover: 243 75% 52%;
+  --danger: 0 72% 51%;
+  --warn: 32 95% 44%;
+  --ok: 142 71% 35%;
+}
+
+.dark {
+  --ink: 210 40% 96%;
+  --surface: 222 47% 10%;
+  --subtle: 222 47% 7%;
+  --border: 217 33% 20%;
+  --muted: 215 20% 60%;
+  --accent: 243 82% 68%;
+  --accent-hover: 243 82% 74%;
+  --danger: 0 84% 65%;
+  --warn: 38 92% 60%;
+  --ok: 142 60% 50%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  @apply bg-subtle text-ink antialiased;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+.card {
+  @apply rounded-xl border border-border bg-surface p-5 shadow-card transition-colors;
+}
+
+.badge {
+  @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+}
+
+.badge-ok {
+  @apply bg-ok/10 text-ok;
+}
+
+.badge-warn {
+  @apply bg-warn/10 text-warn;
+}
+
+.badge-danger {
+  @apply bg-danger/10 text-danger;
+}
+
+.badge-muted {
+  @apply bg-ink/5 text-muted;
+}
+
+.btn {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+.btn-primary {
+  @apply btn bg-accent text-white shadow-sm hover:bg-accent-hover;
+}
+
+.btn-secondary {
+  @apply btn border border-border bg-surface text-ink hover:bg-subtle;
+}
+
+.btn-danger {
+  @apply btn bg-danger text-white shadow-sm hover:opacity-90;
+}
+
+.input {
+  @apply w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/20;
+}
+
+.table-wrap {
+  @apply overflow-x-auto rounded-xl border border-border bg-surface shadow-card;
+}
+
+table {
+  @apply w-full text-left text-sm;
+}
+
+thead th {
+  @apply whitespace-nowrap border-b border-border bg-subtle px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted;
+}
+
+tbody td {
+  @apply border-b border-border px-4 py-3 text-ink last:border-0;
+}
+
+tbody tr {
+  @apply transition-colors;
+}
+
+tbody tr:hover {
+  @apply bg-subtle;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-ink/15;
+}
