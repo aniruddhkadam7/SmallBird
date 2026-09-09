@@ -5,6 +5,7 @@ import { StatusDot } from "./ui";
 
 const DOC_STATUS_TONE: Record<string, "success" | "danger" | "neutral"> = {
   READY: "success",
+  EMPTY: "danger",
   ERROR: "danger",
 };
 
@@ -19,11 +20,10 @@ function formatBytes(bytes: number) {
 /// what's actually been uploaded or an empty state. Settings'
 /// Context/Documents section used to be a static paragraph pointing back at
 /// the header's Context (📎) picker with no way to see what had actually
-/// been attached. A file picked in that popover only uploads once a session
-/// is started (see App.tsx's uploadDocumentContext calls in
-/// startInterview), so this list can lag behind a file picked
-/// moments ago until Start is pressed — polling picks that up shortly after
-/// rather than needing a manual refresh.
+/// been attached. Uploads there happen as soon as Start is pressed (and can
+/// also be pushed mid-interview via "Save context"), so polling here picks
+/// up new/updated documents shortly after rather than needing a manual
+/// refresh.
 export function AttachedDocumentsPanel() {
   const [documents, setDocuments] = useState<DocumentMetadata[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +77,9 @@ export function AttachedDocumentsPanel() {
                 <span className="document-type-tag">{doc.document_type}</span>
               </div>
               <div className="document-list-item-meta">
-                {doc.status === "ERROR" && <span className="error-text">{doc.error_message}</span>}
+                {(doc.status === "ERROR" || doc.status === "EMPTY") && (
+                  <span className="error-text">{doc.error_message}</span>
+                )}
                 <span>{formatBytes(doc.file_size)}</span>
                 <button className="link-button" onClick={() => removeDocument(doc.document_id)}>
                   Remove

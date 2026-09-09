@@ -37,6 +37,16 @@ pub struct InterviewHistoryEntry {
     #[serde(default)]
     pub company: Option<String>,
     pub turns: Vec<HistoryTurn>,
+    /// Whether this entry has been confirmed written to
+    /// `public.interview_transcripts`. Starts `false` on every local save and
+    /// only ever flips to `true` from inside `mark_synced`, once the backend
+    /// upsert actually succeeds — never optimistically. `resync_pending_
+    /// interview_transcripts` retries every entry still `false`, which is how
+    /// a transcript survives a network drop that happened mid-interview: the
+    /// local copy is never in question (see `save`), only whether the
+    /// website's copy caught up yet.
+    #[serde(default)]
+    pub synced: bool,
 }
 
 #[derive(Default)]
@@ -79,13 +89,6 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-fn new_id() -> String {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-    format!("hist-{:x}-{:x}", now_ms(), n)
-}
-
 #[tauri::command]
 pub fn list_interview_history(
     app: AppHandle,
@@ -100,23 +103,30 @@ pub fn list_interview_history(
     entries
 }
 
-/// Archives one finished Interview Mode session. Called only when the user
-/// closes the overlay and confirms the interview is over — an empty `turns`
-/// list (nothing was ever asked) is skipped so idle opens don't clutter
-/// history.
+/// Saves the current state of one Interview Mode session — called
+/// repeatedly during a session (once after every completed Ask AI turn, see
+/// `InterviewOverlay.tsx`) and once more when the overlay closes, always
+/// with the same client-generated `id` so every call after the first is an
+/// upsert rather than a new entry. This is what makes a transcript durable
+/// against a crash, a force-quit, or an app restart mid-interview: nothing
+/// waits until the session "ends" to be written, because plenty of sessions
+/// never end cleanly. An empty `turns` list (nothing completed yet) is
+/// skipped so idle opens don't clutter history.
 ///
 /// Also best-effort mirrors the entry to Supabase (`interview_transcripts`)
-/// so the website can show it — this only ever happens going forward from
-/// when this shipped, never backfilling whatever's already sitting in the
-/// local JSON file from before. Sync runs in the background after the local
+/// so the website can show it. Sync runs in the background after the local
 /// save/return, on its own tokio task: a slow or failed network call must
-/// never delay archiving locally (which always has to succeed, session or
-/// no) or surface as an error the user has no way to act on.
+/// never delay saving locally (which always has to succeed) or surface as
+/// an error the user has no way to act on. A failed sync leaves `synced:
+/// false` on the local entry, which `resync_pending_interview_transcripts`
+/// retries later (e.g. on the next app start) — so a network interruption
+/// during the interview delays the website copy, it never loses it.
 #[tauri::command]
-pub async fn archive_interview_session(
+pub async fn save_interview_session(
     app: AppHandle,
     store: tauri::State<'_, HistoryStore>,
     state: State<'_, AppState>,
+    id: String,
     started_at_ms: u64,
     role: Option<String>,
     company: Option<String>,
@@ -126,44 +136,99 @@ pub async fn archive_interview_session(
         return Ok(None);
     }
     let entry = InterviewHistoryEntry {
-        id: new_id(),
+        id,
         started_at_ms,
         ended_at_ms: now_ms(),
         role: role.filter(|s| !s.trim().is_empty()),
         company: company.filter(|s| !s.trim().is_empty()),
         turns,
+        synced: false,
     };
 
-    {
+    upsert_local(&app, &store, entry.clone())?;
+    spawn_sync(&app, &state, entry.clone()).await;
+    Ok(Some(entry))
+}
+
+/// Retries the backend sync for every locally-saved entry not yet confirmed
+/// synced. Called on app startup so an entry that only made it to the local
+/// JSON file (interview ended while offline, or mid-sync when the app was
+/// killed) still reaches the dashboard once connectivity/auth is back,
+/// without the user having to do anything.
+#[tauri::command]
+pub async fn resync_pending_interview_transcripts(
+    app: AppHandle,
+    store: tauri::State<'_, HistoryStore>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let pending: Vec<InterviewHistoryEntry> = {
         let mut guard = store.0.lock().unwrap();
         if guard.is_empty() {
             *guard = load(&app);
         }
-        guard.push(entry.clone());
-        save(&app, &guard)?;
+        guard.iter().filter(|e| !e.synced).cloned().collect()
+    };
+    for entry in pending {
+        spawn_sync(&app, &state, entry).await;
     }
+    Ok(())
+}
 
-    if let Ok(access_token) = crate::auth::current_access_token(&state).await {
-        let entry_for_sync = entry.clone();
+fn upsert_local(
+    app: &AppHandle,
+    store: &tauri::State<'_, HistoryStore>,
+    entry: InterviewHistoryEntry,
+) -> Result<(), String> {
+    let mut guard = store.0.lock().unwrap();
+    if guard.is_empty() {
+        *guard = load(app);
+    }
+    match guard.iter_mut().find(|e| e.id == entry.id) {
+        Some(existing) => *existing = entry,
+        None => guard.push(entry),
+    }
+    save(app, &guard)
+}
+
+async fn spawn_sync(app: &AppHandle, state: &State<'_, AppState>, entry: InterviewHistoryEntry) {
+    if let Ok(access_token) = crate::auth::current_access_token(state).await {
+        let app = app.clone();
         tokio::spawn(async move {
-            if let Err(err) = sync_to_backend(&access_token, &entry_for_sync).await {
-                log::warn!("failed to sync interview transcript to backend: {err}");
+            match sync_to_backend(&access_token, &entry).await {
+                Ok(()) => mark_synced(&app, &entry.id),
+                Err(err) => log::warn!("failed to sync interview transcript to backend: {err}"),
             }
         });
     }
-
-    Ok(Some(entry))
 }
 
-/// Mirrors one history entry into `public.interview_transcripts` via
+fn mark_synced(app: &AppHandle, id: &str) {
+    let store = app.state::<HistoryStore>();
+    let mut guard = store.0.lock().unwrap();
+    if guard.is_empty() {
+        *guard = load(app);
+    }
+    if let Some(entry) = guard.iter_mut().find(|e| e.id == id) {
+        entry.synced = true;
+    }
+    if let Err(err) = save(app, &guard) {
+        log::warn!("failed to persist interview transcript sync state: {err}");
+    }
+}
+
+/// Upserts one history entry into `public.interview_transcripts` via
 /// PostgREST directly (same pattern as `auth::client::get_entitlement` —
-/// no dedicated Edge Function needed for a plain authenticated insert).
-/// `user_id` is never sent explicitly: the column defaults to `auth.uid()`
-/// in the migration, derived from the same verified JWT this bearer token
-/// carries, so there's no client-suppliable field an attacker could use to
-/// write into someone else's row.
+/// no dedicated Edge Function needed). `Prefer: resolution=merge-duplicates`
+/// makes this an `insert ... on conflict (id) do update` against the
+/// primary key, which is what lets the same session be synced repeatedly
+/// (once per completed turn) instead of only once at the end. `user_id` is
+/// never sent explicitly: the column defaults to `auth.uid()` in the
+/// migration, derived from the same verified JWT this bearer token carries,
+/// so there's no client-suppliable field an attacker could use to write
+/// into or reassign someone else's row.
 async fn sync_to_backend(access_token: &str, entry: &InterviewHistoryEntry) -> Result<(), String> {
     let body = serde_json::json!({
+        "id": entry.id,
         "started_at_ms": entry.started_at_ms,
         "ended_at_ms": entry.ended_at_ms,
         "role": entry.role,
@@ -175,7 +240,7 @@ async fn sync_to_backend(access_token: &str, entry: &InterviewHistoryEntry) -> R
         .post(format!("{SUPABASE_URL}/rest/v1/interview_transcripts"))
         .header("apikey", SUPABASE_ANON_KEY)
         .bearer_auth(access_token)
-        .header("Prefer", "return=minimal")
+        .header("Prefer", "resolution=merge-duplicates,return=minimal")
         .json(&body)
         .send()
         .await
@@ -187,18 +252,4 @@ async fn sync_to_backend(access_token: &str, entry: &InterviewHistoryEntry) -> R
         return Err(format!("{status}: {text}"));
     }
     Ok(())
-}
-
-#[tauri::command]
-pub fn delete_interview_history_entry(
-    app: AppHandle,
-    store: tauri::State<'_, HistoryStore>,
-    id: String,
-) -> Result<(), String> {
-    let mut guard = store.0.lock().unwrap();
-    if guard.is_empty() {
-        *guard = load(&app);
-    }
-    guard.retain(|e| e.id != id);
-    save(&app, &guard)
 }

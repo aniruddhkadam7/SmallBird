@@ -125,6 +125,19 @@ function App() {
     };
   }, []);
 
+  // Retries syncing any interview transcript that's saved locally but never
+  // confirmed reaching the dashboard (see history.rs's `synced` flag) — e.g.
+  // an interview that ended while offline, or mid-sync when the app was
+  // last killed. Runs once per launch, after sign-in is confirmed, so a
+  // transcript that only made it to the local file still shows up on the
+  // dashboard without the user having to do anything.
+  useEffect(() => {
+    if (!authSession?.loggedIn) return;
+    invoke("resync_pending_interview_transcripts").catch((e) =>
+      console.error("Failed to resync pending interview transcripts:", e),
+    );
+  }, [authSession?.loggedIn]);
+
   // History/status content only has room to render once the user has
   // natively maximized/resized the window larger than its compact toolbar
   // footprint — there is no in-app expand control anymore, so this tracks
@@ -223,7 +236,14 @@ function App() {
 
   const startInterview = useCallback(
     async (force = false) => {
-      uploadDocumentContext(INTERVIEW_CONTEXT_SECTIONS, interviewContext);
+      // Awaited so extraction genuinely finishes — and interviewContext is
+      // updated with the resulting status/documentId — before the overlay
+      // opens and the first question can be asked. Previously this was
+      // fire-and-forget, so a slow PDF extraction (or one that hadn't even
+      // started yet) could lose the race against the interviewer's first
+      // question, silently answering with no CV/JD context at all.
+      const uploaded = await uploadDocumentContext(INTERVIEW_CONTEXT_SECTIONS, interviewContext);
+      setInterviewContext(uploaded);
 
       // Mints the session's Deepgram key and starts the metered
       // interview_sessions row server-side. Any rejection here (not logged
@@ -483,6 +503,7 @@ function App() {
                         sections={INTERVIEW_CONTEXT_SECTIONS}
                         state={interviewContext}
                         onChange={setInterviewContext}
+                        isLive={sessionState === "LISTENING"}
                       />
                     </div>
                   </div>

@@ -1353,6 +1353,38 @@ body.compact-transparent {
   color: var(--text-faint);
 }
 
+.setup-section-status {
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.setup-section-status-ready {
+  color: var(--success);
+}
+
+.setup-section-status-uploading {
+  color: var(--text-faint);
+}
+
+.setup-section-status-error,
+.setup-section-status-empty {
+  color: var(--danger);
+}
+
+.setup-section-error {
+  font-size: 0.78rem;
+  margin: 0;
+}
+
+.setup-section-actions {
+  display: flex;
+  justify-content: flex-end;
+  grid-column: 1 / -1;
+}
+
 .setup-section-body {
   display: flex;
   flex-direction: column;

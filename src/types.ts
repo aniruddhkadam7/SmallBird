@@ -72,7 +72,7 @@ export interface AnalysisProgressEvent {
 
 export type DocumentType = "RESUME" | "JOB_DESCRIPTION" | "ADDITIONAL_CONTEXT";
 
-export type DocumentStatus = "READY" | "ERROR";
+export type DocumentStatus = "READY" | "EMPTY" | "ERROR";
 
 export interface DocumentMetadata {
   document_id: string;

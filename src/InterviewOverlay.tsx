@@ -243,6 +243,17 @@ export function InterviewOverlay() {
   // starts).
   const suppressFinalIdRef = useRef<string | null>(null);
   const sessionStartedAtRef = useRef(Date.now());
+  // Stable id for the session currently in progress, generated once and
+  // reused on every `save_interview_session` call for it (see the
+  // turns-effect below and closeOverlay) — that's what makes each call an
+  // upsert of the same row instead of a new one, so a transcript is durable
+  // against a crash/quit mid-interview rather than only ever written once
+  // at the end.
+  const sessionIdRef = useRef(crypto.randomUUID());
+  // How many completed turns have been saved so far for the current
+  // session — only re-save when this count grows, so streaming updates to
+  // an in-flight (still-pending) answer don't trigger redundant saves.
+  const savedTurnCountRef = useRef(0);
   // Mirrors `busy` for the event listeners, which close over stale state
   // otherwise. Answer deltas must keep landing regardless of re-renders.
   const busyRef = useRef(false);
@@ -455,6 +466,27 @@ export function InterviewOverlay() {
     return () => window.clearInterval(id);
   }, []);
 
+  // Persists progress after every completed Ask AI turn, not just when the
+  // overlay is closed — a transcript must survive a crash, force-quit, app
+  // restart, or lost network mid-interview, none of which give this
+  // component a chance to run its own close/cleanup code. Each call is an
+  // upsert (same sessionIdRef for the whole session), so this just keeps
+  // extending the same saved entry rather than creating a new one per turn.
+  // Only fires when the completed-turn count actually grows, so streaming
+  // deltas into a still-pending answer don't trigger a save per keystroke.
+  useEffect(() => {
+    const completed = turns.filter((t) => !t.pending && !t.failed && t.answer.trim());
+    if (completed.length <= savedTurnCountRef.current) return;
+    savedTurnCountRef.current = completed.length;
+    invoke("save_interview_session", {
+      id: sessionIdRef.current,
+      startedAtMs: sessionStartedAtRef.current,
+      role: settings.role.trim() || null,
+      company: settings.company.trim() || null,
+      turns: completed.map((t) => ({ question: t.question, answer: t.answer, askedAtMs: t.askedAt })),
+    }).catch((e) => console.error("Failed to save interview progress:", e));
+  }, [turns, settings.role, settings.company]);
+
   // Live countdown: fetch the plan balance once per session (on mount, and
   // again whenever the reused overlay window resets for a new interview —
   // see the overlay:reset-session listener below), then tick it down every
@@ -552,6 +584,8 @@ export function InterviewOverlay() {
       suppressFinalIdRef.current = null;
       busyRef.current = false;
       sessionStartedAtRef.current = Date.now();
+      sessionIdRef.current = crypto.randomUUID();
+      savedTurnCountRef.current = 0;
       setElapsedSeconds(0);
       getEntitlement()
         .then((info) => setRemainingSecondsAtStart(Math.round(info.remainingMinutes * 60)))
@@ -833,10 +867,13 @@ export function InterviewOverlay() {
     dismissOverlay();
   }, [dismissOverlay]);
 
-  // Archives the Q&A turns so far as one history entry. Turns still
+  // Does one final save of the Q&A turns for this session — by the time this
+  // runs, every completed turn has typically already been saved by the
+  // turns-effect above; this mainly just finalizes ended_at_ms and catches
+  // any turn that completed in the same tick as closing. Turns still
   // pending/failed are skipped — only completed exchanges are worth keeping.
-  // An empty result (nothing ever asked) is a no-op on the Rust side, so
-  // opening and closing without using it never clutters history.
+  // An empty result (nothing ever asked) is a no-op, so opening and closing
+  // without using it never clutters history.
   //
   // When there's something to show for it, this hands off to the "your
   // transcript is ready" summary (see showEndedSummary) instead of hiding
@@ -848,23 +885,26 @@ export function InterviewOverlay() {
   // show_overlay_window reuses the existing webview (see interview_mode/
   // window.rs) purely for speed, so this component never remounts and its
   // React state would otherwise survive from one interview into the next.
-  // Clearing turns/question/committedRef/sessionStartedAtRef here, right
-  // after archiving, is what makes the *next* "Start Interview" actually
-  // start blank instead of resuming the just-archived conversation.
+  // Clearing turns/question/committedRef/sessionStartedAtRef/sessionIdRef
+  // here, right after saving, is what makes the *next* "Start Interview"
+  // actually start blank instead of resuming the just-saved conversation.
   const closeOverlay = useCallback(async () => {
     setConfirmingClose(false);
     const completed = turns
       .filter((t) => !t.pending && !t.failed && t.answer.trim())
       .map((t) => ({ question: t.question, answer: t.answer, askedAtMs: t.askedAt }));
-    try {
-      await invoke("archive_interview_session", {
-        startedAtMs: sessionStartedAtRef.current,
-        role: settings.role.trim() || null,
-        company: settings.company.trim() || null,
-        turns: completed,
-      });
-    } catch (e) {
-      console.error("Failed to archive interview session:", e);
+    if (completed.length > 0) {
+      try {
+        await invoke("save_interview_session", {
+          id: sessionIdRef.current,
+          startedAtMs: sessionStartedAtRef.current,
+          role: settings.role.trim() || null,
+          company: settings.company.trim() || null,
+          turns: completed,
+        });
+      } catch (e) {
+        console.error("Failed to save interview session:", e);
+      }
     }
 
     if (autoAiTimerRef.current) {
@@ -875,6 +915,8 @@ export function InterviewOverlay() {
     pendingPartialIdRef.current = null;
     suppressFinalIdRef.current = null;
     sessionStartedAtRef.current = Date.now();
+    sessionIdRef.current = crypto.randomUUID();
+    savedTurnCountRef.current = 0;
     setTurns([]);
     setQuestion("");
     setError(null);

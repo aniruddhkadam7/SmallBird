@@ -112,6 +112,16 @@ pub async fn upload_document(
     let file_size = bytes.len() as u64;
     let now = now_secs();
     let (status, error_message, text) = match extract_text(&filename, &bytes) {
+        // A scanned/image-only PDF (or an otherwise-valid but blank file) extracts
+        // "successfully" to nothing usable — surface that distinctly from READY so
+        // callers don't treat it as attached when the AI has nothing to work with.
+        // `latest_ready_text` only matches "READY", so EMPTY records are correctly
+        // never used as context.
+        Ok(text) if text.trim().is_empty() => (
+            "EMPTY".to_string(),
+            Some("no readable text found in this file".to_string()),
+            String::new(),
+        ),
         Ok(text) => ("READY".to_string(), None, text),
         Err(e) => ("ERROR".to_string(), Some(e), String::new()),
     };
