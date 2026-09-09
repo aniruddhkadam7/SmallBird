@@ -122,7 +122,12 @@ Deno.serve(async (req) => {
         if (await alreadyProcessed(eventType, order.id)) break;
 
         const minutes = await getPlanMinutes(planId);
-        await admin.rpc("increment_entitlement_minutes", { p_user_id: userId, p_minutes: minutes });
+        await admin.rpc("increment_entitlement_minutes", {
+          p_user_id: userId,
+          p_minutes: minutes,
+          p_source: "PURCHASE",
+          p_reference_id: order.id,
+        });
 
         // Logged so "how many Interview Passes has this user bought" is a
         // real query, not something inferred from the minute balance.
@@ -170,14 +175,26 @@ Deno.serve(async (req) => {
         if (await alreadyProcessed(eventType, payment.id)) break;
 
         const minutes = await getPlanMinutes(planId);
-        await admin.from("subscriptions").upsert({
-          user_id: userId,
-          plan: planId,
-          status: "active",
-          current_period_end: new Date(subscription.current_end * 1000).toISOString(),
-        });
+        // onConflict: "user_id" targets the unique constraint added in
+        // 0014_lock_down_entitlement_rpcs.sql — without it, every renewal
+        // charge inserted a brand-new subscriptions row instead of updating
+        // the existing one, leaving duplicate/stale rows per user.
+        await admin.from("subscriptions").upsert(
+          {
+            user_id: userId,
+            plan: planId,
+            status: "active",
+            current_period_end: new Date(subscription.current_end * 1000).toISOString(),
+          },
+          { onConflict: "user_id" },
+        );
         await admin.from("entitlements").update({ plan_id: planId }).eq("user_id", userId);
-        await admin.rpc("increment_entitlement_minutes", { p_user_id: userId, p_minutes: minutes });
+        await admin.rpc("increment_entitlement_minutes", {
+          p_user_id: userId,
+          p_minutes: minutes,
+          p_source: "PURCHASE",
+          p_reference_id: payment.id,
+        });
 
         const chargedEmail = await lookupUserEmail(userId);
         await notifyOwner(

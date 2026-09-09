@@ -24,24 +24,39 @@ Deno.serve(async (req) => {
 
     const minutesConsumed = actualDurationSeconds / 60;
 
-    const { error: updateErr } = await entitlement.admin
+    // `.eq("status", "active").eq("usage_deducted", false)` makes this
+    // update match at most once per session, ever — a session that's
+    // already completed/terminated (e.g. force-ended from another device)
+    // or already reported matches zero rows. The decrement RPC below only
+    // runs when this update actually claimed the row, so the same
+    // sessionId can never deduct minutes twice, and a session that never
+    // matched never deducts at all.
+    const { data: updatedSession, error: updateErr } = await entitlement.admin
       .from("interview_sessions")
       .update({
         status: "completed",
         ended_at: new Date().toISOString(),
         actual_duration_seconds: Math.round(actualDurationSeconds),
         minutes_consumed: minutesConsumed,
+        usage_deducted: true,
       })
       .eq("id", sessionId)
       .eq("user_id", entitlement.userId) // belt-and-suspenders alongside RLS
-      .eq("status", "active");
+      .eq("status", "active")
+      .eq("usage_deducted", false)
+      .select("id")
+      .maybeSingle();
 
     if (updateErr) throw updateErr;
 
-    await entitlement.admin.rpc("decrement_entitlement_minutes", {
-      p_user_id: entitlement.userId,
-      p_minutes: minutesConsumed,
-    });
+    if (updatedSession) {
+      await entitlement.admin.rpc("decrement_entitlement_minutes", {
+        p_user_id: entitlement.userId,
+        p_minutes: minutesConsumed,
+        p_source: "USAGE",
+        p_reference_id: sessionId,
+      });
+    }
 
     await entitlement.admin.from("usage_events").insert({
       user_id: entitlement.userId,
