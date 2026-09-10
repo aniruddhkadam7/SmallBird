@@ -145,9 +145,11 @@ export function OverlaySettingsPanel({
         )}
         {settings.captureProtection && (
           <p className="overlay-settings-note">
-            Some older screen-share/screenshot tools show an excluded window as a black box
-            instead of hiding it properly — a Windows-level limitation, not a bug here. Turn this
-            off if that's happening and you'd rather the overlay just stay visible.
+            Some screen-share/screenshot tools show an excluded window as a black box instead of
+            hiding it properly — a Windows-level limitation, not a bug here. It happens most often
+            when sharing your <em>entire screen</em>; sharing a single window/tab instead usually
+            avoids it. Turn this off if you still see a black box and would rather the overlay just
+            stay visible.
           </p>
         )}
       </div>

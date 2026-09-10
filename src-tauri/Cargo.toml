@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "0.1.14"
+version = "0.1.15"
 description = "Smallbird — AI interview copilot"
 authors = ["you"]
 edition = "2021"
@@ -72,4 +72,5 @@ tokio = { version = "1", features = ["time", "sync", "macros"] }
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 xcap = "0.9.8"
 base64 = "0.23.1"
+tauri-plugin-log = "2"
 

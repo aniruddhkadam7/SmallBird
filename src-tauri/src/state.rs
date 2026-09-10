@@ -5,6 +5,7 @@ use std::thread::JoinHandle;
 
 use crate::audio::{PauseSignal, StopSignal};
 use crate::auth::AuthSession;
+use crate::backend::ConversationStateSnapshot;
 use crate::documents::DocumentRecord;
 use crate::stt::SttSession;
 use crate::transcript::{RecordingState, TranscriptManager};
@@ -60,6 +61,14 @@ pub struct AppState {
     /// Protection" toggle can turn it off on purpose, which the watchdog
     /// must not fight). Starts `true`: capture protection is on by default.
     pub overlay_capture_protection_desired: AtomicBool,
+    /// Long-range Interview Mode conversation memory (current topic/entity +
+    /// entities established earlier in the session) — see
+    /// `ConversationStateSnapshot`. Kept separate from `transcript`/
+    /// `documents` because it tracks the *ask* flow's own state, not
+    /// recording/STT or uploaded files. Reset to default at the start of a
+    /// fresh Interview Mode session (see `ask_interview_question`, which
+    /// resets it whenever the frontend sends empty history).
+    pub conversation_state: Mutex<ConversationStateSnapshot>,
 }
 
 impl Default for AppState {
@@ -71,6 +80,7 @@ impl Default for AppState {
             auth_session: Mutex::default(),
             stt_session: Mutex::default(),
             overlay_capture_protection_desired: AtomicBool::new(true),
+            conversation_state: Mutex::default(),
         }
     }
 }

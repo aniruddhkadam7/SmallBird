@@ -5,6 +5,7 @@
 //! each rule; only the mechanical translation to Rust is new here.
 
 use crate::backend::AskRequest;
+use super::conversation::{classify_intent, resolution_block};
 use super::ChatMessage;
 
 pub const SYSTEM_PROMPT: &str = "FORMATTING IS MANDATORY ON EVERY REPLY: use real Markdown. Bold at least one key term with **double asterisks**. For anything with more than one point, reason, or step, use a real Markdown numbered list (\"1. \", \"2. \") or bullets (\"- \") — never one long paragraph. This applies to every single answer below, no exceptions, regardless of anything else in this prompt.
@@ -424,6 +425,17 @@ fn build_user_prompt(request: &AskRequest) -> String {
 
     parts.push(format!("The interviewer asks:\n{}", request.question));
 
+    // Resolve the question against the conversation so far BEFORE the
+    // format/length instructions below, so the model sees "here is what this
+    // question is actually asking about" before it starts reasoning about
+    // how to shape the answer. See `prompts::conversation` for why this
+    // exists — the model's own inference from raw replayed history alone
+    // was not reliable enough for short, bare-noun follow-ups.
+    let intent = classify_intent(&request.question, !request.conversation_history.is_empty());
+    if let Some(block) = resolution_block(intent, request.conversation_state.as_ref(), request.conversation_history.last()) {
+        parts.push(block);
+    }
+
     let format_line = match classify_format(&request.question) {
         Some(hint) => format!("{hint}\n\n"),
         None => "Pick the matching FORMAT from the system prompt above.\n\n".to_string(),
@@ -492,6 +504,7 @@ mod tests {
             english_level: "simple".to_string(),
             humanization: "natural".to_string(),
             llm_provider: None,
+            conversation_state: None,
         }
     }
 
@@ -613,6 +626,35 @@ mod tests {
         assert_eq!(messages[3].role, "user");
         assert!(!messages[3].cacheable);
         assert!(!messages[3].content.contains("Backend Engineer")); // moved out of the per-question message
+    }
+
+    #[test]
+    fn build_messages_injects_resolution_block_for_bare_followup() {
+        use crate::backend::ConversationStateSnapshot;
+
+        let mut req = base_request("tech stack?");
+        req.conversation_history = vec![ConversationTurn {
+            question: "Tell me about your projects".to_string(),
+            answer: "I built a Security Co-pilot project.".to_string(),
+        }];
+        req.conversation_state = Some(ConversationStateSnapshot {
+            current_topic: None,
+            current_entity: Some("Security Co-pilot project".to_string()),
+            referenced_entities: vec![],
+        });
+
+        let messages = build_messages(&req);
+        let current_question_message = messages.last().unwrap();
+        assert!(current_question_message.content.contains("FOLLOW-UP"));
+        assert!(current_question_message.content.contains("Security Co-pilot project"));
+    }
+
+    #[test]
+    fn build_messages_has_no_resolution_block_for_first_question() {
+        let req = base_request("tech stack?");
+        let messages = build_messages(&req);
+        let current_question_message = messages.last().unwrap();
+        assert!(!current_question_message.content.contains("CONVERSATION CONTEXT"));
     }
 
     #[test]

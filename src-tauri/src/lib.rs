@@ -31,7 +31,6 @@ use state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    env_logger::init();
     tls_init::ensure_installed();
 
     tauri::Builder::default()
@@ -50,6 +49,12 @@ pub fn run() {
                 if let Some(window) = app.get_webview_window(interview_mode::OVERLAY_WINDOW_LABEL) {
                     let _ = window.show();
                     let _ = window.set_focus();
+                    // Reassert exclusion on the redirect path too — this is
+                    // the one way the overlay gets re-shown outside
+                    // `show_overlay_window`/its watchdog, so it shouldn't
+                    // rely solely on the watchdog's next tick (up to 3s
+                    // away) to notice if affinity had silently dropped.
+                    windows_capture_protection::reconcile(&window, interview_mode::OVERLAY_WINDOW_LABEL, true);
                 }
                 return;
             }
@@ -65,10 +70,36 @@ pub fn run() {
                 return;
             }
             if let Some(window) = app.get_webview_window(main_window::MAIN_WINDOW_LABEL) {
+                // Same reasoning as `overlay_window::close_overlay_window`'s
+                // fix: reassert before showing a main window that's been
+                // hidden (and therefore unchecked by the watchdog) for an
+                // unknown amount of time.
+                windows_capture_protection::reconcile(&window, main_window::MAIN_WINDOW_LABEL, true);
                 let _ = window.show();
                 let _ = window.set_focus();
             }
         }))
+        // `env_logger` alone (the previous setup) writes to a stderr handle
+        // that simply doesn't exist in a release build — `main.rs` marks
+        // release builds `windows_subsystem = "windows"` (no console
+        // attached), so every `log::info!`/`log::warn!` call, including the
+        // screen-capture-exclusion diagnostics in `overlay_window.rs` and
+        // `windows_capture_protection.rs`, was silently discarded in
+        // production. It only ever "worked" when run via `cargo tauri dev`,
+        // which keeps the console subsystem and a real attached console.
+        // Logging to a file (in addition to stdout, so `cargo tauri dev`
+        // keeps showing logs in the terminal) means a packaged build's
+        // actual capture-exclusion failures are inspectable after the fact
+        // instead of invisible by construction.
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Info)
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                ])
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -112,9 +143,7 @@ pub fn run() {
             // Best-effort: an older Windows build without the API just
             // leaves the window normally capturable.
             if let Some(main_window) = app.get_webview_window(main_window::MAIN_WINDOW_LABEL) {
-                if let Err(err) = windows_capture_protection::enable_capture_exclusion(&main_window) {
-                    log::warn!("failed to exclude main window from screen capture: {err}");
-                }
+                windows_capture_protection::reconcile(&main_window, main_window::MAIN_WINDOW_LABEL, true);
             }
 
             main_window::position_top_center(&app.handle().clone());
@@ -128,6 +157,10 @@ pub fn run() {
             overlay_window::spawn_unconditional_capture_protection_watchdog(
                 app.handle().clone(),
                 main_window::MAIN_WINDOW_LABEL,
+            );
+            overlay_window::spawn_unconditional_capture_protection_watchdog(
+                app.handle().clone(),
+                bubble_window::BUBBLE_WINDOW_LABEL,
             );
             interview_mode::spawn_capture_protection_watchdog(app.handle().clone());
 
@@ -164,6 +197,7 @@ pub fn run() {
             documents::list_documents,
             documents::delete_document,
             commands::quit_app,
+            commands::signal_window_content_ready,
             commands::minimize_to_bubble,
             commands::restore_from_bubble,
             commands::drag_bubble_window,

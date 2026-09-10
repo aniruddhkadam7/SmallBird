@@ -838,6 +838,38 @@ pub fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+/// Reasserts capture exclusion for the calling window once its content has
+/// actually loaded and painted — called once from `src/main.tsx` on mount,
+/// so it fires for whichever window (main/overlay/bubble) just loaded,
+/// `window` being Tauri's automatically-injected handle to the caller.
+///
+/// Why this exists: exclusion is applied at window-creation time, before
+/// the window has any content — it's hidden and empty at that point (see
+/// `build_overlay_window`/`build_bubble_window`/the main-window setup in
+/// `lib.rs`, all of which call `windows_capture_protection::reconcile`
+/// before `.show()`). WebView2 attaches its own compositor/DirectComposition
+/// visual to the window asynchronously afterward, as content actually loads.
+/// If DWM builds its alternate "what a capture consumer sees instead of this
+/// excluded window" composition before that visual is attached, and doesn't
+/// regenerate it once it is, the capture-facing surface can end up wrong for
+/// the rest of that window's life — no watchdog reassertion or later
+/// `reconcile` call would fix that on its own, since the *value* being
+/// re-set never actually changes, only presence-of-real-content does.
+/// Reapplying once real content is on-screen gives DWM a fully-initialized
+/// window to build that alternate composition from in the first place.
+#[tauri::command]
+pub fn signal_window_content_ready(window: tauri::WebviewWindow, app: tauri::AppHandle) {
+    let label = window.label().to_string();
+    let desired = if label == crate::interview_mode::OVERLAY_WINDOW_LABEL {
+        app.try_state::<AppState>()
+            .map(|s| s.overlay_capture_protection_desired.load(std::sync::atomic::Ordering::Relaxed))
+            .unwrap_or(true)
+    } else {
+        true
+    };
+    crate::windows_capture_protection::reconcile(&window, &label, desired);
+}
+
 /// Called from the title bar's Minimize button instead of a real OS
 /// minimize: the main window is `skip_taskbar` (see main_window.rs), so a
 /// genuinely minimized window would have no taskbar entry to restore it

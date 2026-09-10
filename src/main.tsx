@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import App from "./App";
 import { InterviewOverlay } from "./InterviewOverlay";
@@ -44,3 +45,17 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <Root />
   </React.StrictMode>,
 );
+
+// See `commands::signal_window_content_ready` in Rust for why this exists:
+// screen-capture exclusion is applied to this window before it has any
+// content (while still hidden, right after creation) — WebView2 attaches its
+// own compositor visual asynchronously as content actually loads, and if
+// that happens after DWM has already built its capture-facing composition
+// for this window, the exclusion can end up rendering as a black box to
+// screen-share viewers for the rest of this window's life. Reasserting once
+// a real frame has actually been painted (the rAF) gives DWM a fully
+// initialized window to compose from. Runs once per window (main, overlay,
+// and bubble all load this same entry point).
+requestAnimationFrame(() => {
+  invoke("signal_window_content_ready").catch(() => {});
+});

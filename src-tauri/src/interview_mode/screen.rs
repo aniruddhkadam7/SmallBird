@@ -3,8 +3,8 @@
 //! usual interview context (see `personal::prompts::screen`).
 //!
 //! The Interview Mode overlay window is excluded from screen capture at the
-//! OS level (see `windows_capture_protection::enable_capture_exclusion`,
-//! applied when the overlay is shown) via `SetWindowDisplayAffinity`, which
+//! OS level (see `windows_capture_protection::reconcile`, applied when the
+//! overlay is shown) via `SetWindowDisplayAffinity`, which
 //! affects capture through the same OS compositor APIs `xcap` uses on
 //! Windows — so this full-screen grab never includes the overlay itself,
 //! without this module needing to know anything about window positions.

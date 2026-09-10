@@ -1,8 +1,10 @@
 pub mod ask;
 pub mod analysis;
+pub mod conversation;
 pub mod notes;
 pub mod screen;
 pub mod setup;
+pub mod state_tracker;
 
 /// One chat message, mirroring `apps/backend/app/services/llm/base.py`'s
 /// `LLMMessage` — role is "system" | "user" | "assistant" throughout this

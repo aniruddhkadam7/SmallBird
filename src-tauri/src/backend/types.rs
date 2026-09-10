@@ -129,6 +129,35 @@ pub struct ConversationTurn {
     pub answer: String,
 }
 
+/// Lightweight, persisted-across-the-whole-session conversation state — the
+/// thing that survives even after `conversation_history` has been trimmed to
+/// its last few turns (see `interview_mode::commands::MAX_HISTORY_TURNS`).
+/// Raw turn replay is deliberately bounded to keep prompt size/latency in
+/// check; this small struct is the long-range memory that keeps a long
+/// interview coherent without re-sending the whole transcript. Updated
+/// asynchronously after each answer (see
+/// `personal::DirectLlmClient::update_conversation_state`) so maintaining it
+/// never adds latency to the answer the user is waiting on.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ConversationStateSnapshot {
+    /// What specific aspect is currently being discussed — e.g. "tech
+    /// stack", "role and responsibilities", "challenges faced" — as opposed
+    /// to *which* project/company that aspect belongs to (see
+    /// `current_entity`). `None` once the conversation moves back to
+    /// something generic/topic-establishing.
+    pub current_topic: Option<String>,
+    /// The specific named project/company/system currently being discussed
+    /// (e.g. "Security Co-pilot project"). This is what short follow-ups
+    /// like "tech stack?" or "what was your role?" implicitly refer back to.
+    pub current_entity: Option<String>,
+    /// Distinct entities established earlier in the session, most-recent
+    /// first — used so a topic switch ("tell me about another project") can
+    /// point the model at something not already covered, and so a much
+    /// later follow-up can still be resolved even after it has fallen out of
+    /// the replayed history window.
+    pub referenced_entities: Vec<String>,
+}
+
 /// Every context field here is optional and purely additive — the backend
 /// answers the question with or without any of them (see
 /// `apps/backend/app/services/ask_service.py`).
@@ -164,6 +193,10 @@ pub struct AskRequest {
     /// apps/backend/app/schemas/ask.py's AskRequest.llm_provider).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub llm_provider: Option<String>,
+    /// Long-range conversation memory (see `ConversationStateSnapshot`) —
+    /// independent of, and not trimmed alongside, `conversation_history`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversation_state: Option<ConversationStateSnapshot>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

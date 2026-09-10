@@ -43,9 +43,7 @@ pub fn ensure_bubble_window(app: &AppHandle) {
     }
     match build_bubble_window(app) {
         Ok(window) => {
-            if let Err(err) = windows_capture_protection::enable_capture_exclusion(&window) {
-                log::warn!("ensure_bubble_window: failed to exclude bubble from screen capture: {err}");
-            }
+            windows_capture_protection::reconcile(&window, BUBBLE_WINDOW_LABEL, true);
             position_bottom_right(&window);
         }
         Err(err) => log::warn!("ensure_bubble_window: failed to pre-create bubble window: {err}"),
@@ -71,6 +69,12 @@ pub fn show_bubble_window(app: &AppHandle) -> Result<(), String> {
     if is_new {
         position_bottom_right(&window);
     }
+    // Reassert on every show, not just at creation — the watchdog spawned in
+    // lib.rs only reasserts while the window is already visible, so a drop
+    // that happens while the bubble is hidden (e.g. the app minimized to it,
+    // the machine slept, then it's shown again) would otherwise go
+    // unnoticed until the watchdog's next tick.
+    windows_capture_protection::reconcile(&window, BUBBLE_WINDOW_LABEL, true);
     window.show().map_err(|e| e.to_string())?;
     log::info!(
         "show_bubble_window: after show(), is_visible={:?} outer_position={:?}",
@@ -92,6 +96,14 @@ pub fn restore_from_bubble(app: &AppHandle) -> Result<(), String> {
         window.hide().map_err(|e| e.to_string())?;
     }
     if let Some(main) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        // Same reasoning as `overlay_window::close_overlay_window`'s
+        // matching fix: the main window has been hidden (and therefore
+        // unchecked by the watchdog, which skips invisible windows) for
+        // however long the bubble was up — reconcile before it reappears
+        // rather than trusting whatever exclusion state it left hidden
+        // with. `reconcile` only ever touches the display-affinity window
+        // property, never position/size/frame.
+        windows_capture_protection::reconcile(&main, MAIN_WINDOW_LABEL, true);
         main.show().map_err(|e| e.to_string())?;
         main.set_focus().map_err(|e| e.to_string())?;
     }
@@ -99,6 +111,7 @@ pub fn restore_from_bubble(app: &AppHandle) -> Result<(), String> {
 }
 
 fn build_bubble_window(app: &AppHandle) -> Result<WebviewWindow, String> {
+    let event_app = app.clone();
     WebviewWindowBuilder::new(app, BUBBLE_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
         .title("Smallbird")
         .inner_size(BUBBLE_SIDE, BUBBLE_SIDE)
@@ -113,6 +126,19 @@ fn build_bubble_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         .focused(false)
         .build()
         .map_err(|e| format!("failed to create bubble window: {e}"))
+        .inspect(|window| {
+            // See the matching comment in `overlay_window::build_overlay_window`
+            // — reacts immediately to a real OS monitor/DPI/move notification
+            // instead of waiting for the watchdog's next tick.
+            window.on_window_event(move |event| {
+                if matches!(event, tauri::WindowEvent::ScaleFactorChanged { .. } | tauri::WindowEvent::Moved(_)) {
+                    let Some(window) = event_app.get_webview_window(BUBBLE_WINDOW_LABEL) else {
+                        return;
+                    };
+                    windows_capture_protection::reconcile(&window, BUBBLE_WINDOW_LABEL, true);
+                }
+            });
+        })
 }
 
 fn position_bottom_right(window: &WebviewWindow) {

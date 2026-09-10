@@ -94,24 +94,20 @@ pub fn show_overlay_window(app: &AppHandle, label: &str, title: &str) -> Result<
         // there's nothing stale to clear at that point anyway.
         let _ = existing.emit("overlay:reset-session", ());
         center_overlay_on_screen(&existing, false);
+        // Reassert exclusion BEFORE show()/set_focus() — doing it after
+        // leaves a brief window where a live screen share could capture an
+        // unprotected frame. Only reassert if the user hasn't explicitly
+        // turned it off — reusing this window (close/reopen) must not
+        // silently override a prior "Screen Capture Protection: off" choice.
+        let excluded = apply_desired_exclusion_logged(&existing, desired, label);
         existing.show().map_err(|e| e.to_string())?;
         existing.set_focus().map_err(|e| e.to_string())?;
-        // Only reassert exclusion if the user hasn't explicitly turned it
-        // off — reusing this window (close/reopen) must not silently
-        // override a prior "Screen Capture Protection: off" choice.
-        apply_desired_exclusion(&existing, desired)
+        excluded
     } else {
         let window = build_overlay_window(app, label, title)?;
         center_overlay_on_screen(&window, true);
 
-        let excluded = apply_desired_exclusion(&window, desired);
-        if desired {
-            if excluded {
-                log::info!("overlay '{label}': screen-capture exclusion ENABLED");
-            } else {
-                log::warn!("overlay '{label}': screen-capture exclusion FAILED/UNAVAILABLE");
-            }
-        }
+        let excluded = apply_desired_exclusion_logged(&window, desired, label);
 
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
@@ -141,6 +137,23 @@ pub fn close_overlay_window(app: &AppHandle, label: &str) -> Result<(), String> 
     }
     log::info!("close_overlay_window '{label}': overlay hidden, showing main");
     if let Some(main) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        // The main window sits hidden for the entire interview (see
+        // `show_overlay_window`'s `main.hide()`) — the capture-protection
+        // watchdogs skip windows that aren't visible, so nothing has been
+        // checking or reasserting its exclusion this whole time. Unlike
+        // every other place a protected window becomes visible again, this
+        // `show()` used to do nothing to confirm/repair exclusion first —
+        // if it had silently degraded at any point while hidden (sleep,
+        // display/DPI change, GPU driver reset, or DWM's capture-facing
+        // composition going stale — see `windows_capture_protection`'s
+        // module docs), the interviewer's very first glimpse of the
+        // reappearing main window could be the black box, exactly matching
+        // reports of the overlay working fine *during* the interview but
+        // the black box appearing right as it ends. `reconcile` here is a
+        // pure window-property call (SetWindowDisplayAffinity only) — it
+        // does not touch position/size/frame, so there's no risk of it
+        // producing a visible artifact of its own.
+        windows_capture_protection::reconcile(&main, MAIN_WINDOW_LABEL, true);
         main.show().map_err(|e| e.to_string())?;
         main.set_focus().map_err(|e| e.to_string())?;
     }
@@ -194,13 +207,8 @@ pub fn set_overlay_capture_exclusion(app: &AppHandle, label: &str, enabled: bool
     let Some(window) = app.get_webview_window(label) else {
         return Err(format!("overlay window '{label}' is not open"));
     };
-    if enabled {
-        let excluded = windows_capture_protection::enable_capture_exclusion(&window).is_ok();
-        Ok(OverlayCaptureStatus { excluded })
-    } else {
-        windows_capture_protection::disable_capture_exclusion(&window)?;
-        Ok(OverlayCaptureStatus { excluded: false })
-    }
+    let excluded = apply_desired_exclusion_logged(&window, enabled, label);
+    Ok(OverlayCaptureStatus { excluded })
 }
 
 fn capture_protection_desired(app: &AppHandle) -> bool {
@@ -209,17 +217,25 @@ fn capture_protection_desired(app: &AppHandle) -> bool {
         .unwrap_or(true)
 }
 
-/// Applies (or removes) capture exclusion on `window` to match `desired`,
-/// returning whether it ends up excluded. Centralizes the "respect the
-/// user's toggle, don't just always turn exclusion on" logic shared by
-/// `show_overlay_window` and the watchdog below.
-fn apply_desired_exclusion(window: &WebviewWindow, desired: bool) -> bool {
-    if desired {
-        windows_capture_protection::enable_capture_exclusion(window).is_ok()
-    } else {
-        let _ = windows_capture_protection::disable_capture_exclusion(window);
-        false
+/// Applies (or removes) capture exclusion on `window` to match `desired`
+/// through the single authoritative `windows_capture_protection::reconcile`,
+/// then reads back the real applied state via `get_capture_affinity` rather
+/// than assuming `reconcile`'s request succeeded — this is the only way to
+/// see, from a packaged build's log file, whether `SetWindowDisplayAffinity`
+/// genuinely failed in production versus succeeded but was defeated further
+/// down the OS/driver capture pipeline (see `windows_capture_protection`'s
+/// module docs) — a distinction `cargo check`/local dev testing alone cannot
+/// surface. `label` alone is the key `reconcile` tracks idempotency against,
+/// since that's the stable identity across a window being hidden/reshown or
+/// even recreated.
+fn apply_desired_exclusion_logged(window: &WebviewWindow, desired: bool, label: &str) -> bool {
+    windows_capture_protection::reconcile(window, label, desired);
+    if !desired {
+        return false;
     }
+    windows_capture_protection::get_capture_affinity(window)
+        .map(|a| a == windows_capture_protection::WDA_EXCLUDEFROMCAPTURE_VALUE)
+        .unwrap_or(false)
 }
 
 /// Periodically re-asserts the overlay's screen-capture exclusion while it's
@@ -240,22 +256,7 @@ fn apply_desired_exclusion(window: &WebviewWindow, desired: bool) -> bool {
 /// guards against exclusion silently *not being active at all* when it was
 /// supposed to be.
 pub fn spawn_capture_protection_watchdog(app: AppHandle, label: &'static str) {
-    tauri::async_runtime::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(3));
-        loop {
-            interval.tick().await;
-            let Some(window) = app.get_webview_window(label) else {
-                continue;
-            };
-            if !window.is_visible().unwrap_or(false) {
-                continue;
-            }
-            let desired = capture_protection_desired(&app);
-            if desired {
-                let _ = windows_capture_protection::enable_capture_exclusion(&window);
-            }
-        }
-    });
+    run_capture_protection_watchdog(app, label, false);
 }
 
 /// Same self-healing reassertion as `spawn_capture_protection_watchdog`, but
@@ -263,15 +264,74 @@ pub fn spawn_capture_protection_watchdog(app: AppHandle, label: &'static str) {
 /// unconditionally keeps exclusion asserted whenever the window is visible,
 /// no `AppState` flag to consult.
 pub fn spawn_unconditional_capture_protection_watchdog(app: AppHandle, label: &'static str) {
+    run_capture_protection_watchdog(app, label, true);
+}
+
+/// Shared watchdog loop for `spawn_capture_protection_watchdog` /
+/// `spawn_unconditional_capture_protection_watchdog`. Beyond the original
+/// "re-assert if dropped" behavior, this now:
+///
+/// - Reads back the *actual* affinity via `GetWindowDisplayAffinity` instead
+///   of blindly re-setting it, so logs can distinguish a genuine drop (the
+///   flag itself reverted — the case this watchdog was originally built for)
+///   from the flag staying correctly set the whole time. Re-setting an
+///   already-correct value is a no-op at the DWM level, so if the black box
+///   some users see is actually DWM's separate capture-facing composition of
+///   this window getting stuck (not the affinity flag reverting), the
+///   original watchdog would never have noticed *or* fixed it — every tick
+///   would look identical whether or not that's happening.
+/// - Logs a heartbeat with the window's live HWND value periodically, so a
+///   real session's log file can directly answer "was the watchdog still
+///   ticking when the black box appeared?" and "did the HWND silently change
+///   (window recreated) without a fresh exclusion call?" instead of having
+///   to assume either.
+fn run_capture_protection_watchdog(app: AppHandle, label: &'static str, unconditional: bool) {
     tauri::async_runtime::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(3));
+        let mut tick: u64 = 0;
+        let mut last_hwnd: Option<isize> = None;
         loop {
             interval.tick().await;
+            tick += 1;
             let Some(window) = app.get_webview_window(label) else {
                 continue;
             };
-            if window.is_visible().unwrap_or(false) {
-                let _ = windows_capture_protection::enable_capture_exclusion(&window);
+            if !window.is_visible().unwrap_or(false) {
+                continue;
+            }
+            let desired = unconditional || capture_protection_desired(&app);
+            if !desired {
+                continue;
+            }
+
+            let hwnd_value = window.hwnd().ok().map(|h| h.0 as isize);
+            let hwnd_changed = last_hwnd.is_some() && last_hwnd != hwnd_value;
+            if hwnd_changed {
+                log::info!(
+                    "watchdog '{label}': HWND changed ({:?} -> {:?}) — window was recreated since last tick",
+                    last_hwnd,
+                    hwnd_value
+                );
+            }
+            last_hwnd = hwnd_value;
+
+            let affinity = windows_capture_protection::get_capture_affinity(&window).ok();
+            let dropped = affinity.is_some_and(|a| a != windows_capture_protection::WDA_EXCLUDEFROMCAPTURE_VALUE);
+            if dropped || hwnd_changed || affinity.is_none() {
+                log::warn!(
+                    "watchdog '{label}': affinity={:?} (expected {:#x}) hwnd_changed={hwnd_changed} — reconciling",
+                    affinity,
+                    windows_capture_protection::WDA_EXCLUDEFROMCAPTURE_VALUE
+                );
+                windows_capture_protection::reconcile(&window, label, true);
+            } else if tick.is_multiple_of(10) {
+                // Heartbeat only — proves the watchdog is still actually
+                // ticking without doing any Win32 write when nothing is
+                // wrong. Deliberately does NOT touch window position, size,
+                // or frame (see this module's doc comment on why a past
+                // "compositor nudge" here caused a real, locally-visible
+                // black-box regression) — a healthy tick is a pure read.
+                log::info!("watchdog '{label}': heartbeat tick {tick}, hwnd={:?}, affinity OK", hwnd_value);
             }
         }
     });
@@ -292,6 +352,8 @@ pub fn resize_overlay(app: &AppHandle, label: &str, fraction: f64) -> Result<(),
 }
 
 fn build_overlay_window(app: &AppHandle, label: &str, title: &str) -> Result<WebviewWindow, String> {
+    let event_app = app.clone();
+    let event_label = label.to_string();
     WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
         .title(title)
         .inner_size(OVERLAY_FALLBACK_SIDE * OVERLAY_WIDTH_RATIO, OVERLAY_FALLBACK_SIDE)
@@ -310,6 +372,29 @@ fn build_overlay_window(app: &AppHandle, label: &str, title: &str) -> Result<Web
         .focused(false)
         .build()
         .map_err(|e| format!("failed to create overlay window '{label}': {e}"))
+        .inspect(|window| {
+            // Despite older comments elsewhere claiming reassertion happens
+            // "on monitor/DPI change", nothing in this codebase actually
+            // listened for those OS events before this —
+            // `center_overlay_on_screen`'s reassertion only ran when
+            // application code happened to call it (e.g. `resize_overlay`),
+            // not in response to a real Windows monitor/DPI/move
+            // notification. A genuine one of those, or Windows moving the
+            // window during a display topology change, previously had to
+            // wait for the watchdog's next tick (up to 3s) before exclusion
+            // was reasserted. This closes that gap by reacting immediately.
+            window.on_window_event(move |event| {
+                if matches!(event, tauri::WindowEvent::ScaleFactorChanged { .. } | tauri::WindowEvent::Moved(_)) {
+                    let Some(window) = event_app.get_webview_window(&event_label) else {
+                        return;
+                    };
+                    if !capture_protection_desired(&event_app) {
+                        return;
+                    }
+                    windows_capture_protection::reconcile(&window, &event_label, true);
+                }
+            });
+        })
 }
 
 /// How far above true vertical center the overlay sits, so it reads as
@@ -372,6 +457,6 @@ fn center_overlay_on_screen(window: &WebviewWindow, apply_default_size: bool) {
     // briefly capturable. Respects the user's own toggle, same as the
     // watchdog.
     if capture_protection_desired(window.app_handle()) {
-        let _ = windows_capture_protection::enable_capture_exclusion(window);
+        windows_capture_protection::reconcile(window, window.label(), true);
     }
 }

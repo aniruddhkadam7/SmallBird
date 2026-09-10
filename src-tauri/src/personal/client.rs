@@ -6,11 +6,12 @@
 //! for the actual HTTP call.
 
 use crate::backend::{
-    AskRequest, AskResponse, InterviewAnalysisRequest, NoteSummary, NotesAskRequest, NotesAskResponse,
-    NotesSummaryRequest, OverallInterviewAnalysis, QuestionAnalysis, SetupAnalysisRequest, SetupAnalysisResponse,
+    AskRequest, AskResponse, ConversationStateSnapshot, InterviewAnalysisRequest, NoteSummary, NotesAskRequest,
+    NotesAskResponse, NotesSummaryRequest, OverallInterviewAnalysis, QuestionAnalysis, SetupAnalysisRequest,
+    SetupAnalysisResponse,
 };
 
-use super::prompts::{analysis, ask, notes, screen, setup, ChatMessage};
+use super::prompts::{analysis, ask, notes, screen, setup, state_tracker, ChatMessage};
 use super::provider::LlmProvider;
 use super::providers::{anthropic, openai};
 
@@ -115,6 +116,21 @@ impl DirectLlmClient {
         })
         .await?;
         Ok(full_answer)
+    }
+
+    /// Updates the persisted conversation-state snapshot (topic/entity/
+    /// referenced entities — see `backend::ConversationStateSnapshot`) after
+    /// an answer has already been streamed back to the user. Called
+    /// fire-and-forget from a spawned task (see
+    /// `interview_mode::commands::ask_interview_question`) so this extra
+    /// call never adds latency to the answer the user is waiting on. Returns
+    /// `None` on any failure (network error, unparseable response) — the
+    /// caller then simply keeps using the prior state for the next
+    /// question, which is a safe degrade, not a user-visible error.
+    pub async fn update_conversation_state(&self, prior: &ConversationStateSnapshot, question: &str, answer: &str) -> Option<ConversationStateSnapshot> {
+        let messages = state_tracker::build_messages(prior, question, answer);
+        let raw = self.generate(&messages, 0.0, state_tracker::MAX_TOKENS).await.ok()?;
+        state_tracker::parse_response(prior, &raw)
     }
 
     // ---- Interview analysis ----

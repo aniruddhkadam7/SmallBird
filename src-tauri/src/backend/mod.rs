@@ -7,7 +7,7 @@
 mod types;
 
 pub use types::{
-    AnalysisProgressEvent, AskRequest, AskResponse, ConversationTurn,
+    AnalysisProgressEvent, AskRequest, AskResponse, ConversationStateSnapshot, ConversationTurn,
     InterviewAnalysisRequest, NoteContext,
     NoteSummary, NotesAskRequest, NotesAskResponse, NotesSummaryRequest, OverallInterviewAnalysis,
     QuestionAnalysis, SetupAnalysisRequest, SetupAnalysisResponse,

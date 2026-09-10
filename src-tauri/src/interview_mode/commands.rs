@@ -2,10 +2,10 @@
 //! ASK AI flow (uploaded CV/job-description full text -> LLM -> streamed
 //! answer).
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::auth::client::{SUPABASE_ANON_KEY, SUPABASE_URL};
-use crate::backend::{AskRequest, ConversationTurn};
+use crate::backend::{AskRequest, ConversationStateSnapshot, ConversationTurn};
 use crate::state::AppState;
 
 use super::window::{self, OverlayCaptureStatus};
@@ -250,7 +250,9 @@ pub async fn ask_interview_question(
     }
     let options = options.unwrap_or_default();
 
+    let is_fresh_session = history.as_ref().map(|h| h.is_empty()).unwrap_or(true);
     let history = trim_history(history.unwrap_or_default());
+    let conversation_state = current_conversation_state(&state, is_fresh_session)?;
 
     let resume_text = crate::documents::latest_ready_text(&state, "RESUME");
     let uploaded_job_description = crate::documents::latest_ready_text(&state, "JOB_DESCRIPTION");
@@ -273,6 +275,7 @@ pub async fn ask_interview_question(
         english_level: options.english_level,
         humanization: options.humanization,
         llm_provider: options.llm_provider,
+        conversation_state: Some(conversation_state.clone()),
     };
 
     let app_for_events = app.clone();
@@ -284,7 +287,7 @@ pub async fn ask_interview_question(
         let _ = app_for_events.emit("interview-mode:answer-delta", delta);
     };
     let access_token = crate::auth::current_access_token(&state).await?;
-    let answer = crate::personal::DirectLlmClient::new(request.llm_provider.as_deref(), access_token)
+    let answer = crate::personal::DirectLlmClient::new(request.llm_provider.as_deref(), access_token.clone())
         .ask_stream(&request, on_delta)
         .await?;
     // Safety net for when the model organizes the answer correctly but skips
@@ -293,6 +296,8 @@ pub async fn ask_interview_question(
     // unprocessed text as it arrives); only this final, authoritative answer
     // is corrected.
     let answer = crate::personal::format_fixup::ensure_markdown_structure(&answer);
+
+    spawn_conversation_state_update(app.clone(), access_token, request.llm_provider.clone(), conversation_state, request.question.clone(), answer.clone());
 
     let ctx = crate::hardware::perf_context(&app);
     if let Some(ms) = first_token.elapsed_ms() {
@@ -303,6 +308,38 @@ pub async fn ask_interview_question(
 
     let _ = app.emit("interview-mode:answer-complete", &answer);
     Ok(answer)
+}
+
+/// Reads the persisted long-range conversation state, resetting it first
+/// when this is the first question of a fresh Interview Mode session (the
+/// frontend sends empty history for the first question of every new
+/// overlay session) — otherwise state left over from a previous, unrelated
+/// interview would leak into this one.
+fn current_conversation_state(state: &State<'_, AppState>, is_fresh_session: bool) -> Result<ConversationStateSnapshot, String> {
+    let mut slot = state.conversation_state.lock().map_err(|e| e.to_string())?;
+    if is_fresh_session {
+        *slot = ConversationStateSnapshot::default();
+    }
+    Ok(slot.clone())
+}
+
+/// Fire-and-forget background update of the persisted conversation state
+/// (see `ConversationStateSnapshot` and `personal::DirectLlmClient::update_conversation_state`).
+/// Runs after the answer has already been streamed back, so it never adds
+/// latency to the response the user is waiting on; any failure here is
+/// silently ignored — the next question just keeps using the state as of
+/// before this turn, which is a safe degrade.
+fn spawn_conversation_state_update(app: AppHandle, access_token: String, llm_provider: Option<String>, prior_state: ConversationStateSnapshot, question: String, answer: String) {
+    tauri::async_runtime::spawn(async move {
+        let client = crate::personal::DirectLlmClient::new(llm_provider.as_deref(), access_token);
+        if let Some(updated) = client.update_conversation_state(&prior_state, &question, &answer).await {
+            let state = app.state::<AppState>();
+            let lock_result = state.conversation_state.lock();
+            if let Ok(mut slot) = lock_result {
+                *slot = updated;
+            }
+        }
+    });
 }
 
 /// Fixed label used both as the pending turn's question text (frontend side)
@@ -330,7 +367,9 @@ pub async fn analyze_screen_question(
 
     let question_to_answer = Stopwatch::start();
     let options = options.unwrap_or_default();
+    let is_fresh_session = history.as_ref().map(|h| h.is_empty()).unwrap_or(true);
     let history = trim_history(history.unwrap_or_default());
+    let conversation_state = current_conversation_state(&state, is_fresh_session)?;
 
     let png_bytes = crate::interview_mode::screen::capture_primary_screen_png()?;
     let image_base64 = base64::engine::general_purpose::STANDARD.encode(png_bytes);
@@ -352,6 +391,7 @@ pub async fn analyze_screen_question(
         english_level: options.english_level,
         humanization: options.humanization,
         llm_provider: options.llm_provider,
+        conversation_state: Some(conversation_state.clone()),
     };
 
     let app_for_events = app.clone();
@@ -363,10 +403,12 @@ pub async fn analyze_screen_question(
         let _ = app_for_events.emit("interview-mode:answer-delta", delta);
     };
     let access_token = crate::auth::current_access_token(&state).await?;
-    let answer = crate::personal::DirectLlmClient::new(request.llm_provider.as_deref(), access_token)
+    let answer = crate::personal::DirectLlmClient::new(request.llm_provider.as_deref(), access_token.clone())
         .ask_screen_stream(&request, image_base64, on_delta)
         .await?;
     let answer = crate::personal::format_fixup::ensure_markdown_structure(&answer);
+
+    spawn_conversation_state_update(app.clone(), access_token, request.llm_provider.clone(), conversation_state, request.question.clone(), answer.clone());
 
     let ctx = crate::hardware::perf_context(&app);
     if let Some(ms) = first_token.elapsed_ms() {

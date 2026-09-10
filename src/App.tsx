@@ -153,6 +153,29 @@ function App() {
     };
   }, []);
 
+  // Re-signals capture-exclusion readiness (see `signal_window_content_ready`
+  // in Rust and the matching comment on the `interview-mode:overlay-closed`
+  // listener above) on every focus gain, not just the one explicit event —
+  // this window is shown+focused together from several different Rust call
+  // sites (ending an interview, restoring from the floating bubble, the
+  // single-instance relaunch handler), and focus is the one signal common to
+  // all of them without needing a dedicated event wired from each. Cheap and
+  // idempotent (`reconcile` on the Rust side no-ops when nothing's actually
+  // changed), so firing on every focus rather than only "the interesting"
+  // ones is fine.
+  useEffect(() => {
+    const unlistenPromise = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (focused) {
+        requestAnimationFrame(() => {
+          invoke("signal_window_content_ready").catch(() => {});
+        });
+      }
+    });
+    return () => {
+      unlistenPromise.then((f) => f());
+    };
+  }, []);
+
   // Closing the main window (its own ✕, Alt+F4, etc.) previously just quit
   // without ever telling the backend — same class of bug as the overlay's
   // own close controls, but for the whole app. Intercepting the close lets
@@ -213,6 +236,9 @@ function App() {
       // interview_sessions row stays "active" until the 2-minute stale-
       // heartbeat sweep clears it, blocking a new session in the meantime.
       invoke("end_backend_session").catch(() => {});
+      // (Capture-exclusion re-signaling for this reshow is handled by the
+      // window-focus listener below, since `close_overlay_window` in Rust
+      // always pairs `main.show()` with `main.set_focus()`.)
     });
     return () => {
       unlisten.then((f) => f());
