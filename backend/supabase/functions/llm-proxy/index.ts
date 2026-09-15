@@ -52,11 +52,30 @@ Deno.serve(async (req) => {
       headers["anthropic-beta"] = "prompt-caching-2024-07-31";
     }
 
-    const providerResp = await fetch(providerUrl, {
+    // OpenAI's paid "priority" service tier trades money for materially
+    // lower latency on the same model (the same lever ChatGPT's own
+    // first-party surface benefits from vs. the plain public API) — this is
+    // an unverified account entitlement, not a certainty, so this always
+    // falls back to a normal request rather than ever failing a live
+    // interview answer over it. Only attempted for a real (non-streaming
+    // cost-check) first try; see the fallback below.
+    let providerResp = await fetch(providerUrl, {
       method: "POST",
       headers,
-      body: JSON.stringify(payload),
+      body: JSON.stringify(provider === "openai" ? { ...payload, service_tier: "priority" } : payload),
     });
+
+    if (provider === "openai" && providerResp.status === 400) {
+      const probe = await providerResp.clone().text();
+      if (probe.includes("service_tier") || probe.includes("priority")) {
+        console.warn("OpenAI priority service_tier unavailable on this account, falling back to default tier");
+        providerResp = await fetch(providerUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+        });
+      }
+    }
 
     // Best-effort cost accounting — a streaming body won't parse as JSON
     // here, which is fine, it just skips logging for that call.

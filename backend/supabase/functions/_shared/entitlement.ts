@@ -19,24 +19,36 @@ export class EntitlementError extends Error {
   }
 }
 
+/// Every caller of `requireEntitlement` has `verify_jwt = true` set in
+/// `config.toml`, so the Supabase platform has already verified this JWT's
+/// signature and expiry before the function even runs — a second
+/// `auth.getUser(jwt)` round-trip to the Auth server here was pure duplicate
+/// latency on every single request (this sits directly in front of the LLM
+/// call in `llm-proxy`, so it was adding to the "thinking..." delay users see
+/// on every question). Decoding the already-verified token locally to read
+/// `sub` gets the same userId with no network call.
+function userIdFromVerifiedJwt(jwt: string): string {
+  const payload = jwt.split(".")[1];
+  if (!payload) throw new EntitlementError(401, "Malformed session token");
+  const base64 = payload.replace(/-/g, "+").replace(/_/g, "/").padEnd(payload.length + ((4 - (payload.length % 4)) % 4), "=");
+  try {
+    const claims = JSON.parse(atob(base64));
+    if (typeof claims.sub !== "string" || !claims.sub) throw new Error("no sub claim");
+    return claims.sub;
+  } catch {
+    throw new EntitlementError(401, "Invalid session token");
+  }
+}
+
 export async function requireEntitlement(req: Request): Promise<Entitlement> {
   const authHeader = req.headers.get("Authorization") ?? "";
   const jwt = authHeader.replace(/^Bearer\s+/i, "");
   if (!jwt) throw new EntitlementError(401, "Missing Authorization header");
 
+  const userId = userIdFromVerifiedJwt(jwt);
+
   const url = Deno.env.get("SUPABASE_URL")!;
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-  const userClient = createClient(url, anonKey, {
-    global: { headers: { Authorization: `Bearer ${jwt}` } },
-  });
-  const { data: userData, error: userErr } = await userClient.auth.getUser(jwt);
-  if (userErr || !userData?.user) {
-    throw new EntitlementError(401, "Invalid or expired session");
-  }
-  const userId = userData.user.id;
-
   const admin = createClient(url, serviceKey);
 
   const { data: ent, error: entErr } = await admin

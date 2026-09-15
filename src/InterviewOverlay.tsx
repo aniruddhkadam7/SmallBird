@@ -419,19 +419,29 @@ export function InterviewOverlay() {
   // proportionally more words per tick so a long buffered answer still
   // finishes in a reasonable time instead of visibly crawling.
   useEffect(() => {
-    const TICK_MS = 30;
+    // The backend delivers most answers in one late burst rather than a
+    // true token-by-token trickle (confirmed live: `llm_first_token` and
+    // `llm_total` telemetry land within ~10-30ms of each other), so the old
+    // fixed "1 + remaining/150 words per 30ms tick" pacing was really just
+    // adding its own multi-second typewriter delay on top of the real
+    // network/model wait — for a ~100-word answer that's several extra
+    // seconds of pure animation the interviewer is left waiting through for
+    // no reason. This reveals a fraction of whatever's left each tick
+    // instead of a fixed word count, so the animation time shrinks
+    // geometrically with what's already on screen: it still reads as a
+    // smooth reveal, but the whole answer is fully visible in a couple
+    // hundred milliseconds regardless of length, instead of scaling with it.
+    const TICK_MS = 20;
+    const MIN_CHARS_PER_TICK = 12;
+    const REVEAL_FRACTION = 0.35;
     const advance = (full: string, shown: number): number => {
       const remaining = full.length - shown;
       if (remaining <= 0) return shown;
-      const wordsThisTick = 1 + Math.floor(remaining / 150);
-      let pos = shown;
-      for (let i = 0; i < wordsThisTick; i++) {
+      const charsThisTick = Math.max(MIN_CHARS_PER_TICK, Math.ceil(remaining * REVEAL_FRACTION));
+      let pos = Math.min(shown + charsThisTick, full.length);
+      if (pos < full.length) {
         const nextSpace = full.indexOf(" ", pos);
-        if (nextSpace === -1) {
-          pos = full.length;
-          break;
-        }
-        pos = nextSpace + 1;
+        pos = nextSpace === -1 ? full.length : nextSpace + 1;
       }
       return pos;
     };

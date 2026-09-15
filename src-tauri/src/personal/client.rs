@@ -28,7 +28,12 @@ use super::providers::{anthropic, openai};
 /// single forward pass (fast, no reasoning-token overhead, no
 /// `reasoning_effort`/`max_completion_tokens` workarounds needed) and not
 /// subject to that Markdown-suppression bias, so it's the pick for both
-/// speed and formatting together.
+/// speed and formatting together. `gpt-4o-mini` was tried as a faster
+/// alternative (live telemetry showed 3-5.7s time-to-first-token on `gpt-4o`
+/// for this prompt size) but produced noticeably vaguer answers live —
+/// e.g. restating the asked-about category ("Retrieval Performance
+/// Metrics") instead of naming real, specific frameworks/tools — which is a
+/// worse failure than the extra seconds during a live interview.
 fn default_model(provider: LlmProvider) -> &'static str {
     match provider {
         LlmProvider::OpenAi => "gpt-4o",
