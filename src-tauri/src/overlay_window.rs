@@ -117,14 +117,31 @@ pub fn show_overlay_window(app: &AppHandle, label: &str, title: &str) -> Result<
     if let Some(main) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         if let Err(e) = main.hide() {
             log::warn!("failed to hide main window when entering overlay '{label}': {e}");
+        } else {
+            windows_capture_protection::release_after_hide(&main, MAIN_WINDOW_LABEL);
         }
     }
 
     Ok(OverlayCaptureStatus { excluded })
 }
 
-/// Hides the overlay and brings the main window back, since it's hidden on
-/// entry (see `show_overlay_window`).
+/// Hides the overlay and collapses to the floating bubble rather than
+/// restoring the main window, since the main window is hidden on entry (see
+/// `show_overlay_window`).
+///
+/// Ending an interview does NOT mean the screen share has ended — the
+/// candidate is typically still sharing while they wrap up. The main window
+/// is the one surface that has been observed rendering as a solid black
+/// rectangle on the viewer's side of a share even while correctly carrying
+/// `WDA_EXCLUDEFROMCAPTURE`: measured against a real Teams "Entire Screen"
+/// share, the overlay and the bubble were both genuinely invisible while the
+/// main window was not. The black box is worse than the window simply being
+/// visible — an unexplained black rectangle on a shared screen is precisely
+/// the thing this app exists to avoid. So End lands on the bubble, which is
+/// known-good on that same evidence; clicking it restores the main window
+/// (see `bubble_window::restore_from_bubble`) once the user is ready, which
+/// is the deliberate action that should carry that risk rather than an
+/// automatic one they didn't ask for.
 ///
 /// Also emits `interview-mode:overlay-closed` to every window: the overlay
 /// and main window are separate webviews with no shared React state, so the
@@ -134,30 +151,14 @@ pub fn close_overlay_window(app: &AppHandle, label: &str) -> Result<(), String> 
     log::info!("close_overlay_window '{label}': on main thread, hiding");
     if let Some(window) = app.get_webview_window(label) {
         window.hide().map_err(|e| e.to_string())?;
+        // Must follow the hide, not precede it — see `release_after_hide`.
+        // Without this the overlay's excluded region stays carved out of a
+        // live screen share as a black rectangle after the interview ends.
+        windows_capture_protection::release_after_hide(&window, label);
     }
-    log::info!("close_overlay_window '{label}': overlay hidden, showing main");
-    if let Some(main) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-        // The main window sits hidden for the entire interview (see
-        // `show_overlay_window`'s `main.hide()`) — the capture-protection
-        // watchdogs skip windows that aren't visible, so nothing has been
-        // checking or reasserting its exclusion this whole time. Unlike
-        // every other place a protected window becomes visible again, this
-        // `show()` used to do nothing to confirm/repair exclusion first —
-        // if it had silently degraded at any point while hidden (sleep,
-        // display/DPI change, GPU driver reset, or DWM's capture-facing
-        // composition going stale — see `windows_capture_protection`'s
-        // module docs), the interviewer's very first glimpse of the
-        // reappearing main window could be the black box, exactly matching
-        // reports of the overlay working fine *during* the interview but
-        // the black box appearing right as it ends. `reconcile` here is a
-        // pure window-property call (SetWindowDisplayAffinity only) — it
-        // does not touch position/size/frame, so there's no risk of it
-        // producing a visible artifact of its own.
-        windows_capture_protection::reconcile(&main, MAIN_WINDOW_LABEL, true);
-        main.show().map_err(|e| e.to_string())?;
-        main.set_focus().map_err(|e| e.to_string())?;
-    }
-    log::info!("close_overlay_window '{label}': main shown, emitting event");
+    log::info!("close_overlay_window '{label}': overlay hidden, collapsing to bubble");
+    crate::bubble_window::show_bubble_window(app)?;
+    log::info!("close_overlay_window '{label}': bubble shown, emitting event");
     let _ = app.emit("interview-mode:overlay-closed", ());
     log::info!("close_overlay_window '{label}': done");
     Ok(())

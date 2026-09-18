@@ -101,7 +101,23 @@ enum ReconcileAction {
     Apply,
 }
 
-fn decide(cached: Option<AppliedState>, hwnd_value: isize, desired: bool) -> ReconcileAction {
+/// `actual_excluded` is what Windows currently reports for the window via
+/// `GetWindowDisplayAffinity`, or `None` when that read failed. It takes
+/// precedence over `cached`: the flag can be dropped underneath an unchanged
+/// HWND, and a cache entry saying "already applied" would then skip the very
+/// Win32 call meant to repair it — which is how `close_overlay_window`'s
+/// re-assert before showing the main window again silently became a no-op
+/// (visible in logs as a `close_overlay_window` block with no accompanying
+/// `[CaptureExclusion] label=main` line).
+fn decide(
+    cached: Option<AppliedState>,
+    actual_excluded: Option<bool>,
+    hwnd_value: isize,
+    desired: bool,
+) -> ReconcileAction {
+    if actual_excluded.is_some_and(|actual| actual != desired) {
+        return ReconcileAction::Apply;
+    }
     match cached {
         Some(state) if state.hwnd == hwnd_value && state.excluded == desired => ReconcileAction::Skip,
         _ => ReconcileAction::Apply,
@@ -139,10 +155,21 @@ pub fn reconcile(window: &WebviewWindow, label: &str, desired: bool) {
         return;
     }
 
+    // Ask Windows what the flag actually is right now rather than trusting
+    // the cache — see `decide`. Note a window that isn't currently visible
+    // reads back as `WDA_NONE` regardless of what was applied to it, so this
+    // errs toward re-applying for hidden windows, which is harmless: it's a
+    // pure window-property call with nothing to render.
+    let actual_excluded = {
+        let mut affinity = 0u32;
+        let read = unsafe { GetWindowDisplayAffinity(hwnd, &mut affinity) };
+        read.is_ok().then(|| affinity == WDA_EXCLUDEFROMCAPTURE.0)
+    };
+
     let mut reg = registry().lock().unwrap();
     let cached = reg.get(label).copied();
 
-    if decide(cached, hwnd_value, desired) == ReconcileAction::Skip {
+    if decide(cached, actual_excluded, hwnd_value, desired) == ReconcileAction::Skip {
         // True no-op: no Win32 call, nothing logged beyond this — reconcile
         // is meant to be callable from any lifecycle event (resize, focus,
         // visibility change) without spamming the log or issuing redundant
@@ -183,6 +210,27 @@ pub fn reconcile(window: &WebviewWindow, label: &str, desired: bool) {
     }
 }
 
+/// Releases the capture exclusion for a window that has just been hidden.
+///
+/// Hiding a window does **not** release the region DWM is holding for it. A
+/// hidden window that still carries `WDA_EXCLUDEFROMCAPTURE` leaves a solid
+/// black rectangle at its last on-screen bounds in any capture session that
+/// was *already running* — a live "Entire Screen" share — because DWM keeps
+/// carving that area out of the captured composition while no longer having
+/// any window content there to composite behind it. The artifact therefore
+/// appears only on hide (ending an interview), never while the window is
+/// visible, and persists for as long as the share does.
+///
+/// Call this immediately *after* `hide()`, never before: once the window is
+/// off-screen, dropping the flag cannot expose its contents to the capture,
+/// whereas clearing it while still visible would leak a frame. Every show
+/// path re-applies exclusion before the window becomes visible again (see
+/// `overlay_window::show_overlay_window` and `bubble_window`), so this does
+/// not weaken protection for the next session.
+pub fn release_after_hide(window: &WebviewWindow, label: &str) {
+    reconcile(window, label, false);
+}
+
 /// Drops any cached applied-state for `label` — call when a window is
 /// permanently closed/destroyed (not just hidden) so a future window built
 /// under the same label always gets a fresh `reconcile` apply rather than
@@ -203,19 +251,19 @@ mod tests {
 
     #[test]
     fn first_reconcile_for_a_label_always_applies() {
-        assert_eq!(decide(None, 0x1234, true), ReconcileAction::Apply);
+        assert_eq!(decide(None, Some(false), 0x1234, true), ReconcileAction::Apply);
     }
 
     #[test]
     fn matching_hwnd_and_state_is_skipped() {
         let cached = AppliedState { hwnd: 0x1234, excluded: true };
-        assert_eq!(decide(Some(cached), 0x1234, true), ReconcileAction::Skip);
+        assert_eq!(decide(Some(cached), Some(true), 0x1234, true), ReconcileAction::Skip);
     }
 
     #[test]
     fn changed_desired_state_forces_apply() {
         let cached = AppliedState { hwnd: 0x1234, excluded: true };
-        assert_eq!(decide(Some(cached), 0x1234, false), ReconcileAction::Apply);
+        assert_eq!(decide(Some(cached), Some(true), 0x1234, false), ReconcileAction::Apply);
     }
 
     #[test]
@@ -224,6 +272,21 @@ mod tests {
         // though the *desired* state is identical, the new HWND has never
         // actually had the flag applied to it, so this must not be skipped.
         let cached = AppliedState { hwnd: 0x1234, excluded: true };
-        assert_eq!(decide(Some(cached), 0x5678, true), ReconcileAction::Apply);
+        assert_eq!(decide(Some(cached), Some(true), 0x5678, true), ReconcileAction::Apply);
+    }
+
+    #[test]
+    fn flag_dropped_underneath_an_unchanged_hwnd_forces_apply() {
+        // The exact case that made `close_overlay_window`'s re-assert before
+        // `main.show()` a silent no-op: the cache still says "applied", the
+        // HWND hasn't changed, but Windows no longer has the flag set.
+        let cached = AppliedState { hwnd: 0x1234, excluded: true };
+        assert_eq!(decide(Some(cached), Some(false), 0x1234, true), ReconcileAction::Apply);
+    }
+
+    #[test]
+    fn unreadable_affinity_falls_back_to_the_cache() {
+        let cached = AppliedState { hwnd: 0x1234, excluded: true };
+        assert_eq!(decide(Some(cached), None, 0x1234, true), ReconcileAction::Skip);
     }
 }

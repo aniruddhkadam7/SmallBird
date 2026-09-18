@@ -43,7 +43,12 @@ pub fn ensure_bubble_window(app: &AppHandle) {
     }
     match build_bubble_window(app) {
         Ok(window) => {
-            windows_capture_protection::reconcile(&window, BUBBLE_WINDOW_LABEL, true);
+            // Deliberately does NOT apply capture exclusion here. This window
+            // is pre-created hidden and may stay hidden indefinitely, and a
+            // hidden window carrying `WDA_EXCLUDEFROMCAPTURE` leaves a black
+            // rectangle at its bounds in an already-running screen share (see
+            // `windows_capture_protection::release_after_hide`). Exclusion is
+            // applied by `show_bubble_window` before it is ever made visible.
             position_bottom_right(&window);
         }
         Err(err) => log::warn!("ensure_bubble_window: failed to pre-create bubble window: {err}"),
@@ -84,6 +89,7 @@ pub fn show_bubble_window(app: &AppHandle) -> Result<(), String> {
 
     if let Some(main) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         main.hide().map_err(|e| e.to_string())?;
+        windows_capture_protection::release_after_hide(&main, MAIN_WINDOW_LABEL);
         log::info!("show_bubble_window: after main.hide(), main is_visible={:?}", main.is_visible());
     }
     Ok(())
@@ -94,6 +100,7 @@ pub fn show_bubble_window(app: &AppHandle) -> Result<(), String> {
 pub fn restore_from_bubble(app: &AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(BUBBLE_WINDOW_LABEL) {
         window.hide().map_err(|e| e.to_string())?;
+        windows_capture_protection::release_after_hide(&window, BUBBLE_WINDOW_LABEL);
     }
     if let Some(main) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         // Same reasoning as `overlay_window::close_overlay_window`'s

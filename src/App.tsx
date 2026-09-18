@@ -40,9 +40,11 @@ type Popover = "MODEL" | "CONTEXT" | "SETTINGS" | "ACCOUNT" | "START_SETUP" | nu
 // backend/supabase/functions/llm-proxy's PROVIDER_URLS). "gemini" was
 // dropped when this build switched from BYOK to backend-metered (llm-proxy
 // has no Gemini support); "deepseek" is listed so the dropdown shows it but
-// stays disabled until a provider is actually built for it.
+// stays disabled until a provider is actually built for it. "anthropic" is
+// disabled too until an ANTHROPIC_API_KEY secret is funded (see
+// llmProviderSetting.ts) — re-enable once that key exists.
 const LLM_PROVIDERS: { value: LlmProvider; label: string; icon: typeof IconOpenAI; available: boolean }[] = [
-  { value: "anthropic", label: "Anthropic", icon: IconAnthropic, available: true },
+  { value: "anthropic", label: "Anthropic", icon: IconAnthropic, available: false },
   { value: "openai", label: "OpenAI", icon: IconOpenAI, available: true },
   { value: "deepseek", label: "DeepSeek", icon: IconDeepSeek, available: false },
 ];

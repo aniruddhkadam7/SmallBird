@@ -7,9 +7,9 @@ export type LlmProvider = "anthropic" | "openai" | "gemini" | "deepseek";
 
 const STORAGE_KEY = "smallbird:llm-provider";
 // Defaults to OpenAI rather than Anthropic since that's the provider with a
-// funded key set as a Supabase secret so far — switch back once an
-// ANTHROPIC_API_KEY secret is set, or just pick Anthropic from the header
-// dropdown once it's available.
+// funded key set as a Supabase secret so far. The header dropdown keeps
+// Anthropic disabled until an ANTHROPIC_API_KEY secret exists — re-enable
+// it there (App.tsx's LLM_PROVIDERS) once it does.
 const DEFAULT_PROVIDER: LlmProvider = "openai";
 
 // Only providers with a real backend implementation are ever sent on the
@@ -23,7 +23,11 @@ export function saveLlmProvider(provider: LlmProvider): void {
 
 export function loadLlmProvider(): LlmProvider {
   const raw = window.localStorage.getItem(STORAGE_KEY);
-  if (raw === "anthropic" || raw === "openai" || raw === "gemini" || raw === "deepseek") {
+  // "anthropic" is excluded even though it's a valid LlmProvider value: no
+  // ANTHROPIC_API_KEY secret is funded yet, so the header dropdown disables
+  // it, and a value saved before that change shouldn't stick around as the
+  // active selection.
+  if (raw === "openai" || raw === "gemini" || raw === "deepseek") {
     return raw;
   }
   return DEFAULT_PROVIDER;
