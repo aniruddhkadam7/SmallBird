@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { callAdminFunction, AdminApiError } from "@/lib/adminApi";
+import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function LoginPage() {
@@ -55,9 +56,14 @@ export default function LoginPage() {
       </div>
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-accent text-lg font-bold text-white shadow-sm">
-            S
-          </div>
+          <Image
+            src="/smallbird-mark.png"
+            alt="Smallbird"
+            width={44}
+            height={44}
+            priority
+            className="mb-3 h-11 w-11 drop-shadow-sm"
+          />
           <h1 className="text-xl font-semibold text-ink">Smallbird Admin</h1>
           <p className="mt-1 text-sm text-muted">Internal console -- authorized staff only.</p>
         </div>

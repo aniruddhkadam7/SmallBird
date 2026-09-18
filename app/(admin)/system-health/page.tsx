@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
 
@@ -12,6 +13,14 @@ interface SystemHealth {
   lastEntitlementLedgerWriteAt: string | null;
   lastInterviewSessionAt: string | null;
   sessionsMissingDuration7d: number;
+}
+
+interface IntegrityCheck {
+  severity: "RED" | "YELLOW";
+  check_name: string;
+  user_id: string;
+  email: string;
+  message: string;
 }
 
 function Stat({ label, value, tone }: { label: string; value: string | number; tone?: "danger" | "warn" | "ok" }) {
@@ -31,6 +40,7 @@ function Stat({ label, value, tone }: { label: string; value: string | number; t
 
 export default function SystemHealthPage() {
   const { data: health, error } = useAdminQuery<SystemHealth>("admin-system-health");
+  const { data: integrity } = useAdminQuery<{ checks: IntegrityCheck[] }>("admin-data-integrity");
 
   if (error instanceof AdminApiError && error.status === 403) return <Unauthorized />;
   if (!health) return null;
@@ -69,20 +79,68 @@ export default function SystemHealthPage() {
       <section>
         <h2 className="mb-2 text-sm font-semibold text-ink">Last activity</h2>
         <div className="card space-y-2 text-sm">
-          <div className="flex justify-between">
+          <div className="flex justify-between gap-3">
             <span className="text-muted">Last interview session started</span>
             <span>{health.lastInterviewSessionAt ? new Date(health.lastInterviewSessionAt).toLocaleString() : "never"}</span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between gap-3">
             <span className="text-muted">Last entitlement ledger write</span>
             <span>
               {health.lastEntitlementLedgerWriteAt ? new Date(health.lastEntitlementLedgerWriteAt).toLocaleString() : "never"}
             </span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between gap-3">
             <span className="text-muted">Last Razorpay webhook processed</span>
             <span>{health.lastWebhookEventAt ? new Date(health.lastWebhookEventAt).toLocaleString() : "never"}</span>
           </div>
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-sm font-semibold text-ink">
+          Data integrity{integrity && ` (${integrity.checks.length} issue${integrity.checks.length === 1 ? "" : "s"})`}
+        </h2>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Severity</th>
+                <th>Check</th>
+                <th>User</th>
+                <th>Message</th>
+              </tr>
+            </thead>
+            <tbody>
+              {integrity?.checks.map((c, i) => (
+                <tr key={i}>
+                  <td>
+                    <span className={`badge ${c.severity === "RED" ? "badge-danger" : "badge-warn"}`}>{c.severity}</span>
+                  </td>
+                  <td className="font-mono text-xs">{c.check_name}</td>
+                  <td>
+                    <Link href={`/users/${c.user_id}`} className="text-accent hover:underline">
+                      {c.email}
+                    </Link>
+                  </td>
+                  <td className="text-muted">{c.message}</td>
+                </tr>
+              ))}
+              {integrity && integrity.checks.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="py-8 text-center text-muted">
+                    No integrity issues found.
+                  </td>
+                </tr>
+              )}
+              {!integrity && (
+                <tr>
+                  <td colSpan={4} className="py-8 text-center text-muted">
+                    Running checks...
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
     </div>

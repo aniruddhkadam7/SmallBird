@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import Image from "next/image";
 import { Menu, X } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { SignOutButton } from "@/components/SignOutButton";
@@ -10,9 +11,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 function Brand() {
   return (
     <div className="flex min-w-0 items-center gap-2.5">
-      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent text-sm font-bold text-white">
-        S
-      </div>
+      <Image src="/smallbird-mark.png" alt="" width={32} height={32} className="h-8 w-8 flex-shrink-0" />
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold text-ink">Smallbird Admin</p>
         <p className="text-[11px] text-muted">Internal console</p>
