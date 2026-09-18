@@ -57,5 +57,9 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Also skip static files served straight out of /public or the app icon
+  // convention (images, fonts, etc.) -- an unauthenticated request for one
+  // of these, like the logo on /login itself, must not get redirected to
+  // /login and come back as HTML instead of the asset.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\.(?:png|jpg|jpeg|gif|svg|webp|ico|woff2?)$).*)"],
 };
