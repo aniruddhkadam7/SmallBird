@@ -4,6 +4,8 @@
 //! pipeline. No segment is ever classified as a "question" or otherwise interpreted —
 //! this module only accumulates text plus its timing/source metadata.
 
+pub mod journal;
+
 use crate::audio::AudioSource;
 use crate::stt::{SttEvent, SttEventKind};
 
@@ -159,6 +161,25 @@ impl TranscriptManager {
 
     pub fn mark_stopped(&mut self) {
         self.session.mark_stopped();
+    }
+
+    /// Promotes any still-in-progress (partial) text to a finalized segment.
+    /// Called when a recording stops: an utterance cut off mid-sentence has
+    /// only ever produced partials, and dropping them would lose the last
+    /// thing that was said. Returns the segments it added.
+    pub fn flush_partials(&mut self) -> Vec<TranscriptSegment> {
+        let pending: Vec<(AudioSource, TranscriptSegment)> = self.in_progress.drain().collect();
+        let mut flushed = Vec::new();
+        for (_, mut segment) in pending {
+            let Some(text) = segment.partial_text.take().filter(|t| !t.trim().is_empty()) else {
+                continue;
+            };
+            segment.final_text = Some(text);
+            segment.timestamp = now_ms();
+            self.session.segments.push(segment.clone());
+            flushed.push(segment);
+        }
+        flushed
     }
 
     /// Applies one STT event, returning the segment that changed (for emitting a

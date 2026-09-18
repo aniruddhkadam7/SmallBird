@@ -173,6 +173,10 @@ pub fn run() {
                 log::warn!("failed to register Ctrl+Shift+Space global hotkey: {err}");
             }
 
+            // Recovers transcripts a crashed/killed run left behind, then keeps
+            // retrying any that haven't reached the server yet.
+            history::spawn_background_tasks(app.handle().clone());
+
             bubble_window::ensure_bubble_window(&app.handle().clone());
             Ok(())
         })

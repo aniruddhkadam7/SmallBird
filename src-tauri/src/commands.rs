@@ -310,12 +310,27 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
                         }
 
                         let state = stt_events_app.state::<AppState>();
-                        let segment = state
-                            .transcript
-                            .lock()
-                            .ok()
-                            .and_then(|mut manager| manager.apply_event(event));
+                        let (segment, session_id, session_started_at_ms) = match state.transcript.lock() {
+                            Ok(mut manager) => {
+                                let segment = manager.apply_event(event);
+                                let session = manager.session();
+                                (segment, session.id.clone(), session.started_at_ms)
+                            }
+                            Err(_) => (None, String::new(), 0),
+                        };
                         if let Some(segment) = segment {
+                            // Written to disk before anything else touches it,
+                            // so a crash right after can't lose this sentence.
+                            if let Some(text) = segment.final_text.as_deref() {
+                                crate::history::journal_record(
+                                    &stt_events_app,
+                                    &session_id,
+                                    session_started_at_ms,
+                                    segment.source,
+                                    text,
+                                    segment.timestamp,
+                                );
+                            }
                             let _ = stt_events_app.emit("transcript:update", &segment);
                         }
                     }
@@ -495,6 +510,21 @@ pub fn stop_audio_capture(app: tauri::AppHandle, state: State<'_, AppState>) -> 
 
     {
         let mut transcript = state.transcript.lock().map_err(|e| e.to_string())?;
+        // Anything still mid-sentence when the recording stopped is kept too.
+        let flushed = transcript.flush_partials();
+        let session = transcript.session();
+        for segment in &flushed {
+            if let Some(text) = segment.final_text.as_deref() {
+                crate::history::journal_record(
+                    &app,
+                    &session.id,
+                    session.started_at_ms,
+                    segment.source,
+                    text,
+                    segment.timestamp,
+                );
+            }
+        }
         transcript.mark_stopped();
     }
 
