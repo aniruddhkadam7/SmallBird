@@ -94,13 +94,13 @@ export default function UserDetailPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-lg font-semibold text-ink">{detail.profile.email}</h1>
+        <h1 className="break-all text-lg font-semibold text-ink">{detail.profile.email}</h1>
         <p className="text-sm text-muted">
           {detail.profile.displayName ?? "No display name"} &middot; joined{" "}
           {new Date(detail.profile.createdAt).toLocaleString()}
           {detail.profile.lastSignInAt && <> &middot; last sign-in {new Date(detail.profile.lastSignInAt).toLocaleString()}</>}
         </p>
-        <p className="mt-1 font-mono text-xs text-muted">{detail.profile.userId}</p>
+        <p className="mt-1 break-all font-mono text-xs text-muted">{detail.profile.userId}</p>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

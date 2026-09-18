@@ -38,7 +38,7 @@ export default function SettingsPage() {
         </p>
         <ul className="mt-3 divide-y divide-border">
           {admins.map((a) => (
-            <li key={a.user_id} className="flex items-center justify-between py-2 text-sm">
+            <li key={a.user_id} className="flex flex-col gap-0.5 py-2 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3">
               <span>{a.email}</span>
               <span className="text-xs text-muted">
                 {a.role} &middot; since {new Date(a.created_at).toLocaleDateString()}

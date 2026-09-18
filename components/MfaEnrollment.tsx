@@ -90,7 +90,7 @@ export function MfaEnrollment() {
       {verified.length > 0 && (
         <div className="mt-3 space-y-2">
           {verified.map((f) => (
-            <div key={f.id} className="flex items-center justify-between rounded-lg border border-border p-2 text-sm">
+            <div key={f.id} className="flex items-center justify-between gap-2 rounded-lg border border-border p-2 text-sm">
               <span>Authenticator app enrolled</span>
               <button onClick={() => unenroll(f.id)} disabled={loading} className="btn-secondary">
                 Remove

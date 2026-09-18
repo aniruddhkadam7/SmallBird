@@ -75,7 +75,7 @@ export function GrantPassPanel({ userId, onSuccess }: { userId: string; onSucces
           <label className="mb-1 block text-xs font-medium text-muted">Minutes to grant</label>
           <input type="number" min={0} step="0.1" value={minutes} onChange={(e) => setMinutes(e.target.value)} className="input" />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
           <div>
             <label className="mb-1 block text-xs font-medium text-muted">Start date</label>
             <input type="date" value={startAt} onChange={(e) => setStartAt(e.target.value)} className="input" />

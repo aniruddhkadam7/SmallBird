@@ -54,7 +54,7 @@ export default function PaymentsPage() {
       </div>
 
       <form className="flex flex-wrap items-end gap-3" method="get">
-        <div className="min-w-[260px]">
+        <div className="w-full sm:w-auto sm:min-w-[240px]">
           <label className="mb-1 block text-xs font-medium text-muted">Search (email or Razorpay id)</label>
           <input name="q" defaultValue={search ?? ""} className="input" />
         </div>
@@ -109,7 +109,7 @@ export default function PaymentsPage() {
         </table>
       </div>
 
-      <div className="flex items-center justify-between text-sm text-muted">
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
         <span>
           Page {page} of {totalPages}
         </span>

@@ -46,7 +46,7 @@ export function Nav() {
           <Link
             key={item.href}
             href={item.href}
-            className={`group flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+            className={`group flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2 ${
               active ? "bg-accent text-white shadow-sm" : "text-ink/80 hover:bg-subtle hover:text-ink"
             }`}
           >

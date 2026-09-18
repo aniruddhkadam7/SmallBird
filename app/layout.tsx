@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
@@ -10,6 +10,16 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0e1525" },
+  ],
+};
+
 // Applies the saved theme before paint so there's no flash of the wrong
 // theme on load -- runs as an inline script since Next can't know the
 // user's localStorage preference during server rendering.
@@ -19,6 +29,14 @@ const themeInitScript = `
     var stored = localStorage.getItem("theme");
     var theme = stored === "light" || stored === "dark" ? stored : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
     if (theme === "dark") document.documentElement.classList.add("dark");
+    document.documentElement.style.colorScheme = theme;
+    // With no saved choice, follow OS theme changes live (the in-app toggle
+    // also handles this; this covers pages without it, like /login).
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function (e) {
+      try { if (localStorage.getItem("theme")) return; } catch (err) {}
+      document.documentElement.classList.toggle("dark", e.matches);
+      document.documentElement.style.colorScheme = e.matches ? "dark" : "light";
+    });
   } catch (e) {}
 })();
 `;

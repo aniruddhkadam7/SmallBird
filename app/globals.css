@@ -13,6 +13,7 @@
   --danger: 0 72% 51%;
   --warn: 32 95% 44%;
   --ok: 142 71% 35%;
+  color-scheme: light;
 }
 
 .dark {
@@ -26,6 +27,7 @@
   --danger: 0 84% 65%;
   --warn: 38 92% 60%;
   --ok: 142 60% 50%;
+  color-scheme: dark;
 }
 
 * {
@@ -35,10 +37,19 @@
 body {
   @apply bg-subtle text-ink antialiased;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-tap-highlight-color: transparent;
+  overflow-wrap: anywhere;
+}
+
+/* Tables and code keep their natural width; they scroll inside .table-wrap. */
+table,
+pre,
+code {
+  overflow-wrap: normal;
 }
 
 .card {
-  @apply rounded-xl border border-border bg-surface p-5 shadow-card transition-colors;
+  @apply rounded-xl border border-border bg-surface p-4 shadow-card transition-colors sm:p-5;
 }
 
 .badge {
@@ -78,11 +89,12 @@ body {
 }
 
 .input {
-  @apply w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/20;
+  @apply w-full rounded-lg border border-border bg-surface px-3 py-2 text-base text-ink outline-none sm:text-sm transition-colors placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/20;
 }
 
 .table-wrap {
-  @apply overflow-x-auto rounded-xl border border-border bg-surface shadow-card;
+  @apply overflow-x-auto overscroll-x-contain rounded-xl border border-border bg-surface shadow-card;
+  -webkit-overflow-scrolling: touch;
 }
 
 table {
@@ -90,11 +102,11 @@ table {
 }
 
 thead th {
-  @apply whitespace-nowrap border-b border-border bg-subtle px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted;
+  @apply whitespace-nowrap border-b border-border bg-subtle px-3 py-2.5 text-xs sm:px-4 font-semibold uppercase tracking-wide text-muted;
 }
 
 tbody td {
-  @apply border-b border-border px-4 py-3 text-ink last:border-0;
+  @apply border-b border-border px-3 py-3 text-ink last:border-0 sm:px-4;
 }
 
 tbody tr {

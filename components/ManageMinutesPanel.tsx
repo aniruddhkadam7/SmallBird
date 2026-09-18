@@ -66,7 +66,7 @@ export function ManageMinutesPanel({
       <p className="mt-1 text-xs text-muted">Current balance: {currentBalance.toFixed(1)} min</p>
 
       <div className="mt-4 space-y-3">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {(["GRANT", "REMOVE", "SET"] as Action[]).map((a) => (
             <button
               key={a}

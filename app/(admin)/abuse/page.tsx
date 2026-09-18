@@ -35,7 +35,7 @@ export default function AbusePage() {
 
       <div className="space-y-2">
         {flags.map((f, i) => (
-          <div key={i} className="card flex items-start justify-between gap-4">
+          <div key={i} className="card flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
             <div>
               <div className="flex items-center gap-2">
                 <span className={`badge ${f.severity === "RED" ? "badge-danger" : "badge-warn"}`}>{f.severity}</span>
