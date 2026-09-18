@@ -192,10 +192,6 @@ export function InterviewOverlay() {
   const sttSpeaking = useSttSpeaking();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmingClose, setConfirmingClose] = useState(false);
-  // Dismissible, resets each time the overlay opens (not persisted) — see
-  // the banner render below for why this needs to stay this visible instead
-  // of living only in Settings' note.
-  const [showShareModeTip, setShowShareModeTip] = useState(true);
   // Shown after archiving a non-empty interview, in place of immediately
   // hiding the overlay — gives the user a beat to jump straight to the
   // synced transcript on the website dashboard instead of having to find
@@ -1273,40 +1269,6 @@ export function InterviewOverlay() {
       {captureExcluded === false && (
         <p className="overlay-capture-warning">
           ⚠ Screen capture protection unavailable — this window may be visible if you share your screen
-        </p>
-      )}
-
-      {/* Even with protection active and correctly applied, Windows itself
-          can still render this window as a black rectangle to viewers
-          instead of properly hiding it — confirmed (via real user testing
-          and the app's own capture-exclusion logs) to happen specifically
-          when sharing "Entire Screen" in Meet/Teams, and not when sharing a
-          specific window/tab instead. That's a capture-backend choice made
-          by Windows/the browser based on the machine's GPU driver and
-          software versions — outside what this app's window-property calls
-          can override — so the one reliable mitigation is telling the user
-          up front, every session, rather than letting them find out only
-          once an interviewer has already seen a black box. Dismissible
-          (not nagging for the rest of the session) but re-shown on every
-          fresh overlay open, since forgetting once is exactly the failure
-          mode this exists to prevent. Only shown when protection is
-          actually active — the warning above already covers the
-          more-serious "not protected at all" case, and showing both at once
-          would be a wall of text for the same underlying risk. */}
-      {captureExcluded !== false && showShareModeTip && (
-        <p className="overlay-share-mode-tip">
-          <span>
-            For reliable protection, share a specific window/tab in Meet or Teams — not "Entire Screen", which can
-            show this overlay as a black box to viewers on some systems.
-          </span>
-          <button
-            type="button"
-            className="overlay-share-mode-tip-dismiss"
-            onClick={() => setShowShareModeTip(false)}
-            aria-label="Dismiss"
-          >
-            ×
-          </button>
         </p>
       )}
 
