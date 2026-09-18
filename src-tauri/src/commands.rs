@@ -196,7 +196,16 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
     // second producer, but never clone the *receiver* for this purpose, as
     // that would steal chunks meant for the real pipeline. Expected to stay
     // ~0 now that capture only starts once STT is ready.
-    let audio_tx_for_diag = audio_tx.clone();
+    //
+    // Only created when STT_DIAG=1: the audio pipeline exits when this
+    // channel disconnects (every sender dropped), so a sender that outlives
+    // the capture thread keeps the pipeline thread alive forever and makes
+    // `stop_audio_capture` block on joining it. Unconditionally holding one
+    // here did exactly that for every session.
+    let audio_tx_for_diag = std::env::var("STT_DIAG")
+        .map(|v| v == "1")
+        .unwrap_or(false)
+        .then(|| audio_tx.clone());
 
     let audio_thread = match SystemAudioCapture::start(audio_tx, stop.clone()) {
         Ok(handle) => handle,
@@ -366,7 +375,7 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
                             "DIAG t={}ms speech_onset rms={:.4} backlog={}",
                             diag_start.elapsed().as_millis(),
                             chunk.rms_level,
-                            diag_audio_tx.len(),
+                            diag_audio_tx.as_ref().map_or(0, |tx| tx.len()),
                         );
                     } else if !is_speech && diag_speaking {
                         diag_speaking = false;
@@ -374,7 +383,7 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
                             "DIAG t={}ms speech_offset rms={:.4} backlog={}",
                             diag_start.elapsed().as_millis(),
                             chunk.rms_level,
-                            diag_audio_tx.len(),
+                            diag_audio_tx.as_ref().map_or(0, |tx| tx.len()),
                         );
                     }
                 }

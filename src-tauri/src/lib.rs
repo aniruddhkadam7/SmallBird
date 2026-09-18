@@ -3,6 +3,7 @@ mod analyzer;
 // real capture path when measuring the pipeline, rather than a copy of it that
 // could drift from what actually ships.
 pub mod audio;
+mod audio_test;
 mod auth;
 mod backend;
 mod bubble_window;
@@ -187,6 +188,10 @@ pub fn run() {
             commands::pause_recording,
             commands::resume_recording,
             commands::stop_audio_capture,
+            audio_test::prepare_audio_test_phrase,
+            audio_test::play_audio_test_phrase,
+            audio_test::stop_audio_test_phrase,
+            audio_test::close_orphaned_audio_test_session,
             commands::get_current_session,
             commands::get_recording_state,
             commands::start_new_interview,

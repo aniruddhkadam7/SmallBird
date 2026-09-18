@@ -32,6 +32,7 @@ import { INTERVIEW_CONTEXT_SECTIONS } from "./headerPopups";
 import { loadLlmProvider, saveLlmProvider, type LlmProvider } from "./llmProviderSetting";
 import { getAuthSession, type AuthSessionInfo } from "./auth";
 import { checkForUpdate, installUpdate } from "./autoUpdate";
+import { AudioTestStatus, useAudioTest } from "./AudioTest";
 
 type SessionState = "IDLE" | "STARTING" | "LISTENING";
 type Popover = "MODEL" | "CONTEXT" | "SETTINGS" | "ACCOUNT" | "START_SETUP" | null;
@@ -69,6 +70,7 @@ function App() {
   const [openPopover, setOpenPopover] = useState<Popover>(null);
   const [error, setError] = useState<string | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
+  const audioTest = useAudioTest();
 
   const [interviewContext, setInterviewContext] = useState<DocumentContextState>(() =>
     emptyDocumentContextState(INTERVIEW_CONTEXT_SECTIONS),
@@ -138,6 +140,14 @@ function App() {
     invoke("resync_pending_interview_transcripts").catch((e) =>
       console.error("Failed to resync pending interview transcripts:", e),
     );
+  }, [authSession?.loggedIn]);
+
+  // A Test Audio run that was cut off (crash, quit, update) leaves its
+  // session open on the server; close it as soon as we're signed in so the
+  // next test or interview isn't blocked by it.
+  useEffect(() => {
+    if (!authSession?.loggedIn) return;
+    invoke("close_orphaned_audio_test_session").catch(() => {});
   }, [authSession?.loggedIn]);
 
   // History/status content only has room to render once the user has
@@ -257,6 +267,12 @@ function App() {
 
   const closePopover = useCallback(() => setOpenPopover(null), []);
 
+  // The Test Audio result lives in the Interview details popover — closing it
+  // ends any run in progress (releasing capture) and clears the old result.
+  useEffect(() => {
+    if (openPopover !== "START_SETUP") void audioTest.cancel();
+  }, [openPopover, audioTest.cancel]);
+
   // Set only for the specific "you have an active session on another
   // device" case — distinct from `error` because it's a resolvable choice
   // (offer to end that session and continue here) rather than a dead end.
@@ -264,6 +280,10 @@ function App() {
 
   const startInterview = useCallback(
     async (force = false) => {
+      // A Test Audio run still in flight holds the capture device and its own
+      // STT session — release both before the real interview claims them.
+      await audioTest.cancel();
+
       // Awaited so extraction genuinely finishes — and interviewContext is
       // updated with the resulting status/documentId — before the overlay
       // opens and the first question can be asked. Previously this was
@@ -300,7 +320,7 @@ function App() {
       await invoke("show_interview_overlay");
       return true;
     },
-    [interviewContext],
+    [interviewContext, audioTest.cancel],
   );
 
   const handleStart = useCallback(async () => {
@@ -569,7 +589,7 @@ function App() {
                 )}
               </Button>
               {openPopover === "START_SETUP" && (
-                <HeaderDropdown onClose={closePopover} className="header-dropdown-panel header-dropdown-wide">
+                <HeaderDropdown onClose={closePopover} className="header-dropdown-panel header-dropdown-wide header-dropdown-start">
                   <div className="popover-overlay">
                     <div className="popover" role="dialog" aria-label="Interview details">
                       <div className="popover-header">
@@ -602,8 +622,18 @@ function App() {
                         <p className="setup-hint">
                           Helps the AI tailor answers to this interview. Optional — Skip to start without it.
                         </p>
+                        <AudioTestStatus state={audioTest.state} busy={audioTest.busy} onRetry={audioTest.start} />
                       </div>
                       <div className="popover-footer">
+                        <Button
+                          variant="secondary"
+                          className="audio-test-btn"
+                          onClick={audioTest.start}
+                          disabled={audioTest.busy || sessionState !== "IDLE"}
+                          title="Check that Smallbird can hear and transcribe your meeting audio"
+                        >
+                          {audioTest.state.phase === "listening" || audioTest.state.phase === "connecting" ? "🔴 Listening..." : "🔊 Test Audio"}
+                        </Button>
                         <Button variant="ghost" onClick={handleSkipStart}>
                           Skip
                         </Button>

@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "0.1.18"
+version = "0.1.19"
 description = "Smallbird — AI interview copilot"
 authors = ["you"]
 edition = "2021"
@@ -45,6 +45,11 @@ windows = { version = "0.61", features = [
     "Win32_System_Ioctl",
     "Win32_System_IO",
     "Win32_Security",
+    "Win32_Media_Audio",
+    "Media_Core",
+    "Media_SpeechSynthesis",
+    "Storage_Streams",
+    "Foundation",
 ] }
 sysinfo = "0.32"
 tauri-plugin-global-shortcut = "2.3.2"

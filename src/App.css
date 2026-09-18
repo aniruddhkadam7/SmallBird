@@ -3496,3 +3496,79 @@ body.compact-transparent {
   color: var(--danger);
 }
 
+
+/* ---------- Interview details popover + Test Audio (see AudioTest.tsx) ----------
+   Text sizes only - the panel, its spacing and its buttons keep their normal
+   size. Scoped to .header-dropdown-start so the Context panel is unaffected. */
+
+.header-dropdown-start .popover-header .setup-section-label {
+  font-size: 0.74rem;
+}
+
+.header-dropdown-start .setup-identity-field label {
+  font-size: 0.6rem;
+}
+
+.header-dropdown-start .setup-input {
+  font-size: 0.74rem;
+}
+
+.header-dropdown-start .setup-hint {
+  font-size: 0.66rem;
+}
+
+.header-dropdown-start .popover-footer {
+  flex-wrap: wrap;
+}
+
+.header-dropdown-start .popover-footer .btn {
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.popover-footer .audio-test-btn {
+  margin-right: auto;
+}
+
+.audio-test-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem 0.7rem;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.audio-test-status.success {
+  background: var(--success-soft);
+  border-color: var(--success);
+}
+
+.audio-test-status.failure {
+  background: var(--warning-soft);
+  border-color: var(--warning);
+}
+
+.audio-test-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.audio-test-status.success .audio-test-title {
+  color: var(--success);
+}
+
+.audio-test-transcript {
+  margin: 0;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--border-strong);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
