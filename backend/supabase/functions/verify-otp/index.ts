@@ -13,6 +13,7 @@
 // Supabase Auth itself; it only gates whether we're willing to do that.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { withCors } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -29,7 +30,7 @@ async function sha256Hex(text: string): Promise<string> {
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   let email: string;
@@ -114,4 +115,4 @@ Deno.serve(async (req) => {
 
   const session = await verifyRes.json();
   return json(session);
-});
+}));

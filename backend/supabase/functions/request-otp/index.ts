@@ -6,6 +6,7 @@
 // (src-tauri/src/auth/client.rs) in place of POST /auth/v1/otp.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { withCors } from "../_shared/cors.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
@@ -38,7 +39,7 @@ function generateCode(): string {
   return String(1000 + (n % range));
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   let email: string;
@@ -90,4 +91,4 @@ Deno.serve(async (req) => {
   }
 
   return json({ ok: true });
-});
+}));

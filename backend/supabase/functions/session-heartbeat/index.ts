@@ -13,8 +13,9 @@
 // Request body: { sessionId: string }
 
 import { entitlementErrorResponse, requireEntitlement } from "../_shared/entitlement.ts";
+import { withCors } from "../_shared/cors.ts";
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
@@ -64,4 +65,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return entitlementErrorResponse(err);
   }
-});
+}));

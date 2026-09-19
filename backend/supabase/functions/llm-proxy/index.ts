@@ -7,6 +7,7 @@
 // native request body>, sessionId?: string, requestKind?: string }
 
 import { entitlementErrorResponse, requireEntitlement } from "../_shared/entitlement.ts";
+import { withCors } from "../_shared/cors.ts";
 
 const PROVIDER_URLS: Record<string, string> = {
   openai: "https://api.openai.com/v1/chat/completions",
@@ -22,7 +23,7 @@ const RATE_PER_1K: Record<string, { input: number; output: number }> = {
   "claude-3-5-sonnet-20241022": { input: 0.003, output: 0.015 },
 };
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
@@ -118,4 +119,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return entitlementErrorResponse(err);
   }
-});
+}));

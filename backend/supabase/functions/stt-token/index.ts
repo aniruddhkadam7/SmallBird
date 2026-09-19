@@ -11,10 +11,15 @@
 // doc comment) rather than being left silently hanging.
 
 import { entitlementErrorResponse, requireEntitlement } from "../_shared/entitlement.ts";
+import { withCors } from "../_shared/cors.ts";
 
-const MAX_SESSION_SECONDS = 3600; // hard ceiling regardless of balance
+// Hard ceiling regardless of balance. It is also how long the minted Deepgram
+// key stays valid, so it bounds the damage if a key ever leaks — but it must
+// not be shorter than a real balance: at 1 hour, a user with 189 minutes was
+// only ever given (and shown) 60. 4 hours covers balances up to 240 minutes.
+const MAX_SESSION_SECONDS = 4 * 3600;
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
@@ -119,4 +124,4 @@ Deno.serve(async (req) => {
   } catch (err) {
     return entitlementErrorResponse(err);
   }
-});
+}));
