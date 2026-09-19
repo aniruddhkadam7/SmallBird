@@ -6,7 +6,7 @@ import {
 } from "./question-completeness";
 import { ApiError, mintSttSession, reportUsage, sendHeartbeat } from "./api";
 import { FluxClient, type FluxState } from "./flux";
-import { startMic, type MicHandle } from "./mic";
+import { discardPrepared, startMic, type MicHandle, type PreparedAudio } from "./mic";
 import { looksLikeQuestion } from "./questions";
 
 export type LiveStatus = "starting" | "listening" | "reconnecting" | "paused" | "ended";
@@ -56,10 +56,20 @@ export class InterviewController {
 
   constructor(private readonly events: InterviewEvents) {}
 
-  /** Throws ApiError (code ACTIVE_SESSION_ELSEWHERE / 402 out of minutes) or MicError; nothing is left running on failure. */
-  async start(force: boolean): Promise<void> {
+  /**
+   * Throws ApiError (code ACTIVE_SESSION_ELSEWHERE / 402 out of minutes) or
+   * MicError; nothing is left running on failure. `prepared` is audio set up
+   * inside the user's tap (see prepareAudio) and is released on any failure.
+   */
+  async start(force: boolean, prepared?: PreparedAudio | null): Promise<void> {
     this.events.onStatus("starting");
-    const minted = await mintSttSession(force);
+    let minted;
+    try {
+      minted = await mintSttSession(force);
+    } catch (err) {
+      discardPrepared(prepared);
+      throw err;
+    }
     this.sessionId = minted.sessionId;
     this.authorizedSeconds = minted.expiresInSeconds;
 
@@ -76,11 +86,13 @@ export class InterviewController {
           if (!this.paused) flux.sendAudio(pcm);
         },
         (rms) => this.events.onLevel(rms),
+        prepared,
       );
     } catch (err) {
       // Close the session so one that can never be used doesn't hold the
       // account's single active-session slot. usage-report needs a positive
       // duration, so this bills 1 second — the smallest amount it accepts.
+      discardPrepared(prepared);
       this.flux?.close();
       this.flux = null;
       void reportUsage(this.sessionId, 1).catch(() => {});

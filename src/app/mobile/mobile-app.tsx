@@ -2,9 +2,10 @@
 
 import { useState, useSyncExternalStore } from "react"
 import type { Profile } from "@/lib/mobile/answer"
+import type { PreparedAudio } from "@/lib/mobile/mic"
 import type { SessionResult } from "@/lib/mobile/types"
 import Live from "./live"
-import MicCheck from "./mic-check"
+import MicTest from "./mic-test"
 import Setup, { loadProfile } from "./setup"
 import Summary from "./summary"
 
@@ -15,6 +16,9 @@ type Screen = "setup" | "mic" | "live" | "summary"
 // verified via the website's own session (see page.tsx).
 export function MobileApp({ email }: { email: string }) {
   const [screen, setScreen] = useState<Screen>("setup")
+  // Audio prepared inside the tap that opened the current screen (see
+  // prepareAudio in lib/mobile/mic.ts): iOS only starts audio inside a tap.
+  const [audio, setAudio] = useState<PreparedAudio | null>(null)
   // loadProfile() reads localStorage, which the server render doesn't have
   // (it returns a blank profile there). Nothing is rendered until hydration
   // is done, so the server and first client render both output nothing and
@@ -29,23 +33,37 @@ export function MobileApp({ email }: { email: string }) {
 
   if (!hydrated) return null
 
+  function go(next: Screen, prepared: PreparedAudio | null = null) {
+    setAudio(prepared)
+    setScreen(next)
+  }
+
   switch (screen) {
     case "mic":
-      return <MicCheck onReady={() => setScreen("live")} onBack={() => setScreen("setup")} />
+      return <MicTest audio={audio} onDone={() => go("setup")} onStartInterview={(prepared) => go("live", prepared)} />
     case "live":
       return (
         <Live
           profile={profile}
-          onCancel={() => setScreen("mic")}
+          audio={audio}
+          onCancel={() => go("setup")}
           onFinished={(finished) => {
             setResult(finished)
-            setScreen("summary")
+            go("summary")
           }}
         />
       )
     case "summary":
-      return result ? <Summary result={result} onDone={() => setScreen("setup")} /> : null
+      return result ? <Summary result={result} onDone={() => go("setup")} /> : null
     default:
-      return <Setup email={email} profile={profile} onProfile={setProfile} onContinue={() => setScreen("mic")} />
+      return (
+        <Setup
+          email={email}
+          profile={profile}
+          onProfile={setProfile}
+          onStart={(prepared) => go("live", prepared)}
+          onTestMic={(prepared) => go("mic", prepared)}
+        />
+      )
   }
 }

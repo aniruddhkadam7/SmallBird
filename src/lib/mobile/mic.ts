@@ -69,28 +69,93 @@ const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   autoGainControl: true,
 };
 
-export async function startMic(onFrame: (pcm16: ArrayBuffer) => void, onLevel: (rms: number) => void): Promise<MicHandle> {
+/**
+ * Audio that was set up inside the user's tap.
+ *
+ * iOS Safari only lets an AudioContext start (resume) synchronously inside a
+ * touch handler, and the interview can't start capturing until after network
+ * calls (minting the session, connecting to Deepgram). So the context and the
+ * microphone request are created here, in the tap, and handed to startMic()
+ * once everything else is ready. Call prepareAudio() directly from the click
+ * handler, before any await.
+ */
+export interface PreparedAudio {
+  context: AudioContext;
+  stream: Promise<MediaStream>;
+  released: boolean;
+}
+
+export function prepareAudio(): PreparedAudio | null {
+  try {
+    const context = new AudioContext();
+    void context.resume();
+    const stream = navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS });
+    // A denied permission is reported when startMic awaits this; without a
+    // handler attached now it would also surface as an unhandled rejection.
+    stream.catch(() => {});
+    return { context, stream, released: false };
+  } catch {
+    // No AudioContext / mediaDevices (old browser or insecure page): startMic
+    // falls back to creating them itself and reports the real problem.
+    return null;
+  }
+}
+
+/** Releases audio that was prepared but never used (e.g. the session failed to start). Safe to call twice. */
+export function discardPrepared(prepared: PreparedAudio | null | undefined): void {
+  if (!prepared || prepared.released) return;
+  prepared.released = true;
+  prepared.stream.then(
+    (stream) => stream.getTracks().forEach((track) => track.stop()),
+    () => {},
+  );
+  void prepared.context.close().catch(() => {});
+}
+
+function micErrorFrom(err: unknown): MicError {
+  const name = err instanceof DOMException ? err.name : "";
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return new MicError("Microphone access is blocked. Allow it in your browser's site settings and try again.", "denied");
+  }
+  return new MicError("No microphone found on this device.", "unavailable");
+}
+
+/** Starts capture, using `prepared` audio when given (see prepareAudio). */
+export async function startMic(
+  onFrame: (pcm16: ArrayBuffer) => void,
+  onLevel: (rms: number) => void,
+  prepared?: PreparedAudio | null,
+): Promise<MicHandle> {
+  let context: AudioContext;
   let stream: MediaStream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS });
-  } catch (err) {
-    const name = err instanceof DOMException ? err.name : "";
-    if (name === "NotAllowedError" || name === "SecurityError") {
-      throw new MicError("Microphone access is blocked. Allow it in your browser's site settings and try again.", "denied");
+    if (prepared && !prepared.released) {
+      context = prepared.context;
+      stream = await prepared.stream;
+      // Ownership moves to the handle below; discardPrepared must no longer touch it.
+      prepared.released = true;
+    } else {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS });
+      context = new AudioContext();
     }
-    throw new MicError("No microphone found on this device.", "unavailable");
+  } catch (err) {
+    discardPrepared(prepared);
+    throw micErrorFrom(err);
   }
 
-  const context = new AudioContext();
   const workletUrl = URL.createObjectURL(new Blob([WORKLET_SOURCE], { type: "application/javascript" }));
   try {
     await context.audioWorklet.addModule(workletUrl);
+    // A context created outside a tap starts suspended; on desktop and
+    // Android that is resumable here, on iOS it was already resumed in the tap.
+    if (context.state === "suspended") await context.resume();
+  } catch (err) {
+    stream.getTracks().forEach((track) => track.stop());
+    void context.close().catch(() => {});
+    throw err;
   } finally {
     URL.revokeObjectURL(workletUrl);
   }
-  // iOS Safari starts contexts suspended until a user gesture; startMic is
-  // always called from a tap, so resuming here is allowed.
-  if (context.state === "suspended") await context.resume();
 
   const source = context.createMediaStreamSource(stream);
   const node = new AudioWorkletNode(context, "pcm-capture");

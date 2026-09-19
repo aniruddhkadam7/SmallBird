@@ -11,9 +11,9 @@ export const metadata: Metadata = {
 }
 
 // Lets the page draw under the notch and colours the browser chrome to match
-// the dark, dim screen (a bright phone next to a laptop shows up on camera).
+// the light setup screens (the live interview screen itself is dark).
 export const viewport: Viewport = {
-  themeColor: "#0b0d12",
+  themeColor: "#f4f5f7",
   viewportFit: "cover",
 }
 

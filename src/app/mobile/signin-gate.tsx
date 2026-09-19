@@ -1,6 +1,8 @@
 "use client"
 
+import Image from "next/image"
 import Link from "next/link"
+import logo from "@/assets/smallbird-logo.png"
 import { usePurchaseFlow } from "@/lib/purchase-flow"
 
 // Shown to a visitor with no session. It reuses the website's one login
@@ -10,24 +12,32 @@ export function SignInGate() {
   const { requestPageAccess } = usePurchaseFlow()
 
   return (
-    <main className="screen center">
-      <Link href="/" className="brand">
-        Smallbird
-      </Link>
-      <h2>Use Smallbird on your phone</h2>
-      <p className="muted">
-        Sign in with your Smallbird account, or create a free one. Then put your phone next to your laptop and it
-        listens to the interview and suggests answers, with nothing installed on the laptop.
-      </p>
-      <div className="stack">
-        <button className="primary" onClick={() => requestPageAccess("/mobile", "login")}>
-          Log in
-        </button>
-        <button onClick={() => requestPageAccess("/mobile", "signup")}>Create a free account</button>
+    <main className="page gate">
+      <nav className="nav-row">
+        <Link href="/" className="back">
+          <span aria-hidden>‹</span> Back to smallbird.in
+        </Link>
+      </nav>
+
+      <div className="gate-body">
+        <div className="brand-row center">
+          <Image src={logo} alt="" className="logo" width={28} height={28} priority />
+          <span className="wordmark">Smallbird</span>
+        </div>
+        <h1 className="title center">Use Smallbird on your phone</h1>
+        <p className="lede center">
+          Sign in with your Smallbird account, or create a free one. Then put your phone next to your laptop and it listens
+          to the interview and suggests answers, with nothing installed on the laptop.
+        </p>
+        <div className="actions-col">
+          <button type="button" className="btn primary big" onClick={() => requestPageAccess("/mobile", "login")}>
+            Log in
+          </button>
+          <button type="button" className="btn" onClick={() => requestPageAccess("/mobile", "signup")}>
+            Create a free account
+          </button>
+        </div>
       </div>
-      <Link href="/" className="link">
-        Back to smallbird.in
-      </Link>
     </main>
   )
 }
