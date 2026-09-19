@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { ArrowLeft, Download } from "lucide-react"
+import { ArrowLeft, Download, Smartphone } from "lucide-react"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
 import { RelatedPages } from "@/components/blocks/related-pages"
@@ -54,7 +54,7 @@ const WINDOWS_INSTALLER_URL = "https://github.com/aniruddhkadam7/SmallBird-relea
 // someone could even try the app.
 export default function DownloadPage() {
   return (
-    <div className="mx-auto max-w-3xl px-4 py-16 sm:py-24">
+    <div className="mx-auto max-w-5xl px-4 py-16 sm:py-24">
       <Link
         href="/"
         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
@@ -68,7 +68,7 @@ export default function DownloadPage() {
         <p className="mt-4 text-muted-foreground">Free to download. Pick your platform below.</p>
       </div>
 
-      <div className="mt-12 grid gap-6 sm:grid-cols-2">
+      <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader>
             <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border">
@@ -101,6 +101,25 @@ export default function DownloadPage() {
             <LiquidButton className="w-full" variant="outline" disabled>
               <AppleLogo />
               Coming soon
+            </LiquidButton>
+          </CardFooter>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border">
+              <Smartphone className="h-[18px] w-[18px]" />
+            </div>
+            <CardTitle className="text-lg">Phone</CardTitle>
+            <CardDescription>No install. Put your phone next to your laptop and it listens for you.</CardDescription>
+          </CardHeader>
+          <CardContent />
+          <CardFooter>
+            <LiquidButton className="w-full" asChild>
+              <a href="/mobile">
+                <Smartphone className="h-4 w-4" />
+                Use on your phone
+              </a>
             </LiquidButton>
           </CardFooter>
         </Card>

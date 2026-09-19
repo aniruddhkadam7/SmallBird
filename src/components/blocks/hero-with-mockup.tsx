@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, type ReactNode } from "react"
-import { ArrowRight, Download } from "lucide-react"
+import type { ReactNode } from "react"
+import { ArrowRight, Smartphone } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Glow } from "@/components/ui/glow"
@@ -28,8 +28,7 @@ export function HeroWithMockup({
   mockup,
   className,
 }: HeroWithMockupProps) {
-  const { requestDashboardAccess } = usePurchaseFlow()
-  const [showMobileNotice, setShowMobileNotice] = useState(false)
+  const { requestDashboardAccess, requestPageAccess } = usePurchaseFlow()
 
   return (
     <section
@@ -87,32 +86,12 @@ export function HeroWithMockup({
                 {primaryCta.text}
                 <ArrowRight className="h-4 w-4" />
               </LiquidButton>
-              {/* Desktop already has Download in the header — this is only
-                  for mobile, where that header button is hidden (see nav.tsx). */}
-              <LiquidButton
-                size="lg"
-                variant="outline"
-                className="sm:hidden"
-                onClick={() => setShowMobileNotice(true)}
-              >
-                <Download className="h-4 w-4" />
-                Download
+              {/* The phone version needs no install: same account, opens /mobile
+                  (signed-out visitors are asked to log in first, then land there). */}
+              <LiquidButton size="lg" variant="outline" onClick={() => requestPageAccess("/mobile")}>
+                <Smartphone className="h-4 w-4" />
+                Use on your phone
               </LiquidButton>
-              {showMobileNotice ? (
-                <div
-                  role="alert"
-                  className="w-full rounded-lg border border-border bg-popover p-3 text-xs text-popover-foreground shadow-lg sm:hidden"
-                >
-                  Smallbird is a desktop app — open this page on your PC to download it.
-                  <button
-                    type="button"
-                    onClick={() => setShowMobileNotice(false)}
-                    className="mt-2 block text-xs font-medium text-foreground/70 underline"
-                  >
-                    Got it
-                  </button>
-                </div>
-              ) : null}
             </div>
           </div>
 

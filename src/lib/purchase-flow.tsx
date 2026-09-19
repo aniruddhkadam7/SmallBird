@@ -27,6 +27,7 @@ interface PurchaseFlowState {
   activeFlow: { plan: PlanId; step: FlowStep; authMode: AuthMode } | null
   startFlow: (plan: PlanId, authMode?: AuthMode) => void
   requestDashboardAccess: () => void
+  requestPageAccess: (path: string, authMode?: AuthMode) => void
   requestCode: (email: string, name: string) => Promise<void>
   verifyCode: (email: string, code: string) => Promise<void>
   signInWithGoogle: () => Promise<void>
@@ -115,13 +116,17 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
   // "Dashboard" button) -- signed-in visitors go straight there, signed-out
   // ones get the sign-in dialog instead of bouncing off the page's own
   // server-side auth redirect with no explanation.
-  const requestDashboardAccess = () => {
+  const requestDashboardAccess = () => requestPageAccess("/dashboard")
+
+  // Same idea for any signed-in-only page (e.g. /mobile): one login for the
+  // whole site, and the user lands back on the page they actually asked for.
+  const requestPageAccess = (path: string, authMode?: AuthMode) => {
     if (signedUp) {
-      window.location.href = "/dashboard"
+      window.location.href = path
       return
     }
-    sessionStorage.setItem(PENDING_REDIRECT_KEY, "/dashboard")
-    startFlow("free")
+    sessionStorage.setItem(PENDING_REDIRECT_KEY, path)
+    startFlow("free", authMode)
   }
 
   const requestCode = async (rawEmail: string, name: string) => {
@@ -305,6 +310,7 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
         activeFlow,
         startFlow,
         requestDashboardAccess,
+        requestPageAccess,
         requestCode,
         verifyCode,
         signInWithGoogle,

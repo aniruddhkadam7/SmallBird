@@ -1,0 +1,427 @@
+/* Dark and dim on purpose: a bright phone screen beside a laptop is visible on camera. */
+
+.sbm {
+  color-scheme: dark;
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --bg: #0b0d12;
+  --card: #141821;
+  --line: #232937;
+  --text: #e8ebf2;
+  --muted: #8b93a5;
+  --accent: #6ea8fe;
+  --accent-ink: #08101f;
+  --ok: #4cc38a;
+  --warn: #e9b44c;
+  --bad: #ef6b6b;
+  --radius: 14px;
+}
+
+.sbm, .sbm * {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sbm h1,
+.sbm h2,
+.sbm p {
+  margin: 0;
+}
+
+/* The site's base styles reset heading size/weight and link colour, so set them explicitly here. */
+.sbm h1,
+.sbm h2 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.sbm h2 {
+  font-size: 22px;
+  line-height: 1.3;
+}
+
+.sbm a.brand {
+  display: block;
+  color: var(--text);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.sbm a.link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.sbm .screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: max(20px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sbm .screen.center {
+  justify-content: center;
+  text-align: center;
+}
+
+.sbm .stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sbm .row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sbm .between {
+  justify-content: space-between;
+}
+
+.sbm .brand {
+  font-size: 30px;
+  letter-spacing: -0.02em;
+}
+
+.sbm .brand.small {
+  font-size: 22px;
+}
+
+.sbm .muted {
+  color: var(--muted);
+}
+
+.sbm .ok {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.sbm .warn {
+  color: var(--warn);
+  font-size: 14px;
+}
+
+.sbm .error {
+  color: var(--bad);
+}
+
+.sbm label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: left;
+}
+
+.sbm input,
+.sbm textarea {
+  width: 100%;
+  padding: 13px 14px;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font: inherit;
+}
+
+.sbm input:focus,
+.sbm textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.sbm input.code {
+  text-align: center;
+  font-size: 28px;
+  letter-spacing: 0.4em;
+}
+
+.sbm label.file input {
+  padding: 10px;
+}
+
+.sbm button {
+  min-height: 48px;
+  padding: 0 16px;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sbm button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.sbm button.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+
+.sbm button.big {
+  min-height: 60px;
+  font-size: 18px;
+}
+
+.sbm button.danger {
+  color: var(--bad);
+}
+
+.sbm button.link {
+  min-height: 36px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 500;
+  padding: 0 8px;
+}
+
+.sbm .meter {
+  height: 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.sbm .meter.small {
+  flex: 1;
+  height: 6px;
+  min-width: 40px;
+}
+
+.sbm .meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--muted);
+  transition: width 90ms linear;
+}
+
+.sbm .meter-fill[data-heard="true"] {
+  background: var(--ok);
+}
+
+/* ---- Live screen ---- */
+
+.sbm .live {
+  height: 100vh;
+  height: 100dvh;
+  max-width: 640px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: max(10px, env(safe-area-inset-top)) 12px 0;
+}
+
+.sbm .topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+
+.sbm .topbar.problem {
+  border-color: var(--bad);
+  background: #2a1517;
+}
+
+.sbm .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.sbm .dot[data-status="listening"] {
+  background: var(--ok);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.sbm .dot[data-status="reconnecting"],
+.sbm .dot[data-status="paused"] {
+  background: var(--bad);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.sbm .clock {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.sbm .clock.low {
+  color: var(--warn);
+  font-weight: 700;
+}
+
+.sbm .banner {
+  margin: 0;
+  padding: 8px 12px;
+  background: #2b2412;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  color: var(--warn);
+  font-size: 14px;
+}
+
+.sbm .card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sbm .label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sbm .question p {
+  font-size: 18px;
+  line-height: 1.4;
+}
+
+.sbm .hearing {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.sbm .answer {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Large, high-contrast: read at a glance while looking at a camera. */
+
+.sbm .md {
+  font-size: 19px;
+  line-height: 1.5;
+}
+
+.sbm .md p {
+  margin: 0 0 0.6em;
+}
+
+.sbm .md ul,
+.sbm .md ol {
+  margin: 0 0 0.6em;
+  padding-left: 1.2em;
+}
+
+.sbm .md li {
+  margin-bottom: 0.4em;
+}
+
+.sbm .md strong {
+  color: #fff;
+}
+
+.sbm .md.full {
+  font-size: 17px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.sbm .md pre {
+  overflow-x: auto;
+  background: #0d1017;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 14px;
+}
+
+.sbm .expand {
+  align-self: flex-start;
+  padding-left: 0;
+}
+
+.sbm .drawer {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 4px 14px;
+  max-height: 34%;
+  overflow-y: auto;
+}
+
+.sbm .drawer summary {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.sbm .drawer ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.sbm .drawer li {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.sbm .actions {
+  display: grid;
+  grid-template-columns: 1.2fr 1.25fr 1fr auto;
+  gap: 8px;
+  padding: 8px 0 max(12px, env(safe-area-inset-bottom));
+}
+
+.sbm .actions button {
+  min-height: 54px;
+  padding: 0 8px;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+
+
+
+/* Dark overscroll on iOS instead of a white flash behind the page. */
+html:has(.sbm) {
+  background: #0b0d12;
+}
