@@ -26,25 +26,6 @@ function formatClock(totalSeconds: number): string {
   return `${m}:${String(s).padStart(2, "0")}`
 }
 
-const AUTO_ANSWER_KEY = "smallbird:web-auto-answer"
-
-// On unless the user turned it off: that is how the interview already behaved.
-function loadAutoAnswer(): boolean {
-  try {
-    return window.localStorage.getItem(AUTO_ANSWER_KEY) !== "off"
-  } catch {
-    return true
-  }
-}
-
-function saveAutoAnswer(enabled: boolean): void {
-  try {
-    window.localStorage.setItem(AUTO_ANSWER_KEY, enabled ? "on" : "off")
-  } catch {
-    // Not persisting is fine; the choice still applies for this interview.
-  }
-}
-
 interface ViewProps {
   status: LiveStatus
   level: number
@@ -215,7 +196,9 @@ export default function Live({ profile, audio, onFinished, onCancel }: Props) {
   const startedAt = useRef(0)
   const transcriptId = useRef<string | null>(null)
   const saveChain = useRef<Promise<void>>(Promise.resolve())
-  const [autoAnswer, setAutoAnswer] = useState(loadAutoAnswer)
+  // Every interview starts with Auto ans ON. It is deliberately not remembered:
+  // an OFF left over from an earlier interview silently stops answers.
+  const [autoAnswer, setAutoAnswer] = useState(true)
   const autoRef = useRef(autoAnswer)
   const began = useRef(false)
   const mounted = useRef(false)
@@ -446,7 +429,6 @@ export default function Live({ profile, audio, onFinished, onCancel }: Props) {
         const next = !autoAnswer
         setAutoAnswer(next)
         autoRef.current = next
-        saveAutoAnswer(next)
         controller.current?.setAutoAnswer(next)
       }}
       onAnswerThis={() => {

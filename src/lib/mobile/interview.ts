@@ -1,13 +1,8 @@
-import {
-  AUTO_AI_SILENCE_MS_COMPLETE,
-  AUTO_AI_SILENCE_MS_INCOMPLETE,
-  classifyQuestionCompleteness,
-  joinSpeech,
-} from "./question-completeness";
+import { classifyQuestionCompleteness, joinSpeech } from "./question-completeness";
 import { ApiError, mintSttSession, reportUsage, sendHeartbeat } from "./api";
 import { FluxClient, type FluxState } from "./flux";
 import { discardPrepared, startMic, type MicHandle, type PreparedAudio } from "./mic";
-import { looksLikeQuestion } from "./questions";
+import { shouldAutoAnswer } from "./questions";
 
 export type LiveStatus = "starting" | "listening" | "reconnecting" | "paused" | "ended";
 
@@ -32,6 +27,24 @@ export interface InterviewEvents {
 
 const HEARTBEAT_INTERVAL_MS = 60_000;
 
+// Flux has already waited for the speaker to stop before it reports the end
+// of a turn, so only a short extra pause is needed before answering.
+const ANSWER_DELAY_MS = 400;
+// Longer when the words trail off mid-clause ("... and", "... with the").
+const ANSWER_DELAY_INCOMPLETE_MS = 1400;
+// A phone microphone hears the whole room, and in a noisy one Flux can keep a
+// turn open for a long time. If the words have stopped changing for this
+// long, the speaker is done, whatever Flux says.
+const STALLED_TURN_MS = 1800;
+
+/** Case, punctuation and spacing don't matter when checking whether two transcripts are the same words. */
+const normalizeWords = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
 /**
  * Owns one interview session end to end: the server-side session (minutes,
  * one-active-session rule, heartbeat), the microphone, and the Deepgram
@@ -46,6 +59,9 @@ export class InterviewController {
   private heartbeatTimer = 0;
   private tickTimer = 0;
   private autoAskTimer = 0;
+  private stallTimer = 0;
+  /** Words already handled by finishing a stalled turn; Flux may still report the end of that same turn. */
+  private stalledWords = "";
   private startedAt = 0;
   private authorizedSeconds = 0;
   private pending = "";
@@ -135,6 +151,7 @@ export class InterviewController {
   takePending(): string {
     this.flux?.forceEndTurn();
     window.clearTimeout(this.autoAskTimer);
+    window.clearTimeout(this.stallTimer);
     const heard = joinSpeech(this.pending, this.partial);
     const text = heard.trim() ? heard : this.detected;
     this.pending = "";
@@ -167,6 +184,7 @@ export class InterviewController {
     window.clearInterval(this.heartbeatTimer);
     window.clearInterval(this.tickTimer);
     window.clearTimeout(this.autoAskTimer);
+    window.clearTimeout(this.stallTimer);
     this.mic?.stop();
     this.mic = null;
     this.flux?.close();
@@ -204,22 +222,64 @@ export class InterviewController {
   }
 
   private handlePartial(text: string): void {
-    // New speech means the speaker isn't done: hold off answering.
-    window.clearTimeout(this.autoAskTimer);
+    // Noise with no words, or the same words again, tells us nothing.
+    if (!text.trim() || text.trim() === this.partial.trim()) return;
+
     this.partial = text;
     this.events.onHearing(joinSpeech(this.pending, this.partial));
+
+    // A question that already sounds finished is answered on schedule: what
+    // is heard next (the candidate starting to answer, a cough, the laptop)
+    // must not cancel it, or it would be merged with that and lost. Only a
+    // sentence that trails off mid-clause is held, because more of it is coming.
+    if (this.pending && classifyQuestionCompleteness(this.pending) === "incomplete") {
+      window.clearTimeout(this.autoAskTimer);
+    }
+
+    // If no new words arrive for a while, the speaker is done even though
+    // Flux hasn't ended the turn (it stays open in a noisy room).
+    window.clearTimeout(this.stallTimer);
+    this.stallTimer = window.setTimeout(() => this.finishStalledTurn(), STALLED_TURN_MS);
   }
 
-  private handleTurn(text: string): void {
+  private finishStalledTurn(): void {
+    const text = this.partial.trim();
+    if (!text) return;
+    // Flux may still report the end of this same turn; remember these words so they aren't handled twice.
+    this.stalledWords = normalizeWords(text);
+    this.flux?.forceEndTurn();
+    this.acceptTurn(text);
+  }
+
+  private handleTurn(rawText: string): void {
+    window.clearTimeout(this.stallTimer);
+    let text = rawText;
+
+    // The end of a turn that was already finished because it stalled.
+    if (this.stalledWords) {
+      const handled = this.stalledWords;
+      this.stalledWords = "";
+      const heard = normalizeWords(text);
+      if (heard === handled || heard.startsWith(handled)) {
+        const extra = heard.slice(handled.length).trim();
+        if (extra.split(" ").filter(Boolean).length < 3) return;
+        text = text.trim().split(/\s+/).slice(handled.split(" ").length).join(" ");
+      }
+    }
+
+    this.acceptTurn(text);
+  }
+
+  // A finished turn: record it, and answer it shortly if it needs answering.
+  private acceptTurn(text: string): void {
+    window.clearTimeout(this.stallTimer);
     this.events.onTurn({ id: ++this.turnId, text });
     this.partial = "";
     this.pending = joinSpeech(this.pending, text);
     this.events.onHearing(this.pending);
 
-    // Same "is it finished or still being assembled" gate as desktop Auto AI:
-    // wait longer when the text trails off mid-clause.
-    const wait =
-      classifyQuestionCompleteness(this.pending) === "complete" ? AUTO_AI_SILENCE_MS_COMPLETE : AUTO_AI_SILENCE_MS_INCOMPLETE;
+    // Wait a little longer when the text trails off mid-clause.
+    const wait = classifyQuestionCompleteness(this.pending) === "complete" ? ANSWER_DELAY_MS : ANSWER_DELAY_INCOMPLETE_MS;
     window.clearTimeout(this.autoAskTimer);
     this.autoAskTimer = window.setTimeout(() => this.fireAuto(), wait);
   }
@@ -227,17 +287,18 @@ export class InterviewController {
   private fireAuto(): void {
     const text = this.pending.trim();
     if (!text) return;
-    // A statement (very likely the candidate's own answer) stays in the
-    // transcript but isn't answered automatically.
-    if (!looksLikeQuestion(text)) {
-      this.pending = "";
-      this.events.onHearing("");
+    this.pending = "";
+    // Whatever is being said right now stays on screen.
+    const showing = this.partial;
+
+    // Pleasantries and the candidate's own words stay in the transcript, but aren't answered.
+    if (!shouldAutoAnswer(text)) {
+      this.events.onHearing(showing);
       return;
     }
-    this.pending = "";
     if (this.autoAnswer) {
       this.detected = "";
-      this.events.onHearing("");
+      this.events.onHearing(showing);
       this.events.onQuestion(text);
     } else {
       // Held, and left on screen, so it is clear what "Answer this" will answer.
