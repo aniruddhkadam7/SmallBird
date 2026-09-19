@@ -18,4 +18,6 @@ export interface SessionResult {
   /** What was (or should be) saved to the dashboard; null when nothing was answered. */
   transcript: TranscriptInput | null;
   saveStatus: SaveStatus;
+  /** Set while saveStatus is "saving": settles once the transcript is written (or the write failed). */
+  pendingSave?: Promise<"saved" | "failed">;
 }

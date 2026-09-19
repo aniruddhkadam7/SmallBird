@@ -7,7 +7,7 @@ import { ApiError } from "@/lib/mobile/api"
 import { askAnswer, spokenAnswer, type Profile, type QA } from "@/lib/mobile/answer"
 import { InterviewController, type LiveStatus, type Turn } from "@/lib/mobile/interview"
 import { MicError, prepareAudio, type PreparedAudio } from "@/lib/mobile/mic"
-import { newTranscriptId, saveTranscript, type SaveStatus, type TranscriptInput } from "@/lib/mobile/transcripts"
+import { newTranscriptId, saveTranscript, type TranscriptInput } from "@/lib/mobile/transcripts"
 import type { QAEntry, SessionResult } from "@/lib/mobile/types"
 
 type Phase = "starting" | "live" | "conflict" | "failed"
@@ -59,13 +59,17 @@ interface ViewProps {
   onToggleAuto: () => void
   onAnswerThis: () => void
   onTogglePause: () => void
-  onEnd: () => void
+  confirmingEnd: boolean
+  onRequestEnd: () => void
+  onCancelEnd: () => void
+  onConfirmEnd: () => void
 }
 
 // Laid out like the desktop overlay: a slim status bar, a live-transcript
 // strip, then the Question / Answer panel, with the actions in reach of a thumb.
 export function LiveView(p: ViewProps) {
   const answer = p.entry?.raw.trim() ?? ""
+  const [transcriptOpen, setTranscriptOpen] = useState(false)
   const lowOnTime = p.remaining > 0 && p.remaining <= 300
   const problem = p.status === "reconnecting" || p.status === "paused"
 
@@ -121,28 +125,37 @@ export function LiveView(p: ViewProps) {
           <p className="dim">
             {p.autoAnswer
               ? "Answers appear here. Tap \"Answer this\" if a question was missed."
-              : "Auto answer is off. Tap \"Answer this\" when the interviewer finishes a question."}
+              : "Auto ans is off. Tap \"Answer this\" when the interviewer finishes a question."}
           </p>
         )}
       </section>
 
-      <details className="island drawer">
-        <summary>Transcript ({p.turns.length})</summary>
-        <ul>
-          {p.turns.map((turn) => (
-            <li key={turn.id}>
-              <span>{turn.text}</span>
-              <button type="button" className="chip inline" onClick={() => p.onAskTurn(turn.text)}>
-                Answer
-              </button>
-            </li>
+      <section className="island drawer">
+        <button type="button" className="drawer-head" onClick={() => setTranscriptOpen((open) => !open)} aria-expanded={transcriptOpen}>
+          <span>Transcript ({p.turns.length})</span>
+          <span className="drawer-state">{transcriptOpen ? "Close ✕" : "Show"}</span>
+        </button>
+        {transcriptOpen &&
+          (p.turns.length === 0 ? (
+            <p className="dim drawer-empty">Nothing heard yet.</p>
+          ) : (
+            <ul>
+              {p.turns.map((turn) => (
+                <li key={turn.id}>
+                  <span>{turn.text}</span>
+                  <button type="button" className="chip inline" onClick={() => p.onAskTurn(turn.text)}>
+                    Answer
+                  </button>
+                </li>
+              ))}
+            </ul>
           ))}
-        </ul>
-      </details>
+      </section>
 
       <footer className="actions">
         <button type="button" className={`chip toggle ${p.autoAnswer ? "on" : ""}`} aria-pressed={p.autoAnswer} onClick={p.onToggleAuto}>
-          Auto: {p.autoAnswer ? "On" : "Off"}
+          <span>Auto ans</span>
+          <span className="chip-state">{p.autoAnswer ? "ON" : "OFF"}</span>
         </button>
         <button type="button" className="chip accent" onClick={p.onAnswerThis}>
           Answer this
@@ -150,10 +163,27 @@ export function LiveView(p: ViewProps) {
         <button type="button" className="chip" onClick={p.onTogglePause}>
           {p.status === "paused" ? "Resume" : "Pause"}
         </button>
-        <button type="button" className="chip end" onClick={p.onEnd}>
+        <button type="button" className="chip end" onClick={p.onRequestEnd}>
           End
         </button>
       </footer>
+
+      {p.confirmingEnd && (
+        <div className="overlay" role="dialog" aria-modal="true" aria-label="End interview?">
+          <div className="dialog">
+            <h2>End interview?</h2>
+            <p className="dim">Listening will stop and your transcript will be saved to your dashboard.</p>
+            <div className="dialog-actions">
+              <button type="button" className="chip" onClick={p.onCancelEnd}>
+                Keep going
+              </button>
+              <button type="button" className="chip end" onClick={p.onConfirmEnd}>
+                End interview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
@@ -176,6 +206,7 @@ export default function Live({ profile, audio, onFinished, onCancel }: Props) {
   const [level, setLevel] = useState(0)
   const [remaining, setRemaining] = useState(0)
   const [missedAudio, setMissedAudio] = useState(false)
+  const [confirmingEnd, setConfirmingEnd] = useState(false)
 
   const controller = useRef<InterviewController | null>(null)
   const abort = useRef<AbortController | null>(null)
@@ -262,20 +293,22 @@ export default function Live({ profile, audio, onFinished, onCancel }: Props) {
           onEnded: (message) => {
             abort.current?.abort()
             const transcript = buildTranscript()
-            const finish = (saveStatus: SaveStatus) =>
-              onFinished({
-                entries: latest.current.entries,
-                turns: latest.current.turns,
-                message,
-                durationSeconds: startedAt.current ? Math.round((Date.now() - startedAt.current) / 1000) : 0,
-                transcript,
-                saveStatus,
-              })
-            if (!transcript) return finish("empty")
-            persist().then(
-              () => finish("saved"),
-              () => finish("failed"),
-            )
+            // The summary appears at once; the save finishes in the background and the summary shows its outcome.
+            const pendingSave = transcript
+              ? persist().then(
+                  (): "saved" => "saved",
+                  (): "failed" => "failed",
+                )
+              : undefined
+            onFinished({
+              entries: latest.current.entries,
+              turns: latest.current.turns,
+              message,
+              durationSeconds: startedAt.current ? Math.round((Date.now() - startedAt.current) / 1000) : 0,
+              transcript,
+              saveStatus: transcript ? "saving" : "empty",
+              pendingSave,
+            })
           },
         })
         controller.current.setAutoAnswer(autoRef.current)
@@ -350,6 +383,17 @@ export default function Live({ profile, audio, onFinished, onCancel }: Props) {
     }
   }, [phase])
 
+  // Leaving or refreshing mid-interview would cut it off, so the browser asks first.
+  useEffect(() => {
+    if (phase !== "live") return
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ""
+    }
+    window.addEventListener("beforeunload", warn)
+    return () => window.removeEventListener("beforeunload", warn)
+  }, [phase])
+
   if (phase === "starting") {
     return (
       <main className="live center-screen">
@@ -413,7 +457,13 @@ export default function Live({ profile, audio, onFinished, onCancel }: Props) {
         void ask(ctl.takePending().trim() || turns[turns.length - 1]?.text || "")
       }}
       onTogglePause={() => controller.current?.setPaused(status !== "paused")}
-      onEnd={() => void controller.current?.end()}
+      confirmingEnd={confirmingEnd}
+      onRequestEnd={() => setConfirmingEnd(true)}
+      onCancelEnd={() => setConfirmingEnd(false)}
+      onConfirmEnd={() => {
+        setConfirmingEnd(false)
+        void controller.current?.end()
+      }}
     />
   )
 }

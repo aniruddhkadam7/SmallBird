@@ -21,7 +21,7 @@ export interface TranscriptInput {
   turns: TranscriptTurn[]
 }
 
-export type SaveStatus = "saved" | "failed" | "empty"
+export type SaveStatus = "saving" | "saved" | "failed" | "empty"
 
 /** A v4 UUID (the table's id column is a uuid). crypto.randomUUID needs a secure context; the fallback covers the rest. */
 export function newTranscriptId(): string {

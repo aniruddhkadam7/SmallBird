@@ -148,16 +148,19 @@ export class InterviewController {
     if (this.ended) return;
     this.ended = true;
     this.teardown();
+    // Tell the screen straight away. Closing the billing record is a network
+    // call, and waiting for it before moving on made "End" feel broken.
+    this.events.onStatus("ended");
+    this.events.onEnded(message);
     const elapsed = Math.min(Math.max(1, Math.round((Date.now() - this.startedAt) / 1000)), this.authorizedSeconds);
-    let note = message;
     try {
+      // Callers that must know the session is really closed (before starting
+      // another one) await end(); the screen does not.
       await reportUsage(this.sessionId, elapsed);
     } catch (err) {
-      // The transcript is still the user's; just be honest that billing didn't close cleanly.
-      note = `${message} (Couldn't record usage: ${err instanceof Error ? err.message : "unknown error"})`;
+      // Not fatal for the user, so it is only logged: the transcript is theirs either way.
+      console.error("Couldn't record interview usage", err);
     }
-    this.events.onStatus("ended");
-    this.events.onEnded(note);
   }
 
   private teardown(): void {

@@ -348,6 +348,10 @@
   font-weight: 700;
 }
 
+.sbm .callout-title.saving {
+  color: var(--accent);
+}
+
 /* A link styled as a button (e.g. "View transcript on dashboard"). */
 .sbm a.btn {
   display: inline-flex;
@@ -471,7 +475,17 @@
 .sbm .md ul,
 .sbm .md ol {
   margin: 0 0 0.6em;
-  padding-left: 1.2em;
+  padding-left: 1.3em;
+}
+
+/* The site's base styles remove list markers, so bring them back: without
+   them the answer's bullets and numbered steps vanish. */
+.sbm .md ul {
+  list-style: disc;
+}
+
+.sbm .md ol {
+  list-style: decimal;
 }
 
 .sbm .md li {
@@ -695,19 +709,10 @@ html:has(.sbm .live) {
 }
 
 .sbm .island.drawer {
-  padding: 2px 14px;
-  max-height: 32%;
+  padding: 0 14px;
+  max-height: 40%;
   overflow-y: auto;
   background: var(--panel-strip);
-}
-
-.sbm .drawer summary {
-  display: flex;
-  align-items: center;
-  min-height: 40px;
-  color: var(--muted);
-  font-size: 14px;
-  cursor: pointer;
 }
 
 .sbm .drawer ul {
@@ -735,17 +740,34 @@ html:has(.sbm .live) {
 }
 
 .sbm .chip {
-  min-height: 46px;
-  padding: 0 12px;
+  min-height: 40px;
+  padding: 0 10px;
   color: var(--text);
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 999px;
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
+}
+
+/* "Auto ans" on two lines: the name, and its state underneath. */
+.sbm .chip.toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  line-height: 1.1;
+}
+
+.sbm .chip-state {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  opacity: 0.8;
 }
 
 .sbm .chip:active {
@@ -773,13 +795,71 @@ html:has(.sbm .live) {
 
 .sbm .chip.inline {
   align-self: flex-start;
-  min-height: 34px;
-  padding: 0 14px;
-  font-size: 13px;
+  min-height: 30px;
+  padding: 0 12px;
+  font-size: 12px;
 }
 
 .sbm .chip.big {
-  min-height: 52px;
-  padding: 0 24px;
-  font-size: 16px;
+  min-height: 46px;
+  padding: 0 22px;
+  font-size: 15px;
+}
+
+/* Transcript panel: a header that says what tapping it does, so it can be closed again. */
+.sbm .drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 40px;
+  padding: 0;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.sbm .drawer-state {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.sbm .drawer-empty {
+  padding-bottom: 10px;
+  font-size: 13px;
+}
+
+/* "End interview?" confirmation */
+.sbm .overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.sbm .dialog {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  background: var(--panel-strip);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.sbm .dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
 }

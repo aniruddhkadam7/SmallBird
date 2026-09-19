@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Markdown from "react-markdown"
 import { spokenAnswer } from "@/lib/mobile/answer"
 import { saveTranscript, type SaveStatus } from "@/lib/mobile/transcripts"
@@ -20,6 +20,17 @@ export default function Summary({ result, onDone }: { result: SessionResult; onD
   const [saveStatus, setSaveStatus] = useState<SaveStatus>(result.saveStatus)
   const [retrying, setRetrying] = useState(false)
   const minutes = Math.max(1, Math.round(result.durationSeconds / 60))
+
+  // The screen appears the moment the interview ends; the save finishes in the background.
+  useEffect(() => {
+    let current = true
+    result.pendingSave?.then((outcome) => {
+      if (current) setSaveStatus(outcome)
+    })
+    return () => {
+      current = false
+    }
+  }, [result])
   const answered = result.entries.filter((e) => spokenAnswer(e.raw)).length
 
   async function copy() {
@@ -57,6 +68,13 @@ export default function Summary({ result, onDone }: { result: SessionResult; onD
         {result.message} {result.durationSeconds > 0 && `About ${minutes} min · `}
         {answered} question{answered === 1 ? "" : "s"} answered.
       </p>
+
+      {saveStatus === "saving" && (
+        <section className="card callout">
+          <p className="callout-title saving">Saving your transcript…</p>
+          <p className="lede">This takes a moment. You can then open it on your dashboard.</p>
+        </section>
+      )}
 
       {saveStatus === "saved" && (
         <section className="card callout">
