@@ -32,10 +32,8 @@ interface ViewProps {
   remaining: number
   hearing: string
   entry: QAEntry | null
-  turns: Turn[]
   missedAudio: boolean
   onDismissMissed: () => void
-  onAskTurn: (text: string) => void
   autoAnswer: boolean
   onToggleAuto: () => void
   onAnswerThis: () => void
@@ -50,7 +48,6 @@ interface ViewProps {
 // strip, then the Question / Answer panel, with the actions in reach of a thumb.
 export function LiveView(p: ViewProps) {
   const answer = p.entry?.raw.trim() ?? ""
-  const [transcriptOpen, setTranscriptOpen] = useState(false)
   const lowOnTime = p.remaining > 0 && p.remaining <= 300
   const problem = p.status === "reconnecting" || p.status === "paused"
 
@@ -109,28 +106,6 @@ export function LiveView(p: ViewProps) {
               : "Auto ans is off. Tap \"Answer this\" when the interviewer finishes a question."}
           </p>
         )}
-      </section>
-
-      <section className="island drawer">
-        <button type="button" className="drawer-head" onClick={() => setTranscriptOpen((open) => !open)} aria-expanded={transcriptOpen}>
-          <span>Transcript ({p.turns.length})</span>
-          <span className="drawer-state">{transcriptOpen ? "Close ✕" : "Show"}</span>
-        </button>
-        {transcriptOpen &&
-          (p.turns.length === 0 ? (
-            <p className="dim drawer-empty">Nothing heard yet.</p>
-          ) : (
-            <ul>
-              {p.turns.map((turn) => (
-                <li key={turn.id}>
-                  <span>{turn.text}</span>
-                  <button type="button" className="chip inline" onClick={() => p.onAskTurn(turn.text)}>
-                    Answer
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ))}
       </section>
 
       <footer className="actions">
@@ -420,10 +395,8 @@ export default function Live({ profile, audio, onFinished, onCancel }: Props) {
       remaining={remaining}
       hearing={hearing}
       entry={entries[entries.length - 1] ?? null}
-      turns={turns}
       missedAudio={missedAudio}
       onDismissMissed={() => setMissedAudio(false)}
-      onAskTurn={(text) => void ask(text)}
       autoAnswer={autoAnswer}
       onToggleAuto={() => {
         const next = !autoAnswer

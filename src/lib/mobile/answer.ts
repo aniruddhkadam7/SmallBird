@@ -19,7 +19,39 @@ export interface QA {
 }
 
 const HISTORY_TURNS = 4;
-const MAX_TOKENS = 650;
+
+// How much to say depends on what was asked (the desktop app does the same).
+// One fixed size for everything is why "explain X in detail" came back short.
+export type AnswerDepth = "short" | "medium" | "detailed" | "code";
+
+const SHORT_CUES = /\b(briefly|in brief|in short|in a nutshell|quickly|one line|one sentence|in a sentence|yes or no|tl;?dr|short answer|just the (name|basics|gist))\b/;
+const CODE_CUES = /\b(write|implement|code|coding|leetcode|sql query|regex|snippet)\b/;
+const DETAILED_CUES =
+  /\b(in detail|detailed|in depth|in-depth|deep dive|step by step|step-by-step|end to end|end-to-end|comprehensive|thorough|thoroughly|walk me through|walk us through|explain how|how does|how do|how would you (design|build|implement|scale|architect)|architecture|architect|system design|design an?|internals|under the hood|from scratch|life ?cycle|pipeline|everything about|all about|elaborate|deep)\b/;
+// Comparisons need both sides explained, even when they start like a definition ("What's the difference between...").
+const COMPARISON = /\b(difference|differences|differ|compare|comparison|versus|vs\.?|pros and cons|trade-?offs?|better than|advantages|disadvantages)\b/;
+const DEFINITION = /^(what is|what's|what are|what does|define|who|when|which|is it|are there|do you|have you|did you)\b/;
+
+export function answerDepth(question: string): AnswerDepth {
+  const q = question.toLowerCase().trim();
+  if (SHORT_CUES.test(q)) return "short";
+  if (CODE_CUES.test(q)) return "code";
+  if (DETAILED_CUES.test(q)) return "detailed";
+  if (COMPARISON.test(q)) return "medium";
+  if (DEFINITION.test(q) && q.split(/\s+/).length <= 12) return "short";
+  return "medium";
+}
+
+const TOKEN_BUDGET: Record<AnswerDepth, number> = { short: 300, medium: 650, detailed: 1500, code: 1000 };
+
+const LENGTH_INSTRUCTION: Record<AnswerDepth, string> = {
+  short: "SHORT. A direct answer in one sentence, then one or two sentences of real supporting detail. No bullets.",
+  medium:
+    "MEDIUM. A direct answer, then the core reasoning or mechanism, about 120 to 180 words. Use 3 to 5 bullets or a short numbered list when there are separate points.",
+  detailed:
+    "DETAILED. The interviewer wants depth, so give a complete, well-organised explanation of about 300 to 450 words and do not stop early. Open with a one-sentence direct answer. Then cover, in order: how it works step by step (a numbered list, each step a full sentence with the key term in bold), a concrete example, and the main trade-offs, limits or common mistakes. Real specifics beat generalities.",
+  code: "CODE. At most one short framing sentence, then complete, correct, runnable code in a fenced block, then at most one sentence on complexity or a key trade-off.",
+};
 // Per document, so a long job description can't crowd the CV out (or the reverse).
 const MAX_RESUME_CHARS = 9_000;
 const MAX_JOB_DESCRIPTION_CHARS = 5_000;
@@ -45,8 +77,8 @@ GROUNDING
 OUTPUT FORMAT (read at a glance on a phone, so keep it easy to scan)
 - Give ONE answer. No headings and no labels.
 - Start with the direct answer in one short sentence, in the words you'd actually say out loud.
-- Then, only if the question needs more than that, add 2 to 5 short bullet lines ("- "), each one a full spoken sentence with the key term in **bold**. Use a numbered list only for genuinely sequential steps.
-- Match the length to the question: a simple factual question gets 2 or 3 sentences and no bullets; a "why" question gets a few sentences; a process or design question gets a fuller walkthrough. Never pad.
+- When the answer needs more than a couple of sentences, add bullet lines ("- ") or a numbered list, each item a full spoken sentence with the key term in **bold**. Use a numbered list for sequential steps.
+- Follow the "ANSWER LENGTH" given with the question. It sets how much to say: never pad a short answer, and never cut a DETAILED answer short.
 - For a request to write code, give one short sentence and then a complete fenced code block.`;
 
 // The role / company / job description / CV, as ONE message that stays the
@@ -75,7 +107,7 @@ function buildMessages(profile: Profile, history: QA[], question: string): ChatM
     messages.push({ role: "user", content: turn.question });
     messages.push({ role: "assistant", content: turn.answer });
   }
-  messages.push({ role: "user", content: question });
+  messages.push({ role: "user", content: `${question}\n\nANSWER LENGTH for this question: ${LENGTH_INSTRUCTION[answerDepth(question)]}` });
   return messages;
 }
 
@@ -91,7 +123,7 @@ export async function askAnswer(
   let text = "";
   await streamChat(
     buildMessages(profile, history, question),
-    MAX_TOKENS,
+    TOKEN_BUDGET[answerDepth(question)],
     sessionId,
     (delta) => {
       text += delta;

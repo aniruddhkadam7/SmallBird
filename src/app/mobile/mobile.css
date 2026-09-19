@@ -708,30 +708,6 @@ html:has(.sbm .live) {
   color: #ff8a8f;
 }
 
-.sbm .island.drawer {
-  padding: 0 14px;
-  max-height: 40%;
-  overflow-y: auto;
-  background: var(--panel-strip);
-}
-
-.sbm .drawer ul {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding: 0 0 10px;
-  list-style: none;
-  font-size: 14px;
-}
-
-.sbm .drawer li {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-}
-
 .sbm .actions {
   display: grid;
   grid-template-columns: 1.15fr 1.25fr 1fr auto;
@@ -804,32 +780,6 @@ html:has(.sbm .live) {
   min-height: 46px;
   padding: 0 22px;
   font-size: 15px;
-}
-
-/* Transcript panel: a header that says what tapping it does, so it can be closed again. */
-.sbm .drawer-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  min-height: 40px;
-  padding: 0;
-  color: var(--muted);
-  background: none;
-  border: 0;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.sbm .drawer-state {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.sbm .drawer-empty {
-  padding-bottom: 10px;
-  font-size: 13px;
 }
 
 /* "End interview?" confirmation */
