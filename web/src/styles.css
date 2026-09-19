@@ -1,0 +1,397 @@
+/* Dark and dim on purpose: a bright phone screen beside a laptop is visible on camera. */
+:root {
+  color-scheme: dark;
+  --bg: #0b0d12;
+  --card: #141821;
+  --line: #232937;
+  --text: #e8ebf2;
+  --muted: #8b93a5;
+  --accent: #6ea8fe;
+  --accent-ink: #08101f;
+  --ok: #4cc38a;
+  --warn: #e9b44c;
+  --bad: #ef6b6b;
+  --radius: 14px;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+.screen {
+  min-height: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: max(20px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.screen.center {
+  justify-content: center;
+  text-align: center;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.between {
+  justify-content: space-between;
+}
+
+.brand {
+  font-size: 30px;
+  letter-spacing: -0.02em;
+}
+
+.brand.small {
+  font-size: 22px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.ok {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.warn {
+  color: var(--warn);
+  font-size: 14px;
+}
+
+.error {
+  color: var(--bad);
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: left;
+}
+
+input,
+textarea {
+  width: 100%;
+  padding: 13px 14px;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font: inherit;
+}
+
+input:focus,
+textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+input.code {
+  text-align: center;
+  font-size: 28px;
+  letter-spacing: 0.4em;
+}
+
+label.file input {
+  padding: 10px;
+}
+
+button {
+  min-height: 48px;
+  padding: 0 16px;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+
+button.big {
+  min-height: 60px;
+  font-size: 18px;
+}
+
+button.danger {
+  color: var(--bad);
+}
+
+button.link {
+  min-height: 36px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 500;
+  padding: 0 8px;
+}
+
+.meter {
+  height: 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.meter.small {
+  flex: 1;
+  height: 6px;
+  min-width: 40px;
+}
+
+.meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--muted);
+  transition: width 90ms linear;
+}
+
+.meter-fill[data-heard="true"] {
+  background: var(--ok);
+}
+
+/* ---- Live screen ---- */
+
+.live {
+  height: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: max(10px, env(safe-area-inset-top)) 12px 0;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+
+.topbar.problem {
+  border-color: var(--bad);
+  background: #2a1517;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.dot[data-status="listening"] {
+  background: var(--ok);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.dot[data-status="reconnecting"],
+.dot[data-status="paused"] {
+  background: var(--bad);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.clock {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.clock.low {
+  color: var(--warn);
+  font-weight: 700;
+}
+
+.banner {
+  margin: 0;
+  padding: 8px 12px;
+  background: #2b2412;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  color: var(--warn);
+  font-size: 14px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.question p {
+  font-size: 18px;
+  line-height: 1.4;
+}
+
+.hearing {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.answer {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Large, high-contrast: read at a glance while looking at a camera. */
+.md {
+  font-size: 19px;
+  line-height: 1.5;
+}
+
+.md p {
+  margin: 0 0 0.6em;
+}
+
+.md ul,
+.md ol {
+  margin: 0 0 0.6em;
+  padding-left: 1.2em;
+}
+
+.md li {
+  margin-bottom: 0.4em;
+}
+
+.md strong {
+  color: #fff;
+}
+
+.md.full {
+  font-size: 17px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.md pre {
+  overflow-x: auto;
+  background: #0d1017;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 14px;
+}
+
+.expand {
+  align-self: flex-start;
+  padding-left: 0;
+}
+
+.drawer {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 4px 14px;
+  max-height: 34%;
+  overflow-y: auto;
+}
+
+.drawer summary {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.drawer ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.drawer li {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1.2fr 1.25fr 1fr auto;
+  gap: 8px;
+  padding: 8px 0 max(12px, env(safe-area-inset-bottom));
+}
+
+.actions button {
+  min-height: 54px;
+  padding: 0 8px;
+  font-size: 15px;
+  white-space: nowrap;
+}
