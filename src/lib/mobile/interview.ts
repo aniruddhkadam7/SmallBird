@@ -51,6 +51,9 @@ export class InterviewController {
   private pending = "";
   private partial = "";
   private paused = false;
+  private autoAnswer = true;
+  /** A question Auto answer detected while it was off, kept so "Answer this" can answer it. */
+  private detected = "";
   private ended = false;
   private turnId = 0;
 
@@ -116,23 +119,29 @@ export class InterviewController {
     this.events.onStatus(paused ? "paused" : "listening");
   }
 
-  /** Returns whatever the interviewer has said since the last answer and clears it (for "Answer this"). */
+  /**
+   * When on (the default), a finished question is answered as soon as it is
+   * detected. When off, it is only shown, and "Answer this" answers it.
+   */
+  setAutoAnswer(enabled: boolean): void {
+    this.autoAnswer = enabled;
+  }
+
+  /**
+   * For "Answer this": whatever the interviewer has said since the last
+   * answer, or else the last question detected while Auto answer was off.
+   * Clears both.
+   */
   takePending(): string {
     this.flux?.forceEndTurn();
     window.clearTimeout(this.autoAskTimer);
-    const text = joinSpeech(this.pending, this.partial);
+    const heard = joinSpeech(this.pending, this.partial);
+    const text = heard.trim() ? heard : this.detected;
     this.pending = "";
     this.partial = "";
+    this.detected = "";
     this.events.onHearing("");
     return text;
-  }
-
-  /** "That was me" — throws away what's buffered so it never becomes a question. */
-  discardPending(): void {
-    window.clearTimeout(this.autoAskTimer);
-    this.pending = "";
-    this.partial = "";
-    this.events.onHearing("");
   }
 
   async end(message = "Interview ended."): Promise<void> {
@@ -223,7 +232,14 @@ export class InterviewController {
       return;
     }
     this.pending = "";
-    this.events.onHearing("");
-    this.events.onQuestion(text);
+    if (this.autoAnswer) {
+      this.detected = "";
+      this.events.onHearing("");
+      this.events.onQuestion(text);
+    } else {
+      // Held, and left on screen, so it is clear what "Answer this" will answer.
+      this.detected = text;
+      this.events.onHearing(text);
+    }
   }
 }

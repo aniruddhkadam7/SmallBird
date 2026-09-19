@@ -4,9 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { AudioLines, MessageCircle, Star } from "lucide-react"
 import Markdown from "react-markdown"
 import { ApiError } from "@/lib/mobile/api"
-import { askAnswer, spokenAnswer, splitAnswer, type Profile, type QA } from "@/lib/mobile/answer"
+import { askAnswer, spokenAnswer, type Profile, type QA } from "@/lib/mobile/answer"
 import { InterviewController, type LiveStatus, type Turn } from "@/lib/mobile/interview"
 import { MicError, prepareAudio, type PreparedAudio } from "@/lib/mobile/mic"
+import { newTranscriptId, saveTranscript, type SaveStatus, type TranscriptInput } from "@/lib/mobile/transcripts"
 import type { QAEntry, SessionResult } from "@/lib/mobile/types"
 
 type Phase = "starting" | "live" | "conflict" | "failed"
@@ -25,6 +26,25 @@ function formatClock(totalSeconds: number): string {
   return `${m}:${String(s).padStart(2, "0")}`
 }
 
+const AUTO_ANSWER_KEY = "smallbird:web-auto-answer"
+
+// On unless the user turned it off: that is how the interview already behaved.
+function loadAutoAnswer(): boolean {
+  try {
+    return window.localStorage.getItem(AUTO_ANSWER_KEY) !== "off"
+  } catch {
+    return true
+  }
+}
+
+function saveAutoAnswer(enabled: boolean): void {
+  try {
+    window.localStorage.setItem(AUTO_ANSWER_KEY, enabled ? "on" : "off")
+  } catch {
+    // Not persisting is fine; the choice still applies for this interview.
+  }
+}
+
 interface ViewProps {
   status: LiveStatus
   level: number
@@ -32,12 +52,11 @@ interface ViewProps {
   hearing: string
   entry: QAEntry | null
   turns: Turn[]
-  showFull: boolean
   missedAudio: boolean
-  onToggleFull: () => void
   onDismissMissed: () => void
   onAskTurn: (text: string) => void
-  onThatWasMe: () => void
+  autoAnswer: boolean
+  onToggleAuto: () => void
   onAnswerThis: () => void
   onTogglePause: () => void
   onEnd: () => void
@@ -46,7 +65,7 @@ interface ViewProps {
 // Laid out like the desktop overlay: a slim status bar, a live-transcript
 // strip, then the Question / Answer panel, with the actions in reach of a thumb.
 export function LiveView(p: ViewProps) {
-  const parts = p.entry ? splitAnswer(p.entry.raw) : null
+  const answer = p.entry?.raw.trim() ?? ""
   const lowOnTime = p.remaining > 0 && p.remaining <= 300
   const problem = p.status === "reconnecting" || p.status === "paused"
 
@@ -84,34 +103,26 @@ export function LiveView(p: ViewProps) {
 
             {p.entry.error ? (
               <p className="error-text">{p.entry.error}</p>
-            ) : parts && parts.points ? (
+            ) : answer ? (
               <div className="qa-answer">
                 <p className="qa-line">
                   <Star className="qa-icon star" aria-hidden />
                   <strong>Answer:</strong>
                 </p>
-                <div className="md points">
-                  <Markdown>{parts.points}</Markdown>
+                <div className="md">
+                  <Markdown>{answer}</Markdown>
                 </div>
-                {parts.hasFull && parts.full && (
-                  <>
-                    <button type="button" className="chip inline" onClick={p.onToggleFull}>
-                      {p.showFull ? "Hide full answer" : "Full answer"}
-                    </button>
-                    {p.showFull && (
-                      <div className="md full">
-                        <Markdown>{parts.full}</Markdown>
-                      </div>
-                    )}
-                  </>
-                )}
               </div>
             ) : !p.entry.done ? (
               <p className="dim">Thinking…</p>
             ) : null}
           </>
         ) : (
-          <p className="dim">Answers appear here. Tap &quot;Answer this&quot; if a question was missed.</p>
+          <p className="dim">
+            {p.autoAnswer
+              ? "Answers appear here. Tap \"Answer this\" if a question was missed."
+              : "Auto answer is off. Tap \"Answer this\" when the interviewer finishes a question."}
+          </p>
         )}
       </section>
 
@@ -130,8 +141,8 @@ export function LiveView(p: ViewProps) {
       </details>
 
       <footer className="actions">
-        <button type="button" className="chip" onClick={p.onThatWasMe}>
-          That was me
+        <button type="button" className={`chip toggle ${p.autoAnswer ? "on" : ""}`} aria-pressed={p.autoAnswer} onClick={p.onToggleAuto}>
+          Auto: {p.autoAnswer ? "On" : "Off"}
         </button>
         <button type="button" className="chip accent" onClick={p.onAnswerThis}>
           Answer this
@@ -164,7 +175,6 @@ export default function Live({ profile, audio, onFinished, onCancel }: Props) {
   const [entries, setEntries] = useState<QAEntry[]>([])
   const [level, setLevel] = useState(0)
   const [remaining, setRemaining] = useState(0)
-  const [showFull, setShowFull] = useState(false)
   const [missedAudio, setMissedAudio] = useState(false)
 
   const controller = useRef<InterviewController | null>(null)
@@ -172,6 +182,10 @@ export default function Live({ profile, audio, onFinished, onCancel }: Props) {
   const history = useRef<QA[]>([])
   const entryId = useRef(0)
   const startedAt = useRef(0)
+  const transcriptId = useRef<string | null>(null)
+  const saveChain = useRef<Promise<void>>(Promise.resolve())
+  const [autoAnswer, setAutoAnswer] = useState(loadAutoAnswer)
+  const autoRef = useRef(autoAnswer)
   const began = useRef(false)
   const mounted = useRef(false)
   // The end-of-session callback fires from a long-lived closure, so it reads
@@ -185,6 +199,30 @@ export default function Live({ profile, audio, onFinished, onCancel }: Props) {
     setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)))
   }, [])
 
+  // Everything answered so far, in the shape the dashboard stores.
+  const buildTranscript = useCallback((): TranscriptInput | null => {
+    if (history.current.length === 0) return null
+    transcriptId.current ??= newTranscriptId()
+    return {
+      id: transcriptId.current,
+      startedAtMs: startedAt.current || Date.now(),
+      endedAtMs: Date.now(),
+      role: profile.role,
+      company: profile.company,
+      turns: history.current.map(({ question, answer }) => ({ question, answer })),
+    }
+  }, [profile.role, profile.company])
+
+  // Saves run one after another, so an older and smaller snapshot can never
+  // land after a newer one. Rejects if this save failed; the queue carries on.
+  const persist = useCallback((): Promise<void> => {
+    const transcript = buildTranscript()
+    if (!transcript) return Promise.resolve()
+    const run = saveChain.current.then(() => saveTranscript(transcript))
+    saveChain.current = run.catch(() => {})
+    return run
+  }, [buildTranscript])
+
   const ask = useCallback(
     async (question: string) => {
       const ctl = controller.current
@@ -195,18 +233,19 @@ export default function Live({ profile, audio, onFinished, onCancel }: Props) {
       const signal = (abort.current = new AbortController()).signal
       const id = ++entryId.current
       setEntries((prev) => [...prev, { id, question, raw: "", done: false }])
-      setShowFull(false)
 
       try {
         const raw = await askAnswer(profile, history.current, question, ctl.sessionId, (text) => patchEntry(id, { raw: text }), signal)
         history.current.push({ question, answer: spokenAnswer(raw) })
         patchEntry(id, { done: true })
+        // Saved after every answer (like the desktop app), so a phone that dies mid-interview loses nothing.
+        void persist().catch(() => {})
       } catch (err) {
         if (signal.aborted) patchEntry(id, { done: true })
         else patchEntry(id, { done: true, error: err instanceof Error ? err.message : "Couldn't generate an answer." })
       }
     },
-    [profile, patchEntry],
+    [profile, patchEntry, persist],
   )
 
   const begin = useCallback(
@@ -222,14 +261,24 @@ export default function Live({ profile, audio, onFinished, onCancel }: Props) {
           onRemaining: setRemaining,
           onEnded: (message) => {
             abort.current?.abort()
-            onFinished({
-              entries: latest.current.entries,
-              turns: latest.current.turns,
-              message,
-              durationSeconds: startedAt.current ? Math.round((Date.now() - startedAt.current) / 1000) : 0,
-            })
+            const transcript = buildTranscript()
+            const finish = (saveStatus: SaveStatus) =>
+              onFinished({
+                entries: latest.current.entries,
+                turns: latest.current.turns,
+                message,
+                durationSeconds: startedAt.current ? Math.round((Date.now() - startedAt.current) / 1000) : 0,
+                transcript,
+                saveStatus,
+              })
+            if (!transcript) return finish("empty")
+            persist().then(
+              () => finish("saved"),
+              () => finish("failed"),
+            )
           },
         })
+        controller.current.setAutoAnswer(autoRef.current)
       }
 
       try {
@@ -246,7 +295,7 @@ export default function Live({ profile, audio, onFinished, onCancel }: Props) {
         }
       }
     },
-    [ask, onFinished],
+    [ask, onFinished, buildTranscript, persist],
   )
 
   // Starts as soon as this screen opens: the tap that opened it already
@@ -345,12 +394,17 @@ export default function Live({ profile, audio, onFinished, onCancel }: Props) {
       hearing={hearing}
       entry={entries[entries.length - 1] ?? null}
       turns={turns}
-      showFull={showFull}
       missedAudio={missedAudio}
-      onToggleFull={() => setShowFull((v) => !v)}
       onDismissMissed={() => setMissedAudio(false)}
       onAskTurn={(text) => void ask(text)}
-      onThatWasMe={() => controller.current?.discardPending()}
+      autoAnswer={autoAnswer}
+      onToggleAuto={() => {
+        const next = !autoAnswer
+        setAutoAnswer(next)
+        autoRef.current = next
+        saveAutoAnswer(next)
+        controller.current?.setAutoAnswer(next)
+      }}
       onAnswerThis={() => {
         const ctl = controller.current
         if (!ctl) return

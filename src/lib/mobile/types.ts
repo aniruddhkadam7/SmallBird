@@ -1,9 +1,10 @@
 import type { Turn } from "./interview";
+import type { SaveStatus, TranscriptInput } from "./transcripts";
 
 export interface QAEntry {
   id: number;
   question: string;
-  /** Raw model output, including the [[FULL]] marker (see answer.ts). */
+  /** The model's answer, streamed in as it is generated (see answer.ts). */
   raw: string;
   done: boolean;
   error?: string;
@@ -14,4 +15,7 @@ export interface SessionResult {
   turns: Turn[];
   message: string;
   durationSeconds: number;
+  /** What was (or should be) saved to the dashboard; null when nothing was answered. */
+  transcript: TranscriptInput | null;
+  saveStatus: SaveStatus;
 }

@@ -3,27 +3,32 @@ import { streamChat, type ChatMessage } from "./api";
 export interface Profile {
   company: string;
   role: string;
-  /** Resume / job description / anything the answers should be grounded in. */
-  background: string;
+  /** Text of the uploaded CV / resume, and the file it came from (shown in the UI). */
+  resume: string;
+  resumeName: string;
+  /** Text of the uploaded job description, and the file it came from. */
+  jobDescription: string;
+  jobDescriptionName: string;
 }
+
+export const EMPTY_PROFILE: Profile = { company: "", role: "", resume: "", resumeName: "", jobDescription: "", jobDescriptionName: "" };
 
 export interface QA {
   question: string;
   answer: string;
 }
 
-/** Marker the model puts between the glanceable key points and the full spoken answer. */
-export const FULL_MARKER = "[[FULL]]";
-
 const HISTORY_TURNS = 4;
 const MAX_TOKENS = 650;
-const MAX_BACKGROUND_CHARS = 12_000;
+// Per document, so a long job description can't crowd the CV out (or the reverse).
+const MAX_RESUME_CHARS = 9_000;
+const MAX_JOB_DESCRIPTION_CHARS = 5_000;
 
 // Condensed from the desktop app's Ask AI prompt
 // (src-tauri/src/personal/prompts/ask.rs): same voice, honesty and
-// never-mention-documents rules, plus a two-part output shape for a phone
-// glanced at beside a laptop — key points first so something readable
-// appears within a second, the full spoken answer after.
+// never-mention-documents rules, with an output shape that reads at a glance
+// on a phone next to a laptop: a direct sentence first, bullets only when the
+// question needs them.
 const SYSTEM_PROMPT = `You are the candidate, live in a job interview, answering the interviewer's current question out loud in your own voice.
 
 VOICE
@@ -32,26 +37,40 @@ VOICE
 - Follow the conversation: a follow-up continues from the previous answer, never re-explains what was already covered.
 
 GROUNDING
-- The question comes first. For anything about the candidate's own experience, projects, or skills, use the background below and its real names, tools, companies and numbers. Never contradict it and never invent a made-up example when it gives a real one.
+- The question comes first. For anything about the candidate's own experience, projects, or skills, use the "About the candidate" part of the supporting background and its real names, tools, companies and numbers. Never contradict it and never invent a made-up example when it gives a real one.
+- Use the role, company and "Job context" to pitch the answer at the right level, and to connect what the candidate has really done to what this job asks for.
 - If the background doesn't cover the question, answer from your own general knowledge like a well-prepared candidate.
 - Never mention documents, resumes, context, sources, or what you were given.
 
-OUTPUT FORMAT (strict — this is read at a glance on a phone)
-1. First, 2 to 4 bullet lines ("- ") of KEY POINTS, each under 14 words, each starting with the most important word. Bold the key term with **double asterisks**.
-2. Then a line containing only ${FULL_MARKER}
-3. Then the FULL answer, in the words you'd actually say out loud: short paragraphs, a numbered list only for genuinely sequential steps, **bold** on key terms. Match its length to the question: a simple factual question gets 2-3 sentences; a "why" gets a few; a process or design question gets a fuller walkthrough. For a request to write code, give one short sentence and then a complete fenced code block.`;
+OUTPUT FORMAT (read at a glance on a phone, so keep it easy to scan)
+- Give ONE answer. No headings and no labels.
+- Start with the direct answer in one short sentence, in the words you'd actually say out loud.
+- Then, only if the question needs more than that, add 2 to 5 short bullet lines ("- "), each one a full spoken sentence with the key term in **bold**. Use a numbered list only for genuinely sequential steps.
+- Match the length to the question: a simple factual question gets 2 or 3 sentences and no bullets; a "why" question gets a few sentences; a process or design question gets a fuller walkthrough. Never pad.
+- For a request to write code, give one short sentence and then a complete fenced code block.`;
+
+// The role / company / job description / CV, as ONE message that stays the
+// same for every question in the interview - the shape and labels the desktop
+// app uses (context_blocks in ask.rs).
+function backgroundMessage(profile: Profile): string | null {
+  const blocks: string[] = [];
+  if (profile.role.trim()) blocks.push(`Role being interviewed for: ${profile.role.trim()}`);
+  if (profile.company.trim()) blocks.push(`Company: ${profile.company.trim()}`);
+  if (profile.jobDescription.trim()) blocks.push(`Job context:\n${profile.jobDescription.trim().slice(0, MAX_JOB_DESCRIPTION_CHARS)}`);
+  if (profile.resume.trim()) blocks.push(`About the candidate:\n${profile.resume.trim().slice(0, MAX_RESUME_CHARS)}`);
+  if (blocks.length === 0) return null;
+  return `SUPPORTING BACKGROUND for this interview session (optional — use only what is relevant to whatever question comes next; it is not a limit on what you can answer, and it must never be mentioned or referred to as a source):\n\n${blocks.join("\n\n")}`;
+}
+
+const BACKGROUND_ACK = "Got it — I'll keep that in mind while answering.";
 
 function buildMessages(profile: Profile, history: QA[], question: string): ChatMessage[] {
-  const background = profile.background.trim().slice(0, MAX_BACKGROUND_CHARS);
-  const context = [
-    profile.role.trim() && `Role being interviewed for: ${profile.role.trim()}`,
-    profile.company.trim() && `Company: ${profile.company.trim()}`,
-    background && `Background about the candidate:\n${background}`,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-
-  const messages: ChatMessage[] = [{ role: "system", content: context ? `${SYSTEM_PROMPT}\n\n${context}` : SYSTEM_PROMPT }];
+  const messages: ChatMessage[] = [{ role: "system", content: SYSTEM_PROMPT }];
+  const background = backgroundMessage(profile);
+  if (background) {
+    messages.push({ role: "user", content: background });
+    messages.push({ role: "assistant", content: BACKGROUND_ACK });
+  }
   for (const turn of history.slice(-HISTORY_TURNS)) {
     messages.push({ role: "user", content: turn.question });
     messages.push({ role: "assistant", content: turn.answer });
@@ -83,14 +102,7 @@ export async function askAnswer(
   return text;
 }
 
-export function splitAnswer(raw: string): { points: string; full: string; hasFull: boolean } {
-  const at = raw.indexOf(FULL_MARKER);
-  if (at < 0) return { points: raw.trim(), full: "", hasFull: false };
-  return { points: raw.slice(0, at).trim(), full: raw.slice(at + FULL_MARKER.length).trim(), hasFull: true };
-}
-
-/** What gets stored in the conversation history: the spoken answer, without the marker scaffolding. */
+/** What gets stored in the conversation history and the summary: the answer as spoken. */
 export function spokenAnswer(raw: string): string {
-  const { points, full, hasFull } = splitAnswer(raw);
-  return hasFull ? full : points;
+  return raw.trim();
 }

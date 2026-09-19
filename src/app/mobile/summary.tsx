@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useState } from "react"
 import Markdown from "react-markdown"
 import { spokenAnswer } from "@/lib/mobile/answer"
+import { saveTranscript, type SaveStatus } from "@/lib/mobile/transcripts"
 import type { SessionResult } from "@/lib/mobile/types"
 
 function transcriptText(result: SessionResult): string {
@@ -16,7 +17,10 @@ function transcriptText(result: SessionResult): string {
 
 export default function Summary({ result, onDone }: { result: SessionResult; onDone: () => void }) {
   const [copied, setCopied] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>(result.saveStatus)
+  const [retrying, setRetrying] = useState(false)
   const minutes = Math.max(1, Math.round(result.durationSeconds / 60))
+  const answered = result.entries.filter((e) => spokenAnswer(e.raw)).length
 
   async function copy() {
     try {
@@ -24,6 +28,19 @@ export default function Summary({ result, onDone }: { result: SessionResult; onD
       setCopied(true)
     } catch {
       // Clipboard can be blocked; the answers are still on screen to read.
+    }
+  }
+
+  async function retrySave() {
+    if (!result.transcript) return
+    setRetrying(true)
+    try {
+      await saveTranscript(result.transcript)
+      setSaveStatus("saved")
+    } catch {
+      setSaveStatus("failed")
+    } finally {
+      setRetrying(false)
     }
   }
 
@@ -38,15 +55,39 @@ export default function Summary({ result, onDone }: { result: SessionResult; onD
       <h1 className="title">Interview finished</h1>
       <p className="lede">
         {result.message} {result.durationSeconds > 0 && `About ${minutes} min · `}
-        {result.entries.length} question{result.entries.length === 1 ? "" : "s"} answered.
+        {answered} question{answered === 1 ? "" : "s"} answered.
       </p>
 
+      {saveStatus === "saved" && (
+        <section className="card callout">
+          <p className="callout-title">✓ Your transcript is saved</p>
+          <p className="lede">Open your dashboard to read it again, or download it.</p>
+          <Link href="/dashboard" className="btn primary big">
+            View transcript on dashboard
+          </Link>
+        </section>
+      )}
+
+      {saveStatus === "failed" && (
+        <section className="card">
+          <p className="notice error">We couldn&apos;t save this transcript to your dashboard. Check your connection and try again.</p>
+          <button type="button" className="btn primary big" onClick={retrySave} disabled={retrying}>
+            {retrying ? "Saving…" : "Try saving again"}
+          </button>
+          <p className="fineprint">You can also copy the questions and answers below so nothing is lost.</p>
+        </section>
+      )}
+
+      {saveStatus === "empty" && <p className="fineprint">No questions were answered, so there is nothing to save to your dashboard.</p>}
+
       <div className="actions-col">
-        <button type="button" className="btn primary big" onClick={copy}>
-          {copied ? "Copied" : "Copy questions, answers and transcript"}
-        </button>
+        {answered > 0 && (
+          <button type="button" className="btn small" onClick={copy}>
+            {copied ? "Copied" : "Copy questions and answers"}
+          </button>
+        )}
         <button type="button" className="btn small" onClick={onDone}>
-          Back to start
+          Start another interview
         </button>
       </div>
 
