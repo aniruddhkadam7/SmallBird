@@ -37,8 +37,8 @@ export function HeroWithMockup({
       className={cn(
         "relative bg-background text-foreground",
         "pt-10 pb-12 px-4 md:py-24 lg:py-28",
-        // Phones: a soft brand-tinted wash behind the hero.
-        "max-md:bg-[linear-gradient(180deg,var(--background)_0%,#eef2ff_18%,#f5f3ff_60%,var(--background)_100%)]",
+        // A soft brand-tinted wash behind the hero.
+        "bg-[linear-gradient(180deg,var(--background)_0%,#eef2ff_18%,#f5f3ff_60%,var(--background)_100%)]",
         "overflow-hidden",
         className,
       )}
