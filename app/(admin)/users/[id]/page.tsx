@@ -7,6 +7,7 @@ import { Unauthorized } from "@/components/Unauthorized";
 import { ManageMinutesPanel } from "@/components/ManageMinutesPanel";
 import { GrantPassPanel } from "@/components/GrantPassPanel";
 import { TranscriptModal } from "@/components/TranscriptModal";
+import { Modal } from "@/components/Modal";
 import { formatDuration } from "@/lib/format";
 
 interface LedgerRow {
@@ -86,6 +87,7 @@ export default function UserDetailPage() {
 
   const { data: detail, error, mutate } = useAdminQuery<UserDetail>("admin-user-detail", { userId });
   const [openTranscriptId, setOpenTranscriptId] = useState<string | null>(null);
+  const [manageMinutesOpen, setManageMinutesOpen] = useState(false);
 
   if (error instanceof AdminApiError && error.status === 403) return <Unauthorized />;
   if (error instanceof AdminApiError && error.status === 404) return <p className="text-sm text-muted">User not found.</p>;
@@ -106,7 +108,12 @@ export default function UserDetailPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <section className="card">
-            <h2 className="text-sm font-semibold text-ink">Entitlement</h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-ink">Entitlement</h2>
+              <button type="button" onClick={() => setManageMinutesOpen(true)} className="btn-secondary px-2.5 py-1 text-xs">
+                Manage minutes
+              </button>
+            </div>
             <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
               <div>
                 <p className="text-xs text-muted">Plan</p>
@@ -280,11 +287,6 @@ export default function UserDetailPage() {
         </div>
 
         <div className="space-y-6">
-          <ManageMinutesPanel
-            userId={detail.profile.userId}
-            currentBalance={Number(detail.entitlement.remainingMinutes)}
-            onSuccess={() => mutate()}
-          />
           <GrantPassPanel userId={detail.profile.userId} onSuccess={() => mutate()} />
 
           <section className="card">
@@ -373,6 +375,19 @@ export default function UserDetailPage() {
       </div>
 
       <TranscriptModal transcriptId={openTranscriptId} onClose={() => setOpenTranscriptId(null)} />
+
+      {manageMinutesOpen && (
+        <Modal title="Manage minutes" onClose={() => setManageMinutesOpen(false)}>
+          <ManageMinutesPanel
+            userId={detail.profile.userId}
+            currentBalance={Number(detail.entitlement.remainingMinutes)}
+            onSuccess={() => {
+              mutate();
+              setManageMinutesOpen(false);
+            }}
+          />
+        </Modal>
+      )}
     </div>
   );
 }
