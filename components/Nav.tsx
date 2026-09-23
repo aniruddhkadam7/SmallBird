@@ -30,7 +30,7 @@ const BUILT: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-export function Nav() {
+export function Nav({ collapsed = false }: { collapsed?: boolean }) {
   const pathname = usePathname();
 
   return (
@@ -42,12 +42,17 @@ export function Nav() {
           <Link
             key={item.href}
             href={item.href}
+            title={collapsed ? item.label : undefined}
             className={`group flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2 ${
-              active ? "bg-accent text-white shadow-sm" : "text-ink/80 hover:bg-subtle hover:text-ink"
-            }`}
+              collapsed ? "lg:justify-center lg:px-0" : ""
+            } ${active ? "bg-accent text-white shadow-sm" : "text-ink/80 hover:bg-subtle hover:text-ink"}`}
           >
-            <Icon size={16} className={active ? "text-white" : "text-muted group-hover:text-ink"} strokeWidth={2} />
-            {item.label}
+            <Icon
+              size={16}
+              className={`flex-shrink-0 ${active ? "text-white" : "text-muted group-hover:text-ink"}`}
+              strokeWidth={2}
+            />
+            <span className={collapsed ? "lg:hidden" : ""}>{item.label}</span>
           </Link>
         );
       })}

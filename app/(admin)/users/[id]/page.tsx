@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
+import { useAdminQuery, AdminApiError, prefetchAdminQuery } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
 import { ManageMinutesPanel } from "@/components/ManageMinutesPanel";
 import { GrantPassPanel } from "@/components/GrantPassPanel";
@@ -210,7 +210,11 @@ export default function UserDetailPage() {
                       <td>{s.usage_deducted ? "Yes" : "No"}</td>
                       <td>
                         {s.transcript_id ? (
-                          <button onClick={() => setOpenTranscriptId(s.transcript_id)} className="btn-secondary px-2 py-1 text-xs">
+                          <button
+                            onClick={() => setOpenTranscriptId(s.transcript_id)}
+                            onMouseEnter={() => prefetchAdminQuery("admin-transcript-detail", { transcriptId: s.transcript_id })}
+                            className="btn-secondary px-2 py-1 text-xs"
+                          >
                             {s.transcript_turn_count} turn{s.transcript_turn_count === 1 ? "" : "s"}
                           </button>
                         ) : (
@@ -249,7 +253,11 @@ export default function UserDetailPage() {
                   {detail.transcripts.map((t) => (
                     <tr key={t.id}>
                       <td>
-                        <button onClick={() => setOpenTranscriptId(t.id)} className="font-medium text-accent hover:underline">
+                        <button
+                          onClick={() => setOpenTranscriptId(t.id)}
+                          onMouseEnter={() => prefetchAdminQuery("admin-transcript-detail", { transcriptId: t.id })}
+                          className="font-medium text-accent hover:underline"
+                        >
                           {t.role ?? "Interview"} {t.company ? `@ ${t.company}` : ""}
                         </button>
                       </td>
