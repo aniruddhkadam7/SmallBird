@@ -32,12 +32,17 @@ export default function Home() {
           <>
             {/* Phones get the portrait Auto-answer recording; the wide
                 candidate/interviewer comparison is unreadable at that width. */}
-            <Image
-              src={autoAnswerMobile}
-              alt="Smallbird answering an interview question automatically on a phone"
-              unoptimized
-              className="mx-auto h-auto w-full max-w-[320px] md:hidden"
-            />
+            {/* Bleeds into the hero's 16px side padding: the phone art has
+                transparent margins for its floating icons, so at plain
+                content width the phone itself looked narrow. */}
+            <div className="-mx-4 md:hidden">
+              <Image
+                src={autoAnswerMobile}
+                alt="Smallbird answering an interview question automatically on a phone"
+                unoptimized
+                className="mx-auto h-auto w-full max-w-[460px]"
+              />
+            </div>
             <div className="hidden md:block">
               <PovCompare className="rounded-2xl border border-border shadow-[0_20px_60px_-20px_rgba(0,0,0,0.35)]" />
             </div>
