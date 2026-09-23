@@ -97,7 +97,7 @@ export function AdminShell({ email, children }: { email: string; children: React
       <aside
         className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-border bg-surface transition-transform duration-200 lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:max-w-none lg:flex-shrink-0 lg:translate-x-0 lg:transition-[width] lg:duration-150 ${
           open ? "translate-x-0 shadow-xl" : "-translate-x-full"
-        } ${collapsed ? "lg:w-16" : "lg:w-64"}`}
+        } ${collapsed ? "lg:w-16" : "lg:w-52"}`}
       >
         <button
           onClick={toggleCollapsed}

@@ -8,13 +8,20 @@ function toDateInputValue(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
-export function GrantPassPanel({ userId, onSuccess }: { userId: string; onSuccess: () => void }) {
+export function GrantPassPanel({
+  userId,
+  onSuccess,
+  onCancel,
+}: {
+  userId: string;
+  onSuccess: () => void;
+  onCancel?: () => void;
+}) {
   const [minutes, setMinutes] = useState("");
   const [startAt, setStartAt] = useState(toDateInputValue(new Date()));
   const [expiresAt, setExpiresAt] = useState("");
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
-  const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -45,7 +52,6 @@ export function GrantPassPanel({ userId, onSuccess }: { userId: string; onSucces
       setExpiresAt("");
       setReason("");
       setNote("");
-      setOpen(false);
       onSuccess();
     } catch (err) {
       setError(err instanceof AdminApiError ? err.message : "Failed to grant pass");
@@ -54,18 +60,9 @@ export function GrantPassPanel({ userId, onSuccess }: { userId: string; onSucces
     }
   }
 
-  if (!open) {
-    return (
-      <button type="button" onClick={() => setOpen(true)} className="btn-secondary w-full">
-        Grant a time-limited pass
-      </button>
-    );
-  }
-
   return (
-    <div className="card">
-      <h2 className="text-sm font-semibold text-ink">Grant pass</h2>
-      <p className="mt-1 text-xs text-muted">
+    <div>
+      <p className="text-xs text-muted">
         Free trial, bonus minutes, or promotional access with a defined expiration -- separate from a plain balance
         correction, so it shows up in the audit log as GRANT_PASS.
       </p>
@@ -100,9 +97,11 @@ export function GrantPassPanel({ userId, onSuccess }: { userId: string; onSucces
           <button type="button" disabled={!canSubmit || loading} onClick={submit} className="btn-primary flex-1">
             {loading ? "Granting..." : "Grant pass"}
           </button>
-          <button type="button" onClick={() => setOpen(false)} className="btn-secondary flex-1">
-            Cancel
-          </button>
+          {onCancel && (
+            <button type="button" onClick={onCancel} className="btn-secondary flex-1">
+              Cancel
+            </button>
+          )}
         </div>
       </div>
     </div>
