@@ -18,7 +18,9 @@ export function ProductDemo() {
         </div>
 
         <div className="mt-10 shadow-[0_0_60px_-20px_rgba(0,0,0,0.25)] dark:shadow-[0_0_60px_-20px_rgba(255,255,255,0.08)] rounded-xl">
-          <GifWindowFrame className="h-[28rem] sm:h-[38rem]">
+          {/* Below md the frame takes the gif's own aspect ratio, so the glass
+              hugs the gif instead of leaving a tall empty box around it. */}
+          <GifWindowFrame className="aspect-[1616/973] h-auto sm:h-auto md:aspect-auto md:h-[38rem]">
             <Image
               src={answerGeneratingGif}
               alt="Smallbird assisting in real time during an interview"
