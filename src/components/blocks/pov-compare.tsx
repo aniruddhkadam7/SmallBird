@@ -29,15 +29,6 @@ export function PovCompare({
   const [position, setPosition] = useState(50)
   const [dragging, setDragging] = useState(false)
   const [autoPlaying, setAutoPlaying] = useState(true)
-  const [containerWidth, setContainerWidth] = useState(0)
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const observer = new ResizeObserver(([entry]) => setContainerWidth(entry.contentRect.width))
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
 
   // Sweeps the divider back and forth continuously until the user grabs
   // it -- once they've dragged once, they're in control for good.
@@ -98,26 +89,34 @@ export function PovCompare({
           className,
         )}
       >
-        {/* Base layer: interviewer's view */}
+        {/* Base layer: interviewer's view. Both layers fill the exact same
+            box so they always scale identically on every screen size / DPR. */}
         <Image
           src={interviewerView}
           alt="Interviewer view of the call"
           fill
-          sizes="(min-width: 768px) 768px, 100vw"
+          priority
+          quality={90}
+          sizes="(min-width: 1280px) 1280px, 100vw"
           className="pointer-events-none object-cover"
         />
 
-        {/* Clipped top layer: candidate's view */}
-        <div className="absolute inset-0 overflow-hidden" style={{ width: `${position}%` }}>
-          <div className="absolute inset-y-0 left-0" style={{ width: containerWidth || 2000 }}>
-            <Image
-              src={candidateView}
-              alt="Candidate view of the call"
-              fill
-              sizes="(min-width: 768px) 768px, 100vw"
-              className="pointer-events-none object-cover"
-            />
-          </div>
+        {/* Top layer: candidate's view, revealed up to the divider with a
+            clip-path instead of a JS-measured width wrapper, so it can never
+            render zoomed or offset before layout has been measured. */}
+        <div
+          className="absolute inset-0"
+          style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}
+        >
+          <Image
+            src={candidateView}
+            alt="Candidate view of the call"
+            fill
+            priority
+            quality={90}
+            sizes="(min-width: 1280px) 1280px, 100vw"
+            className="pointer-events-none object-cover"
+          />
         </div>
 
         {/* Divider handle */}

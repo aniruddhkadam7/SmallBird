@@ -62,11 +62,8 @@ export const metadata: Metadata = {
     title,
     description,
   },
-  icons: {
-    icon: "/smallbird-logo.png",
-    shortcut: "/smallbird-logo.png",
-    apple: "/smallbird-logo.png",
-  },
+  // Favicons come from app/favicon.ico, app/icon.png and app/apple-icon.png
+  // (square, multiples of 48px) -- Google Search ignores non-square icons.
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

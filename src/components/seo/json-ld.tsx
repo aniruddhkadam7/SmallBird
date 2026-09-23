@@ -6,7 +6,7 @@ export function OrganizationJsonLd() {
     "@type": "Organization",
     name: siteName,
     url: siteUrl,
-    logo: `${siteUrl}/smallbird-logo.png`,
+    logo: `${siteUrl}/smallbird-icon-512.png`,
     email: "support@smallbird.in",
   }
 
