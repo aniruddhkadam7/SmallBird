@@ -166,21 +166,36 @@ function newId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function loadImage(blob: Blob): Promise<HTMLImageElement> {
+function readAsDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob);
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("couldn't read that image"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/// Loads via a `data:` URL, not `URL.createObjectURL` — the app's CSP
+/// (tauri.conf.json's `img-src`) allows `data:` but not `blob:`, so a
+/// blob-URL image always failed to load with no further detail.
+async function loadImage(blob: Blob): Promise<HTMLImageElement> {
+  const url = await readAsDataUrl(blob);
+  return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(img);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("couldn't read that image"));
-    };
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("couldn't read that image — it may be in a format Windows can't open (try PNG or JPG)"));
     img.src = url;
   });
 }
+
+const IMAGE_MIME: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  bmp: "image/bmp",
+};
 
 /// Re-encodes any image (PNG/JPEG/WebP/...) as a size-capped PNG — the
 /// provider layer only declares `image/png`, so this keeps the declared type
@@ -314,7 +329,7 @@ export function DocumentContext({ sections, state, onChange, isLive }: Props) {
           const name = path.split(/[\\/]/).pop() ?? "document";
           const ext = name.split(".").pop()?.toLowerCase() ?? "";
           if (IMAGE_EXTENSIONS.includes(ext)) {
-            void addImage(section, new Blob([bytes]), name);
+            void addImage(section, new Blob([bytes], { type: IMAGE_MIME[ext] }), name);
           } else {
             void addFile(section, name, bytes);
           }
