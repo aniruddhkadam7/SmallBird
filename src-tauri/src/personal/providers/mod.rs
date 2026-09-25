@@ -34,3 +34,63 @@ const SUPABASE_URL: &str = "https://xubbwgrjvvsbfvxcuzav.supabase.co";
 pub fn llm_proxy_url() -> String {
     format!("{SUPABASE_URL}/functions/v1/llm-proxy-v2")
 }
+
+/// Appends a streamed network chunk to `text`. A multi-byte UTF-8 character
+/// (curly quotes, em dashes, emoji, any non-English text) can be split across
+/// two chunks; decoding each chunk on its own turned both halves into U+FFFD
+/// ("�") in the answer. The incomplete tail is held in `pending` until the
+/// rest arrives. Genuinely invalid bytes still become U+FFFD.
+pub fn push_utf8_chunk(pending: &mut Vec<u8>, text: &mut String, chunk: &[u8]) {
+    pending.extend_from_slice(chunk);
+    let mut start = 0;
+    loop {
+        match std::str::from_utf8(&pending[start..]) {
+            Ok(valid) => {
+                text.push_str(valid);
+                pending.clear();
+                return;
+            }
+            Err(err) => {
+                let valid_end = start + err.valid_up_to();
+                text.push_str(&String::from_utf8_lossy(&pending[start..valid_end]));
+                match err.error_len() {
+                    // Incomplete sequence at the end: wait for the next chunk.
+                    None => {
+                        pending.drain(..valid_end);
+                        return;
+                    }
+                    Some(bad_len) => {
+                        text.push(char::REPLACEMENT_CHARACTER);
+                        start = valid_end + bad_len;
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::push_utf8_chunk;
+
+    #[test]
+    fn joins_characters_split_across_chunks() {
+        let original = "It’s — café 🚀";
+        let bytes = original.as_bytes();
+        for split in 0..=bytes.len() {
+            let (mut pending, mut text) = (Vec::new(), String::new());
+            push_utf8_chunk(&mut pending, &mut text, &bytes[..split]);
+            push_utf8_chunk(&mut pending, &mut text, &bytes[split..]);
+            assert_eq!(text, original, "split at byte {split}");
+            assert!(pending.is_empty());
+        }
+    }
+
+    #[test]
+    fn replaces_invalid_bytes_and_keeps_going() {
+        let (mut pending, mut text) = (Vec::new(), String::new());
+        push_utf8_chunk(&mut pending, &mut text, &[b'a', 0xff, b'b']);
+        assert_eq!(text, "a\u{FFFD}b");
+        assert!(pending.is_empty());
+    }
+}

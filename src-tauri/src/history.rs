@@ -36,6 +36,7 @@ use crate::auth::client::{SUPABASE_ANON_KEY, SUPABASE_URL};
 use crate::state::AppState;
 use crate::transcript::journal::{self, JournalSegment, JournalWriter, LoadedJournal};
 use crate::transcript::RecordingState;
+use crate::crash_guard::LockExt;
 
 /// Marks a turn built from raw speech rather than an Ask AI exchange. The
 /// value rides inside the `turns` JSONB (no schema change needed) so any
@@ -212,7 +213,7 @@ pub fn list_interview_history(
     app: AppHandle,
     store: tauri::State<'_, HistoryStore>,
 ) -> Vec<InterviewHistoryEntry> {
-    let mut guard = store.0.lock().unwrap();
+    let mut guard = store.0.lock_safe();
     if guard.is_empty() {
         *guard = load(&app);
     }
@@ -284,7 +285,7 @@ fn upsert_local(
     store: &tauri::State<'_, HistoryStore>,
     entry: InterviewHistoryEntry,
 ) -> Result<InterviewHistoryEntry, String> {
-    let mut guard = store.0.lock().unwrap();
+    let mut guard = store.0.lock_safe();
     if guard.is_empty() {
         *guard = load(app);
     }
@@ -340,7 +341,7 @@ async fn sync_one(app: &AppHandle, id: &str) -> SyncOutcome {
     let _upload_guard = store.1.lock().await;
 
     let snapshot = {
-        let guard = store.0.lock().unwrap();
+        let guard = store.0.lock_safe();
         match guard.iter().find(|e| e.id == id) {
             Some(e) if !e.synced => e.clone(),
             Some(_) => return SyncOutcome::Done,
@@ -369,7 +370,7 @@ async fn sync_one(app: &AppHandle, id: &str) -> SyncOutcome {
 async fn sync_all_pending(app: &AppHandle) -> bool {
     let pending: Vec<String> = {
         let store = app.state::<HistoryStore>();
-        let mut guard = store.0.lock().unwrap();
+        let mut guard = store.0.lock_safe();
         if guard.is_empty() {
             *guard = load(app);
         }
@@ -390,7 +391,7 @@ async fn sync_all_pending(app: &AppHandle) -> bool {
 /// older one forever.
 fn mark_synced(app: &AppHandle, id: &str, uploaded_revision: u64) {
     let store = app.state::<HistoryStore>();
-    let mut guard = store.0.lock().unwrap();
+    let mut guard = store.0.lock_safe();
     if guard.is_empty() {
         *guard = load(app);
     }
@@ -473,10 +474,7 @@ pub fn journal_record(
     text: &str,
     at_ms: u64,
 ) {
-    let mut slot = match ACTIVE_JOURNAL.lock() {
-        Ok(g) => g,
-        Err(poisoned) => poisoned.into_inner(),
-    };
+    let mut slot = ACTIVE_JOURNAL.lock_safe();
     if slot.as_ref().map(|(id, _)| id.as_str()) != Some(session_id) {
         let opened = journal_dir(app).and_then(|dir| JournalWriter::open(&dir, session_id, session_started_at_ms));
         match opened {
@@ -626,13 +624,12 @@ fn finalize_journals(app: &AppHandle, min_quiet_ms: u64) -> Vec<String> {
     // Never touch the journal of the recording that is running right now.
     let live_session: Option<String> = {
         let state = app.state::<AppState>();
-        let recording = state
-            .capture
-            .lock()
-            .map(|c| matches!(c.recording_state, RecordingState::Recording | RecordingState::Paused | RecordingState::Starting))
-            .unwrap_or(false);
+        let recording = matches!(
+            state.capture.lock_safe().recording_state,
+            RecordingState::Recording | RecordingState::Paused | RecordingState::Starting
+        );
         if recording {
-            state.transcript.lock().ok().map(|t| t.session().id.clone())
+            Some(state.transcript.lock_safe().session().id.clone())
         } else {
             None
         }
@@ -651,7 +648,7 @@ fn finalize_journals(app: &AppHandle, min_quiet_ms: u64) -> Vec<String> {
         }
 
         {
-            let mut guard = store.0.lock().unwrap();
+            let mut guard = store.0.lock_safe();
             if guard.is_empty() {
                 *guard = load(app);
             }
@@ -712,7 +709,7 @@ pub fn spawn_background_tasks(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         {
             let store = app.state::<HistoryStore>();
-            let mut guard = store.0.lock().unwrap();
+            let mut guard = store.0.lock_safe();
             if guard.is_empty() {
                 *guard = load(&app);
             }

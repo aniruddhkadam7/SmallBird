@@ -27,7 +27,7 @@ export class EntitlementError extends Error {
 /// call in `llm-proxy`, so it was adding to the "thinking..." delay users see
 /// on every question). Decoding the already-verified token locally to read
 /// `sub` gets the same userId with no network call.
-function userIdFromVerifiedJwt(jwt: string): string {
+export function userIdFromVerifiedJwt(jwt: string): string {
   const payload = jwt.split(".")[1];
   if (!payload) throw new EntitlementError(401, "Malformed session token");
   const base64 = payload.replace(/-/g, "+").replace(/_/g, "/").padEnd(payload.length + ((4 - (payload.length % 4)) % 4), "=");

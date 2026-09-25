@@ -9,10 +9,12 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+use crate::crash_guard::LockExt;
 
 const DEFAULT_TOGGLE_OVERLAY: &str = "Ctrl+Shift+Space";
 
@@ -168,9 +170,7 @@ fn register_all(app: &AppHandle, bindings: &ShortcutBindings) {
 pub fn init(app: &AppHandle) {
     let bindings = load(app);
     register_all(app, &bindings);
-    if let Ok(mut slot) = app.state::<ShortcutManager>().bindings.lock() {
-        *slot = bindings;
-    }
+    *app.state::<ShortcutManager>().bindings.lock_safe() = bindings;
 }
 
 /// The global-shortcut plugin's handler (key-down only — see `lib.rs`):
@@ -178,20 +178,88 @@ pub fn init(app: &AppHandle) {
 pub fn handle(app: &AppHandle, pressed: &Shortcut) {
     let manager = app.state::<ShortcutManager>();
     let action = {
-        let Ok(bindings) = manager.bindings.lock() else { return };
+        let bindings = manager.bindings.lock_safe();
         Action::ALL
             .into_iter()
             .find(|a| a.binding(&bindings).and_then(|acc| parse(acc).ok()).as_ref() == Some(pressed))
     };
 
     let result = match action {
-        Some(Action::ToggleOverlay) => crate::interview_mode::toggle_overlay_window(app).map(|_| ()),
+        Some(Action::ToggleOverlay) => toggle_session(app),
         Some(Action::ToggleMainWindow) => toggle_main_window(app),
         None => Ok(()),
     };
     if let Err(err) = result {
         log::warn!("global shortcut action {action:?} failed: {err}");
     }
+}
+
+/// The overlay shortcut is a session switch: with the overlay open it
+/// closes it (which ends the session — the main window stops audio capture
+/// and the backend session on `interview-mode:overlay-closed`); otherwise
+/// it asks the main window to start a session exactly like the Start button
+/// (context, backend session, audio capture), showing the overlay at once.
+/// Nothing is ever recorded unless this, or Start, was pressed.
+fn toggle_session(app: &AppHandle) -> Result<(), String> {
+    use tauri::Emitter;
+    if session_active(app) {
+        // Also cancels a start still in progress: closing emits
+        // overlay-closed, which the main window treats as "cancel" while
+        // starting (it then stops whatever did start).
+        START_PENDING_SINCE_MS.store(0, Ordering::Relaxed);
+        log::info!("shortcut: closing overlay (ends the session)");
+        return crate::interview_mode::close_overlay_window(app);
+    }
+    START_PENDING_SINCE_MS.store(now_ms(), Ordering::Relaxed);
+    log::info!("shortcut: session start requested");
+    // Start recording right away (off the UI thread — WASAPI init takes a
+    // moment); the session attaches to it once its key/connection are ready.
+    let prebuffer_app = app.clone();
+    std::thread::spawn(move || {
+        if let Err(err) = crate::commands::begin_audio_prebuffer_inner(&prebuffer_app) {
+            log::warn!("shortcut: couldn't start recording immediately: {err}");
+        }
+    });
+    // Shown right here, on the key press (the window is pre-built at launch)
+    // — not after a round trip through the main window's JS, which ranged
+    // from ~20ms to ~2s. It reads "Starting to listen…" until capture is live.
+    crate::interview_mode::show_overlay_window(app)?;
+    app.emit_to(crate::main_window::MAIN_WINDOW_LABEL, "shortcut:start-session", ())
+        .map_err(|e| format!("failed to ask the main window to start a session: {e}"))
+}
+
+/// When a shortcut-started session began starting (ms since epoch), 0 when
+/// none is. Lets a second press cancel a start whose overlay/session isn't
+/// fully up yet. Expires on its own in case the start never reports back.
+static START_PENDING_SINCE_MS: AtomicU64 = AtomicU64::new(0);
+const START_PENDING_MAX_MS: u64 = 20_000;
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+/// A session is starting (shortcut pressed, not yet settled), live on the
+/// backend, or its overlay is showing.
+fn session_active(app: &AppHandle) -> bool {
+    let pending = START_PENDING_SINCE_MS.load(Ordering::Relaxed);
+    if pending != 0 && now_ms().saturating_sub(pending) < START_PENDING_MAX_MS {
+        return true;
+    }
+    if crate::interview_mode::is_overlay_visible(app) {
+        return true;
+    }
+    app.state::<crate::state::AppState>()
+        .stt_session
+        .lock_safe()
+        .is_some()
+}
+
+/// The main window calls this once a shortcut-started session has finished
+/// starting (successfully or not), so the next press is judged on the real
+/// state again.
+#[tauri::command]
+pub fn shortcut_session_settled() {
+    START_PENDING_SINCE_MS.store(0, Ordering::Relaxed);
 }
 
 /// Brings the main window forward (from the floating bubble, from behind
@@ -213,7 +281,7 @@ fn toggle_main_window(app: &AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn get_shortcuts(manager: State<'_, ShortcutManager>) -> Result<ShortcutBindings, String> {
-    Ok(manager.bindings.lock().map_err(|e| e.to_string())?.clone())
+    Ok(manager.bindings.lock_safe().clone())
 }
 
 /// Binds `action` to `accelerator` (e.g. "Ctrl+Alt+K"), or unbinds it when
@@ -236,7 +304,7 @@ pub fn set_shortcut(
         accelerator.map(|a| a.trim().to_string()).filter(|a| !a.is_empty())
     };
 
-    let mut bindings = manager.bindings.lock().map_err(|e| e.to_string())?;
+    let mut bindings = manager.bindings.lock_safe();
     let old_binding = action.binding(&bindings).cloned();
     if new_binding == old_binding {
         return Ok(bindings.clone());
@@ -277,7 +345,7 @@ pub fn set_shortcut(
 /// it would also fire it (e.g. hide the overlay mid-recording).
 #[tauri::command]
 pub fn suspend_shortcuts(app: AppHandle, manager: State<'_, ShortcutManager>, suspended: bool) -> Result<(), String> {
-    let bindings = manager.bindings.lock().map_err(|e| e.to_string())?.clone();
+    let bindings = manager.bindings.lock_safe().clone();
     if suspended {
         app.global_shortcut().unregister_all().map_err(|e| e.to_string())
     } else {

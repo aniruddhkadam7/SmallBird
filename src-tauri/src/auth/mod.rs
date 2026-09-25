@@ -11,6 +11,7 @@ pub mod session_store;
 pub use client::AuthSession;
 
 use crate::state::AppState;
+use crate::crash_guard::LockExt;
 
 /// Returns a valid access token for the signed-in user, refreshing it first
 /// if it's near expiry. `Err` means "not logged in" or "session expired and
@@ -20,7 +21,7 @@ use crate::state::AppState;
 /// long-term inactivity).
 pub async fn current_access_token(state: &tauri::State<'_, AppState>) -> Result<String, String> {
     let existing = {
-        let guard = state.auth_session.lock().map_err(|_| "session lock poisoned".to_string())?;
+        let guard = state.auth_session.lock_safe();
         guard.clone()
     };
 
@@ -35,7 +36,7 @@ pub async fn current_access_token(state: &tauri::State<'_, AppState>) -> Result<
     let refreshed = client::refresh_session(&session.refresh_token, &session.email).await?;
     let access_token = refreshed.access_token.clone();
     {
-        let mut guard = state.auth_session.lock().map_err(|_| "session lock poisoned".to_string())?;
+        let mut guard = state.auth_session.lock_safe();
         *guard = Some(refreshed);
     }
     Ok(access_token)
@@ -51,8 +52,6 @@ pub async fn restore_session_on_startup(state: &tauri::State<'_, AppState>) {
         return;
     };
     if let Ok(session) = client::refresh_session(&refresh_token, &email).await {
-        if let Ok(mut guard) = state.auth_session.lock() {
-            *guard = Some(session);
-        }
+        *state.auth_session.lock_safe() = Some(session);
     }
 }

@@ -14,6 +14,29 @@ use crate::main_window::MAIN_WINDOW_LABEL;
 use crate::state::AppState;
 use crate::windows_capture_protection;
 
+/// Navigation guard for every app window (registered as a plugin hook in
+/// lib.rs): windows only ever show the bundled app. A link in an AI answer
+/// (or anything else) that would navigate a window away is opened in the
+/// user's browser instead, so no window ends up showing — and giving IPC
+/// access to — an outside page.
+pub fn allow_navigation(app: &AppHandle, url: &tauri::Url) -> bool {
+    let host = url.host_str().unwrap_or("");
+    let in_app = url.scheme() == "tauri"
+        || host == "tauri.localhost"
+        || url.as_str() == "about:blank"
+        || (cfg!(debug_assertions) && host == "localhost" && url.port() == Some(1420));
+    if in_app {
+        return true;
+    }
+    if matches!(url.scheme(), "http" | "https") {
+        use tauri_plugin_opener::OpenerExt;
+        if let Err(err) = app.opener().open_url(url.as_str(), None::<&str>) {
+            log::warn!("couldn't open link in the browser: {err}");
+        }
+    }
+    false
+}
+
 const OVERLAY_FALLBACK_SIDE: f64 = 560.0;
 // Was 0.75 ("large") back when this was the baseline for a *square* window.
 // Combined with OVERLAY_HEIGHT_BOOST below it now made every fresh overlay
@@ -350,6 +373,21 @@ pub fn resize_overlay(app: &AppHandle, label: &str, fraction: f64) -> Result<(),
     }
     center_overlay_on_screen(&window, false);
     Ok(())
+}
+
+/// Builds the overlay window hidden, ahead of time, so the first shortcut
+/// press (or Start) after launch only has to show it instead of creating a
+/// webview and loading its page on the spot. Does nothing else: no capture
+/// exclusion (a hidden excluded window leaves a black rectangle in a live
+/// screen share — exclusion is applied by `show_overlay_window` right
+/// before it's first shown), no audio capture, no session.
+pub fn prebuild_overlay_window(app: &AppHandle, label: &str, title: &str) {
+    if app.get_webview_window(label).is_some() {
+        return;
+    }
+    if let Err(err) = build_overlay_window(app, label, title) {
+        log::warn!("prebuild_overlay_window '{label}': {err}");
+    }
 }
 
 fn build_overlay_window(app: &AppHandle, label: &str, title: &str) -> Result<WebviewWindow, String> {

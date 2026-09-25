@@ -1373,9 +1373,14 @@ body.overlay-window #root {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
+  padding: 6px 8px;
   overflow-x: auto;
   flex: 0 0 auto;
+  /* Its own rounded island like the bars above/below — the overlay window
+     is transparent, so without this the desktop showed through behind the
+     thumbnails. Same tint and opacity slider as the transcript bar. */
+  background-color: var(--panel-transcript);
+  border-radius: 12px;
 }
 
 .overlay-shot {

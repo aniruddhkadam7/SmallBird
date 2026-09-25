@@ -5,6 +5,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import App from "./App";
 import { InterviewOverlay } from "./InterviewOverlay";
 import { BubbleWidget } from "./BubbleWidget";
+import { ErrorBoundary, installGlobalErrorHandlers } from "./ErrorBoundary";
 import "./tailwind.css";
 import "./overlay.css";
 import "./bubble.css";
@@ -14,6 +15,9 @@ import "./bubble.css";
 // — which root component renders is decided here by the window's label, set
 // when each window is created in Rust.
 const FIXED_OVERLAY_LABELS = new Set(["interview-overlay"]);
+
+// Before anything renders, so errors thrown during startup are recorded too.
+installGlobalErrorHandlers();
 
 const label = getCurrentWebviewWindow().label;
 const isOverlay = FIXED_OVERLAY_LABELS.has(label);
@@ -42,7 +46,9 @@ function Root() {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <Root />
+    <ErrorBoundary variant={isBubble ? "compact" : "full"}>
+      <Root />
+    </ErrorBoundary>
   </React.StrictMode>,
 );
 

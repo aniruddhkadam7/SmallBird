@@ -1,11 +1,19 @@
 // Client calls this once an Interview Mode session ends, closing out the
-// interview_sessions row and deducting the actual minutes used from the
-// user's entitlement balance.
+// interview_sessions row and deducting the minutes used from the user's
+// entitlement balance.
 //
-// Request body: { sessionId: string, actualDurationSeconds: number }
+// Request body: { sessionId: string, actualDurationSeconds?: number }
+//
+// The minutes billed are measured by the server (session start -> now,
+// capped at what was authorized) in end_and_bill_session — the client's
+// actualDurationSeconds is still accepted for compatibility with installed
+// apps but no longer trusted, since a modified client could report 1 second
+// for an hour-long session. The session's Deepgram key is revoked here too,
+// so it stops working the moment the session ends.
 
 import { entitlementErrorResponse, requireEntitlement } from "../_shared/entitlement.ts";
 import { withCors } from "../_shared/cors.ts";
+import { revokeSessionKey } from "../_shared/deepgram.ts";
 
 Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") {
@@ -14,55 +22,35 @@ Deno.serve(withCors(async (req) => {
 
   try {
     const entitlement = await requireEntitlement(req);
-    const { sessionId, actualDurationSeconds } = await req.json();
+    const { sessionId } = await req.json();
 
-    if (typeof sessionId !== "string" || typeof actualDurationSeconds !== "number" || actualDurationSeconds <= 0) {
+    if (typeof sessionId !== "string" || !/^[0-9a-f-]{36}$/i.test(sessionId)) {
       return new Response(JSON.stringify({ error: "Invalid sessionId or actualDurationSeconds" }), {
         status: 400,
         headers: { "content-type": "application/json" },
       });
     }
 
-    const minutesConsumed = actualDurationSeconds / 60;
+    // Claims the row at most once (active + not yet deducted, owned by the
+    // caller), so the same session can never be billed twice; a session
+    // already ended elsewhere (force-ended, expired) returns no row.
+    const { data: ended, error: endErr } = await entitlement.admin.rpc("end_and_bill_session", {
+      p_session_id: sessionId,
+      p_user_id: entitlement.userId,
+      p_status: "completed",
+      p_reason: null,
+    });
+    if (endErr) throw endErr;
 
-    // `.eq("status", "active").eq("usage_deducted", false)` makes this
-    // update match at most once per session, ever — a session that's
-    // already completed/terminated (e.g. force-ended from another device)
-    // or already reported matches zero rows. The decrement RPC below only
-    // runs when this update actually claimed the row, so the same
-    // sessionId can never deduct minutes twice, and a session that never
-    // matched never deducts at all.
-    const { data: updatedSession, error: updateErr } = await entitlement.admin
-      .from("interview_sessions")
-      .update({
-        status: "completed",
-        ended_at: new Date().toISOString(),
-        actual_duration_seconds: Math.round(actualDurationSeconds),
-        minutes_consumed: minutesConsumed,
-        usage_deducted: true,
-      })
-      .eq("id", sessionId)
-      .eq("user_id", entitlement.userId) // belt-and-suspenders alongside RLS
-      .eq("status", "active")
-      .eq("usage_deducted", false)
-      .select("id")
-      .maybeSingle();
-
-    if (updateErr) throw updateErr;
-
-    if (updatedSession) {
-      await entitlement.admin.rpc("decrement_entitlement_minutes", {
-        p_user_id: entitlement.userId,
-        p_minutes: minutesConsumed,
-        p_source: "USAGE",
-        p_reference_id: sessionId,
-      });
+    const row = Array.isArray(ended) ? ended[0] : null;
+    if (row) {
+      await revokeSessionKey(entitlement.admin, sessionId, row.deepgram_key_id);
     }
 
     await entitlement.admin.from("usage_events").insert({
       user_id: entitlement.userId,
       event_name: "interview_session_completed",
-      properties: { session_id: sessionId, minutes_consumed: minutesConsumed },
+      properties: { session_id: sessionId, minutes_consumed: row ? Number(row.minutes) : 0 },
     });
 
     return new Response(JSON.stringify({ ok: true }), {

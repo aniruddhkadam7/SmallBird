@@ -5,6 +5,7 @@ use tauri::{AppHandle, State};
 use super::client::{self, AuthSession};
 use super::oauth;
 use crate::state::AppState;
+use crate::crash_guard::LockExt;
 
 #[tauri::command]
 pub async fn request_login_otp(email: String) -> Result<(), String> {
@@ -20,7 +21,7 @@ pub async fn verify_login_otp(
 ) -> Result<AuthSessionInfo, String> {
     let session = client::verify_otp(&email, &code, name.as_deref()).await?;
     let info = AuthSessionInfo::from(&session);
-    let mut guard = state.auth_session.lock().map_err(|_| "session lock poisoned".to_string())?;
+    let mut guard = state.auth_session.lock_safe();
     *guard = Some(session);
     Ok(info)
 }
@@ -33,7 +34,7 @@ pub async fn verify_login_otp(
 pub async fn login_with_google(app: AppHandle, state: State<'_, AppState>) -> Result<AuthSessionInfo, String> {
     let session = oauth::login_with_google(app).await?;
     let info = AuthSessionInfo::from(&session);
-    let mut guard = state.auth_session.lock().map_err(|_| "session lock poisoned".to_string())?;
+    let mut guard = state.auth_session.lock_safe();
     *guard = Some(session);
     Ok(info)
 }
@@ -41,7 +42,7 @@ pub async fn login_with_google(app: AppHandle, state: State<'_, AppState>) -> Re
 #[tauri::command]
 pub fn logout(state: State<'_, AppState>) -> Result<(), String> {
     client::logout()?;
-    let mut guard = state.auth_session.lock().map_err(|_| "session lock poisoned".to_string())?;
+    let mut guard = state.auth_session.lock_safe();
     *guard = None;
     Ok(())
 }
@@ -65,12 +66,12 @@ impl From<&AuthSession> for AuthSessionInfo {
 pub async fn get_auth_session(state: State<'_, AppState>) -> Result<AuthSessionInfo, String> {
     // First call in the app's lifetime: nothing in memory yet, try to
     // restore from the stored refresh token before reporting logged-out.
-    let has_session = { state.auth_session.lock().map_err(|_| "session lock poisoned".to_string())?.is_some() };
+    let has_session = { state.auth_session.lock_safe().is_some() };
     if !has_session {
         super::restore_session_on_startup(&state).await;
     }
 
-    let guard = state.auth_session.lock().map_err(|_| "session lock poisoned".to_string())?;
+    let guard = state.auth_session.lock_safe();
     Ok(match guard.as_ref() {
         Some(session) => AuthSessionInfo::from(session),
         None => AuthSessionInfo { logged_in: false, email: None },

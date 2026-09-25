@@ -22,21 +22,22 @@ use super::AuthSession;
 /// takes to pick an account/approve on Google's own pages.
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(180);
 
-/// Not cryptographically hardened, but this only ever needs to be
-/// unguessable for the few seconds of one local, same-process login
-/// attempt — nothing here is transmitted anywhere except back to Supabase
-/// itself as the PKCE `code_verifier`.
-fn random_verifier() -> String {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let pid = std::process::id();
-    format!("{nanos:x}{pid:x}smallbirddesktopverifierpadding")
-        .chars()
-        .cycle()
-        .take(64)
-        .collect()
+/// PKCE `code_verifier`: 32 bytes from the OS CSPRNG, base64url (43 chars,
+/// within RFC 7636's 43–128). Only its SHA-256 (`code_challenge`) goes out
+/// in the browser URL; the verifier itself only ever goes to Supabase in the
+/// final code exchange, so whoever sees the redirect URL can't redeem it.
+fn random_verifier() -> Result<String, String> {
+    use base64::Engine;
+    let mut bytes = [0u8; 32];
+    getrandom::getrandom(&mut bytes).map_err(|e| format!("could not start sign-in: {e}"))?;
+    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
+}
+
+/// RFC 7636 S256: base64url(SHA-256(verifier)).
+fn code_challenge(verifier: &str) -> String {
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
 /// Percent-encodes just the characters that actually appear in a
@@ -47,15 +48,16 @@ fn percent_encode_redirect(url: &str) -> String {
 }
 
 pub async fn login_with_google(app: AppHandle) -> Result<AuthSession, String> {
-    let verifier = random_verifier();
+    let verifier = random_verifier()?;
 
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| format!("could not open a local port for login: {e}"))?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let redirect_to = format!("http://127.0.0.1:{port}/callback");
 
     let authorize_url = format!(
-        "{SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to={}&code_challenge={verifier}&code_challenge_method=plain",
+        "{SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to={}&code_challenge={}&code_challenge_method=s256",
         percent_encode_redirect(&redirect_to),
+        code_challenge(&verifier),
     );
 
     app.opener()
@@ -131,4 +133,25 @@ async fn exchange_code_for_session(auth_code: &str, verifier: &str) -> Result<Au
     };
     session_store::store_refresh_token(&session.refresh_token, &session.email)?;
     Ok(session)
+}
+
+#[cfg(test)]
+mod pkce_tests {
+    use super::*;
+
+    #[test]
+    fn s256_challenge_matches_rfc7636_example() {
+        assert_eq!(
+            code_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        );
+    }
+
+    #[test]
+    fn verifier_is_random_and_valid_length() {
+        let a = random_verifier().unwrap();
+        let b = random_verifier().unwrap();
+        assert_eq!(a.len(), 43);
+        assert_ne!(a, b);
+    }
 }

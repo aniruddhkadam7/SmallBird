@@ -9,6 +9,7 @@ use crate::backend::{InterviewAnalysisRequest, SetupAnalysisRequest, SetupAnalys
 use crate::state::AppState;
 use crate::stt::SttClient;
 use crate::transcript::{InterviewSession, RecordingState, TranscriptSegment};
+use crate::crash_guard::LockExt;
 
 #[derive(Clone, serde::Serialize)]
 struct AudioLevelEvent {
@@ -73,7 +74,7 @@ pub fn start_system_audio_capture(
 
     let mut waited = std::time::Duration::ZERO;
     loop {
-        let mut session = state.capture.lock().map_err(|e| e.to_string())?;
+        let mut session = state.capture.lock_safe();
         match session.recording_state {
             RecordingState::Idle | RecordingState::Stopped => {
                 session.recording_state = RecordingState::Starting;
@@ -105,14 +106,14 @@ pub fn start_system_audio_capture(
 
     match &result {
         Ok(()) => {
-            let mut session = state.capture.lock().map_err(|e| e.to_string())?;
+            let mut session = state.capture.lock_safe();
             session.recording_state = RecordingState::Recording;
             drop(session);
             let _ = app.emit("recording:state", RecordingStateEvent { state: RecordingState::Recording });
             log::info!("start_system_audio_capture: recording started");
         }
         Err(err) => {
-            let mut session = state.capture.lock().map_err(|e| e.to_string())?;
+            let mut session = state.capture.lock_safe();
             session.recording_state = RecordingState::Idle;
             session.stop_signal = None;
             session.pause_signal = None;
@@ -133,14 +134,88 @@ pub fn start_system_audio_capture(
 /// here that later steps depend on is cleaned up on its own failure path
 /// before returning `Err` — no partially-started session is ever left
 /// behind for the caller to roll back blindly.
+/// Longest a prebuffer may record without becoming a session — a start that
+/// fails or is abandoned without an explicit stop is cut off after this.
+const PREBUFFER_MAX: std::time::Duration = std::time::Duration::from_secs(30);
+static PREBUFFER_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+/// Serializes begin calls (the shortcut and the main window's start both
+/// request one), so exactly one prebuffer is ever created per start.
+static PREBUFFER_BEGIN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Starts recording system audio right now, into a local buffer, for a
+/// session that's about to start — the press shouldn't wait ~3s for the
+/// session key and Deepgram connection before anything is captured. Sends
+/// nothing anywhere; `start_system_audio_capture` attaches the STT pipeline
+/// to it once connected. Idempotent while one is already buffering. A
+/// capture left running from an earlier session is stopped first, never
+/// reused (it would still be tied to that session's key).
+pub fn begin_audio_prebuffer_inner(app: &tauri::AppHandle) -> Result<(), String> {
+    let _serial = PREBUFFER_BEGIN.lock_safe();
+    let state = app.state::<AppState>();
+    if state.prebuffer.lock_safe().is_some() {
+        return Ok(());
+    }
+    let stale = matches!(
+        state.capture.lock_safe().recording_state,
+        RecordingState::Recording | RecordingState::Paused
+    );
+    if stale {
+        let _ = stop_audio_capture(app.clone(), app.state::<AppState>());
+    }
+
+    let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
+    let stop = StopSignal::new();
+    let thread = SystemAudioCapture::start(audio_tx, stop.clone())?;
+    let id = PREBUFFER_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    *state.prebuffer.lock_safe() = Some(crate::state::AudioPrebuffer { id, audio_rx, stop, thread });
+    log::info!("audio prebuffer {id}: recording from the key press until the session is ready");
+
+    let watchdog_app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(PREBUFFER_MAX);
+        if discard_audio_prebuffer(&watchdog_app, Some(id)) {
+            log::warn!("audio prebuffer {id}: never became a session — discarded after {}s", PREBUFFER_MAX.as_secs());
+        }
+    });
+    Ok(())
+}
+
+/// Stops and drops the prebuffer (only if it's `only_id`, when given).
+/// Returns whether one was discarded.
+fn discard_audio_prebuffer(app: &tauri::AppHandle, only_id: Option<u64>) -> bool {
+    let taken = {
+        let state = app.state::<AppState>();
+        let mut slot = state.prebuffer.lock_safe();
+        match (&*slot, only_id) {
+            (Some(p), Some(id)) if p.id != id => None,
+            _ => slot.take(),
+        }
+    };
+    let Some(prebuffer) = taken else { return false };
+    prebuffer.stop.stop();
+    let _ = prebuffer.thread.join();
+    true
+}
+
+#[tauri::command]
+pub async fn begin_audio_prebuffer(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || begin_audio_prebuffer_inner(&app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> Result<(), String> {
     {
-        let mut transcript = state.transcript.lock().map_err(|e| e.to_string())?;
+        let mut transcript = state.transcript.lock_safe();
         transcript.clear();
     }
 
     let (stt_tx, stt_rx) = std::sync::mpsc::channel();
-    let stop = StopSignal::new();
+    // Audio already being recorded since the key press (see
+    // `begin_audio_prebuffer_inner`) — this session takes it over, so its
+    // stop signal becomes the session's.
+    let prebuffer = state.prebuffer.lock_safe().take();
+    let stop = prebuffer.as_ref().map(|p| p.stop.clone()).unwrap_or_else(StopSignal::new);
     let pause = PauseSignal::new();
 
     let session_start = crate::hardware::telemetry::Stopwatch::start();
@@ -150,7 +225,7 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
     // stashes it here — there's no local fallback if that wasn't called or
     // failed, since there's no stored user key anymore.
     let api_key = {
-        let slot = state.stt_session.lock().map_err(|e| e.to_string())?;
+        let slot = state.stt_session.lock_safe();
         slot.as_ref()
             .map(|session| session.deepgram_key.clone())
             .ok_or_else(|| "No active backend session — please try again".to_string())?
@@ -172,8 +247,12 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
     let stt_client = match SttClient::spawn(AudioSource::SystemAudio, stt_tx, api_key, Some(app.clone())) {
         Ok(client) => client,
         Err(err) => {
-            // Audio capture hasn't started yet at this point — nothing to
-            // stop/join here.
+            // No pipeline exists yet; a prebuffer recording since the key
+            // press must not be left running.
+            if let Some(p) = prebuffer {
+                p.stop.stop();
+                let _ = p.thread.join();
+            }
             return Err(err);
         }
     };
@@ -190,6 +269,7 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
     // Audio capture starts only now that the Deepgram connection is
     // confirmed ready to consume it — no window remains during which chunks
     // can queue up unread.
+    // Unused when a prebuffer is taken over below (its own receiver is used).
     let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
     // TEMP DIAGNOSTIC: a sender clone purely for polling backlog depth
     // (`.len()`) — crossbeam senders/receivers are safe to clone for a
@@ -207,14 +287,25 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
         .unwrap_or(false)
         .then(|| audio_tx.clone());
 
-    let audio_thread = match SystemAudioCapture::start(audio_tx, stop.clone()) {
-        Ok(handle) => handle,
-        Err(err) => {
-            // The Deepgram connection is already established at this point —
-            // shut it down cleanly before surfacing the error, so a failed
-            // Start never leaves an orphaned connection running.
-            stt_client.shutdown();
-            return Err(err);
+    // With a prebuffer, capture has been running since the key press and its
+    // queued chunks go to Deepgram first (Deepgram takes a few seconds of
+    // backlog faster than real time), then live audio follows. The old
+    // reasoning for connecting before capturing — avoiding a backlog burst —
+    // was about a local model that couldn't keep up; here the backlog is the
+    // speech the user would otherwise have lost.
+    let (audio_rx, audio_thread) = if let Some(p) = prebuffer {
+        drop(audio_tx);
+        (p.audio_rx, p.thread)
+    } else {
+        match SystemAudioCapture::start(audio_tx, stop.clone()) {
+            Ok(handle) => (audio_rx, handle),
+            Err(err) => {
+                // The Deepgram connection is already established at this point —
+                // shut it down cleanly before surfacing the error, so a failed
+                // Start never leaves an orphaned connection running.
+                stt_client.shutdown();
+                return Err(err);
+            }
         }
     };
     crate::hardware::telemetry::log_stage_ms(
@@ -319,13 +410,11 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
                         }
 
                         let state = stt_events_app.state::<AppState>();
-                        let (segment, session_id, session_started_at_ms) = match state.transcript.lock() {
-                            Ok(mut manager) => {
-                                let segment = manager.apply_event(event);
-                                let session = manager.session();
-                                (segment, session.id.clone(), session.started_at_ms)
-                            }
-                            Err(_) => (None, String::new(), 0),
+                        let (segment, session_id, session_started_at_ms) = {
+                            let mut manager = state.transcript.lock_safe();
+                            let segment = manager.apply_event(event);
+                            let session = manager.session();
+                            (segment, session.id.clone(), session.started_at_ms)
                         };
                         if let Some(segment) = segment {
                             // Written to disk before anything else touches it,
@@ -396,7 +485,7 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
         })
         .map_err(|e| e.to_string())?;
 
-    let mut session = state.capture.lock().map_err(|e| e.to_string())?;
+    let mut session = state.capture.lock_safe();
     session.stop_signal = Some(stop);
     session.pause_signal = Some(pause);
     session.system_audio_thread = Some(audio_thread);
@@ -411,7 +500,7 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
 #[tauri::command]
 pub fn pause_recording(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     log::info!("pause_recording: invoked");
-    let mut session = state.capture.lock().map_err(|e| e.to_string())?;
+    let mut session = state.capture.lock_safe();
     let Some(pause) = session.pause_signal.as_ref() else {
         return Err("no active recording to pause".into());
     };
@@ -426,7 +515,7 @@ pub fn pause_recording(app: tauri::AppHandle, state: State<'_, AppState>) -> Res
     drop(session);
 
     {
-        let mut transcript = state.transcript.lock().map_err(|e| e.to_string())?;
+        let mut transcript = state.transcript.lock_safe();
         transcript.mark_paused();
     }
 
@@ -443,7 +532,7 @@ pub fn pause_recording(app: tauri::AppHandle, state: State<'_, AppState>) -> Res
 #[tauri::command]
 pub fn resume_recording(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     log::info!("resume_recording: invoked");
-    let mut session = state.capture.lock().map_err(|e| e.to_string())?;
+    let mut session = state.capture.lock_safe();
     let Some(pause) = session.pause_signal.as_ref() else {
         return Err("no active recording to resume".into());
     };
@@ -458,7 +547,7 @@ pub fn resume_recording(app: tauri::AppHandle, state: State<'_, AppState>) -> Re
     drop(session);
 
     {
-        let mut transcript = state.transcript.lock().map_err(|e| e.to_string())?;
+        let mut transcript = state.transcript.lock_safe();
         transcript.mark_resumed();
     }
 
@@ -479,6 +568,11 @@ pub fn resume_recording(app: tauri::AppHandle, state: State<'_, AppState>) -> Re
 #[tauri::command]
 pub fn stop_audio_capture(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     log::info!("stop_audio_capture: invoked");
+    // A start that's being abandoned may have been recording since the key
+    // press without ever becoming a session — stop that too.
+    if discard_audio_prebuffer(&app, None) {
+        log::info!("stop_audio_capture: discarded an unattached prebuffer");
+    }
     // Take the handles out and drop the lock *before* joining threads below —
     // joining can block for as long as the Deepgram connection takes to flush
     // and close, and holding `state.capture` for that whole span would
@@ -490,7 +584,7 @@ pub fn stop_audio_capture(app: tauri::AppHandle, state: State<'_, AppState>) -> 
     // teardown's still-live device/connection handles — see
     // `start_system_audio_capture`.
     let (pause_signal, stop_signal, system_audio_thread, pipeline_thread) = {
-        let mut session = state.capture.lock().map_err(|e| e.to_string())?;
+        let mut session = state.capture.lock_safe();
         session.recording_state = RecordingState::Stopping;
         (
             session.pause_signal.take(),
@@ -518,7 +612,7 @@ pub fn stop_audio_capture(app: tauri::AppHandle, state: State<'_, AppState>) -> 
     }
 
     {
-        let mut transcript = state.transcript.lock().map_err(|e| e.to_string())?;
+        let mut transcript = state.transcript.lock_safe();
         // Anything still mid-sentence when the recording stopped is kept too.
         let flushed = transcript.flush_partials();
         let session = transcript.session();
@@ -538,7 +632,7 @@ pub fn stop_audio_capture(app: tauri::AppHandle, state: State<'_, AppState>) -> 
     }
 
     {
-        let mut session = state.capture.lock().map_err(|e| e.to_string())?;
+        let mut session = state.capture.lock_safe();
         session.recording_state = RecordingState::Stopped;
     }
 
@@ -554,13 +648,13 @@ pub fn stop_audio_capture(app: tauri::AppHandle, state: State<'_, AppState>) -> 
 
 #[tauri::command]
 pub fn get_current_session(state: State<'_, AppState>) -> Result<InterviewSession, String> {
-    let transcript = state.transcript.lock().map_err(|e| e.to_string())?;
+    let transcript = state.transcript.lock_safe();
     Ok(transcript.session().clone())
 }
 
 #[tauri::command]
 pub fn get_recording_state(state: State<'_, AppState>) -> Result<RecordingState, String> {
-    let session = state.capture.lock().map_err(|e| e.to_string())?;
+    let session = state.capture.lock_safe();
     Ok(session.recording_state)
 }
 
@@ -568,7 +662,7 @@ pub fn get_recording_state(state: State<'_, AppState>) -> Result<RecordingState,
 /// already be stopped (recording_state must not be Recording/Paused).
 #[tauri::command]
 pub fn start_new_interview(state: State<'_, AppState>) -> Result<(), String> {
-    let mut session = state.capture.lock().map_err(|e| e.to_string())?;
+    let mut session = state.capture.lock_safe();
     if matches!(
         session.recording_state,
         RecordingState::Recording | RecordingState::Paused | RecordingState::Starting | RecordingState::Stopping
@@ -580,14 +674,14 @@ pub fn start_new_interview(state: State<'_, AppState>) -> Result<(), String> {
     session.stop_signal = None;
     drop(session);
 
-    let mut transcript = state.transcript.lock().map_err(|e| e.to_string())?;
+    let mut transcript = state.transcript.lock_safe();
     transcript.clear();
     Ok(())
 }
 
 #[tauri::command]
 pub fn clear_transcript(state: State<'_, AppState>) -> Result<(), String> {
-    let mut transcript = state.transcript.lock().map_err(|e| e.to_string())?;
+    let mut transcript = state.transcript.lock_safe();
     transcript.clear();
     Ok(())
 }
@@ -618,7 +712,7 @@ fn iso8601(ms: u64) -> String {
 #[tauri::command]
 pub fn export_transcript_txt(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<Option<String>, String> {
     let session = {
-        let transcript = state.transcript.lock().map_err(|e| e.to_string())?;
+        let transcript = state.transcript.lock_safe();
         transcript.session().clone()
     };
 
@@ -658,7 +752,7 @@ pub fn export_transcript_txt(app: tauri::AppHandle, state: State<'_, AppState>) 
 #[tauri::command]
 pub fn export_transcript_json(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<Option<String>, String> {
     let session = {
-        let transcript = state.transcript.lock().map_err(|e| e.to_string())?;
+        let transcript = state.transcript.lock_safe();
         transcript.session().clone()
     };
 
@@ -766,7 +860,7 @@ pub async fn analyze_interview(
     job_description: Option<String>,
 ) -> Result<crate::backend::OverallInterviewAnalysis, String> {
     let session = {
-        let transcript = state.transcript.lock().map_err(|e| e.to_string())?;
+        let transcript = state.transcript.lock_safe();
         transcript.session().clone()
     };
 

@@ -23,6 +23,7 @@ use tauri::{AppHandle, Manager};
 
 use manager::PerformanceManager;
 use profile::CpuUsageSampler;
+use crate::crash_guard::LockExt;
 
 /// Tauri-managed state wrapping the single `PerformanceManager` instance —
 /// registered directly via `.manage(...)`, following the same top-level
@@ -77,7 +78,7 @@ pub fn init(app: &AppHandle) -> PerformanceState {
 /// `effective_config_checked` for the checkpoint-driven variant that does.
 pub fn effective_config(app: &AppHandle) -> manager::PerformanceConfig {
     let state = app.state::<PerformanceState>();
-    let manager = state.0.lock().unwrap();
+    let manager = state.0.lock_safe();
     manager.effective_config()
 }
 
@@ -97,7 +98,7 @@ pub fn effective_config_checked(app: &AppHandle) -> manager::PerformanceConfig {
     let available = profile::available_ram_mb();
     let state = app.state::<PerformanceState>();
     let cpu_percent = state.1.latest_percent();
-    let mut manager = state.0.lock().unwrap();
+    let mut manager = state.0.lock_safe();
     let (config, reason) = manager.effective_config_checked(available, cpu_percent);
     if let Some(reason) = reason {
         log::warn!("performance: {reason}");
@@ -110,7 +111,7 @@ pub fn effective_config_checked(app: &AppHandle) -> manager::PerformanceConfig {
 /// sample — safe to call from any pipeline-stage instrumentation point.
 pub fn perf_context(app: &AppHandle) -> telemetry::PerfContext {
     let state = app.state::<PerformanceState>();
-    let manager = state.0.lock().unwrap();
+    let manager = state.0.lock_safe();
     manager.perf_context()
 }
 

@@ -56,6 +56,7 @@ use tauri::WebviewWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowDisplayAffinity, IsWindow, SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE,
 };
+use crate::crash_guard::LockExt;
 
 /// Raw `WDA_EXCLUDEFROMCAPTURE` value, exposed for callers/logs that want to
 /// compare against `get_capture_affinity`'s read-back without depending on
@@ -151,7 +152,7 @@ pub fn reconcile(window: &WebviewWindow, label: &str, desired: bool) {
         log::warn!(
             "[CaptureExclusion] label={label} hwnd={hwnd_value:#x} desired={desired} result=INVALID_HWND (stale handle, skipping)"
         );
-        registry().lock().unwrap().remove(label);
+        registry().lock_safe().remove(label);
         return;
     }
 
@@ -166,7 +167,7 @@ pub fn reconcile(window: &WebviewWindow, label: &str, desired: bool) {
         read.is_ok().then(|| affinity == WDA_EXCLUDEFROMCAPTURE.0)
     };
 
-    let mut reg = registry().lock().unwrap();
+    let mut reg = registry().lock_safe();
     let cached = reg.get(label).copied();
 
     if decide(cached, actual_excluded, hwnd_value, desired) == ReconcileAction::Skip {
@@ -242,7 +243,7 @@ pub fn release_after_hide(window: &WebviewWindow, label: &str) {
 /// doesn't have to reach into this module's private registry.
 #[allow(dead_code)]
 pub fn forget(label: &str) {
-    registry().lock().unwrap().remove(label);
+    registry().lock_safe().remove(label);
 }
 
 #[cfg(test)]

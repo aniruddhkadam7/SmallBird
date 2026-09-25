@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -100,6 +100,13 @@ function App() {
   const [llmProvider, setLlmProvider] = useState<LlmProvider>(() => loadLlmProvider());
   const [authSession, setAuthSession] = useState<AuthSessionInfo | null>(null);
   const [sessionState, setSessionState] = useState<SessionState>("IDLE");
+  const sessionStateRef = useRef<SessionState>("IDLE");
+  sessionStateRef.current = sessionState;
+  // Set while a shortcut-started session is still starting; the overlay
+  // closing during that window marks it cancelled so the start cleans up
+  // after itself instead of leaving capture running with no session.
+  const shortcutStartingRef = useRef(false);
+  const shortcutStartCancelledRef = useRef(false);
   const [openPopover, setOpenPopover] = useState<Popover>(null);
   const [error, setError] = useState<string | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
@@ -233,6 +240,7 @@ function App() {
   useEffect(() => {
     const unlistenPromise = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
       if (focused) {
+        invoke("warm_backend").catch(() => {});
         requestAnimationFrame(() => {
           invoke("signal_window_content_ready").catch(() => {});
         });
@@ -293,6 +301,12 @@ function App() {
   useEffect(() => {
     const unlisten = listen("interview-mode:overlay-closed", () => {
       setSessionState("IDLE");
+      if (shortcutStartingRef.current) shortcutStartCancelledRef.current = true;
+      // Stop audio capture too, not only the backend session — before this,
+      // capture (and its Deepgram stream) kept running after every session
+      // ended, and the next session then reused that stale capture, still
+      // tied to the previous session's key, so nothing got transcribed.
+      invoke("stop_audio_capture").catch(() => {});
       // Closing the overlay via its own controls (✕ / "Yes, end interview" /
       // Escape) bypasses handleStop entirely, so this is the only place
       // that path ends the backend session — without it, the
@@ -331,10 +345,16 @@ function App() {
   const [activeElsewhereMessage, setActiveElsewhereMessage] = useState<string | null>(null);
 
   const startInterview = useCallback(
-    async (force = false) => {
+    async (force = false, showOverlay = true) => {
       // A Test Audio run still in flight holds the capture device and its own
       // STT session — release both before the real interview claims them.
       await audioTest.cancel();
+
+      // Start recording system audio right now, into a local buffer — the
+      // session key and Deepgram connection below take a few seconds, and
+      // nothing said in that time should be lost. A shortcut start already
+      // began this on the key press (the call is then a no-op).
+      await invoke("begin_audio_prebuffer").catch(() => {});
 
       // Awaited so extraction genuinely finishes — and interviewContext is
       // updated with the resulting status/documentId — before the overlay
@@ -346,8 +366,9 @@ function App() {
       // pushes typed text. A screenshot still being read when Start is
       // pressed needn't be waited on: Ask AI reads documents live, so it's
       // picked up on the first question after it finishes.
-      const uploaded = await uploadDocumentContext(contextSections, contextState);
-      setContextState(mergeTextUploads(uploaded));
+      // Run in parallel with the backend-session request below — they're
+      // independent, and the session request is the slow part of starting.
+      const uploadPromise = uploadDocumentContext(contextSections, contextState);
 
       // Mints the session's Deepgram key and starts the metered
       // interview_sessions row server-side. Any rejection here (not logged
@@ -357,10 +378,24 @@ function App() {
       // rather than thrown, since it's resolvable (see
       // activeElsewhereMessage). See start_backend_session's Rust-side doc
       // (BackendSessionResult) for the full contract.
-      const sessionResult = await invoke<{ rejection: string | null; activeElsewhere: boolean }>(
-        "start_backend_session",
-        { sttMode: "local", force },
-      );
+      let sessionResult: { rejection: string | null; activeElsewhere: boolean };
+      try {
+        const [uploaded, result] = await Promise.all([
+          uploadPromise,
+          invoke<{ rejection: string | null; activeElsewhere: boolean }>("start_backend_session", { sttMode: "local", force }),
+        ]);
+        setContextState(mergeTextUploads(uploaded));
+        sessionResult = result;
+      } catch (e) {
+        // Offline / backend unreachable: nothing started server-side, but
+        // the prebuffer above is still recording — don't leave it running.
+        await invoke("stop_audio_capture").catch(() => {});
+        throw e;
+      }
+      if (sessionResult.activeElsewhere || sessionResult.rejection) {
+        // No session — discard what was recorded since the press.
+        await invoke("stop_audio_capture").catch(() => {});
+      }
       if (sessionResult.activeElsewhere) {
         setActiveElsewhereMessage(sessionResult.rejection);
         return false;
@@ -369,11 +404,26 @@ function App() {
         throw new Error(sessionResult.rejection);
       }
 
-      await invoke("start_system_audio_capture").catch((e) => {
-        if (String(e) !== "capture already running") throw e;
-      });
-      await invoke("clear_transcript").catch(() => {});
-      await invoke("show_interview_overlay");
+      // A shortcut start cancelled while the session request was in flight:
+      // never open capture — the caller ends the backend session it got.
+      if (shortcutStartingRef.current && shortcutStartCancelledRef.current) return false;
+
+      // Attaches speech-to-text to the recording begun above (its backlog is
+      // sent first). Every session gets a fresh capture on its own Deepgram
+      // key — begin_audio_prebuffer stopped any capture left from an earlier
+      // session. The transcript is cleared by the start itself, before any
+      // buffered speech is transcribed.
+      try {
+        await invoke("start_system_audio_capture");
+        if (showOverlay) await invoke("show_interview_overlay");
+      } catch (e) {
+        // The backend session is live (and metered) at this point — end it
+        // and release the capture, rather than leaving both running behind an
+        // IDLE UI. Both calls are no-ops if nothing is running.
+        await invoke("stop_audio_capture").catch(() => {});
+        await invoke("end_backend_session").catch(() => {});
+        throw e;
+      }
       return true;
     },
     [contextSections, contextState, setContextState, audioTest.cancel],
@@ -477,6 +527,21 @@ function App() {
     };
   }, []);
 
+  // Mid-session failures the overlay also shows — mirrored here so they're
+  // visible when the session was started without the overlay, or once the
+  // user comes back to the main window. The session is left running: the
+  // user decides when to stop (capture may still recover on its own).
+  useEffect(() => {
+    const unlistenStt = listen<string>("stt:error", (event) => setError(event.payload));
+    const unlistenCapture = listen<string>("audio:capture-error", (event) =>
+      setError(`Stopped hearing audio: ${event.payload}`),
+    );
+    return () => {
+      unlistenStt.then((f) => f());
+      unlistenCapture.then((f) => f());
+    };
+  }, []);
+
   const handleStop = useCallback(async () => {
     try {
       await invoke("hide_interview_overlay");
@@ -489,8 +554,80 @@ function App() {
       // never surfaces an error to the user — a network blip here must
       // not cost the user the interview they just finished. No-ops
       // silently when the user isn't signed in (see start_backend_session).
-      invoke("end_backend_session").catch(() => {});
+      invoke("stop_audio_capture")
+        .catch(() => {})
+        .finally(() => invoke("end_backend_session").catch(() => {}));
     }
+  }, []);
+
+  // The overlay shortcut, when no session is running (see shortcuts.rs's
+  // toggle_session): starts one exactly like Start — same context, backend
+  // session and capture — reusing the last start details and the header's
+  // current mode. The overlay is shown first so the press feels instant
+  // (it reads "Starting…" until capture reports Recording). Only this
+  // explicit press starts anything; pressing the shortcut again closes the
+  // overlay, which ends the session.
+  const startFromShortcut = useCallback(async () => {
+    if (sessionStateRef.current !== "IDLE") {
+      invoke("shortcut_session_settled").catch(() => {});
+      return;
+    }
+    if (authSession?.loggedIn === false) {
+      invoke("shortcut_session_settled").catch(() => {});
+      await invoke("hide_interview_overlay").catch(() => {});
+      invoke("restore_from_bubble").catch(() => {});
+      setOpenPopover("ACCOUNT");
+      return;
+    }
+    const current = loadOverlaySettings();
+    saveOverlaySettings({ ...current, mode: sessionMode });
+    setError(null);
+    setActiveElsewhereMessage(null);
+    setOpenPopover(null);
+    setSessionState("STARTING");
+    shortcutStartingRef.current = true;
+    shortcutStartCancelledRef.current = false;
+    try {
+      // The overlay is already showing — shortcuts.rs shows it on the key
+      // press itself, before this event even arrives.
+      const started = await startInterview(false, false);
+      if (shortcutStartCancelledRef.current) {
+        // Closed while starting — undo whatever did start.
+        await invoke("stop_audio_capture").catch(() => {});
+        await invoke("end_backend_session").catch(() => {});
+        setSessionState("IDLE");
+        return;
+      }
+      if (!started) {
+        // Active on another device: show the main window's choice.
+        await invoke("hide_interview_overlay").catch(() => {});
+        await invoke("restore_from_bubble").catch(() => {});
+        setSessionState("IDLE");
+        return;
+      }
+      setSessionState("LISTENING");
+    } catch (e) {
+      setError(String(e));
+      await invoke("hide_interview_overlay").catch(() => {});
+      await invoke("stop_audio_capture").catch(() => {});
+      await invoke("end_backend_session").catch(() => {});
+      await invoke("restore_from_bubble").catch(() => {});
+      setSessionState("IDLE");
+    } finally {
+      shortcutStartingRef.current = false;
+      invoke("shortcut_session_settled").catch(() => {});
+    }
+  }, [authSession?.loggedIn, sessionMode, startInterview]);
+
+  const startFromShortcutRef = useRef(startFromShortcut);
+  startFromShortcutRef.current = startFromShortcut;
+  useEffect(() => {
+    const unlisten = listen("shortcut:start-session", () => {
+      void startFromShortcutRef.current();
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
   }, []);
 
   const startLabel =
@@ -633,6 +770,10 @@ function App() {
                       onClick={() => {
                         setSessionMode(m.value);
                         saveSessionMode(m.value);
+                        // Stored for the overlay right away: a shortcut start
+                        // shows the overlay (which reads this) before the main
+                        // window gets to save anything.
+                        saveOverlaySettings({ ...loadOverlaySettings(), mode: m.value });
                         closePopover();
                       }}
                     >

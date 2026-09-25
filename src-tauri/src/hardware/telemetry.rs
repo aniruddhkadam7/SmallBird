@@ -33,6 +33,7 @@ use std::time::{Duration, Instant};
 use super::manager::{PerformanceConfig, PerformanceMode};
 use super::pressure::PressureState;
 use super::tier::HardwareTier;
+use crate::crash_guard::LockExt;
 
 /// A single pipeline-stage duration, ready to log. Constructed via
 /// `Stopwatch::stop`, never by hand with an arbitrary label — this keeps
@@ -145,7 +146,7 @@ impl FirstTokenTracker {
     /// Records elapsed time since `new()`, but only on the first call —
     /// safe to call on every delta without re-locking-and-overwriting.
     pub fn mark(&self) {
-        let mut slot = self.ms.lock().unwrap();
+        let mut slot = self.ms.lock_safe();
         if slot.is_none() {
             *slot = Some(self.started.elapsed().as_millis());
         }
@@ -154,7 +155,7 @@ impl FirstTokenTracker {
     /// `None` if `mark()` was never called (e.g. the stream produced no
     /// deltas before erroring out).
     pub fn elapsed_ms(&self) -> Option<u128> {
-        *self.ms.lock().unwrap()
+        *self.ms.lock_safe()
     }
 }
 

@@ -6,6 +6,7 @@
 //! `llm-proxy` forwards the `payload` verbatim and streams back OpenAI's own
 //! native response shape.
 
+use crate::crash_guard::LockExt;
 use std::time::Duration;
 
 use futures_util::StreamExt;
@@ -78,15 +79,13 @@ static DEV_EFFORT_OVERRIDE: std::sync::Mutex<Option<String>> = std::sync::Mutex:
 
 pub fn set_dev_effort_override(effort: Option<String>) {
     if cfg!(debug_assertions) {
-        if let Ok(mut slot) = DEV_EFFORT_OVERRIDE.lock() {
-            *slot = effort.filter(|e| !e.trim().is_empty());
-        }
+        *DEV_EFFORT_OVERRIDE.lock_safe() = effort.filter(|e| !e.trim().is_empty());
     }
 }
 
 fn effort_for(model: &str, requested: Option<&str>) -> String {
     if cfg!(debug_assertions) && model.starts_with("gpt-6") {
-        if let Some(effort) = DEV_EFFORT_OVERRIDE.lock().ok().and_then(|e| e.clone()) {
+        if let Some(effort) = DEV_EFFORT_OVERRIDE.lock_safe().clone() {
             return effort;
         }
     }
@@ -261,6 +260,7 @@ where
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
+    let mut pending_bytes = Vec::new();
     let mut chunks = 0u32;
     let mut first_chunk_ms = None;
 
@@ -268,7 +268,7 @@ where
         let chunk = chunk.map_err(|e| format!("stream read error: {e}"))?;
         chunks += 1;
         first_chunk_ms.get_or_insert_with(|| started.elapsed().as_millis());
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        super::push_utf8_chunk(&mut pending_bytes, &mut buffer, &chunk);
 
         for delta in drain_sse_deltas(&mut buffer) {
             if let Some(text) = delta {

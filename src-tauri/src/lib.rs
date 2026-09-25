@@ -7,8 +7,10 @@ pub mod audio;
 mod audio_test;
 mod auth;
 mod backend;
+mod backend_warmup;
 mod bubble_window;
 mod commands;
+mod crash_guard;
 mod documents;
 // Public so `src/bin/hw_probe.rs` can reference `PerformanceConfig` without
 // a re-export chain.
@@ -29,15 +31,18 @@ pub mod stt;
 pub mod transcript;
 mod windows_capture_protection;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // First, so a panic anywhere after this (including during startup) is
+    // recorded to crash.log — see `crash_guard`.
+    crash_guard::install_panic_hook();
     tls_init::ensure_installed();
 
-    tauri::Builder::default()
+    let result = tauri::Builder::default()
         // Must be the very first plugin registered (Tauri requirement). A
         // second launch of the app (double-clicking the exe/shortcut again,
         // including while the first launch is still mid-startup and its
@@ -105,6 +110,11 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry>::new("nav-guard")
+                .on_navigation(|webview, url| overlay_window::allow_navigation(webview.app_handle(), url))
+                .build(),
+        )
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_autostart::init(
@@ -191,7 +201,30 @@ pub fn run() {
             // retrying any that haven't reached the server yet.
             history::spawn_background_tasks(app.handle().clone());
 
+            // System-audio capture that stops mid-session and can't recover
+            // (output device gone, nothing to fall back to) — tell the UI
+            // rather than leaving it showing "Listening" over silence.
+            let capture_app = app.handle().clone();
+            audio::set_capture_failure_handler(move |message| {
+                let _ = capture_app.emit("audio:capture-error", message);
+            });
+
             bubble_window::ensure_bubble_window(&app.handle().clone());
+
+            // Keep the session-start and answer backend functions warm so a
+            // Start/shortcut press never waits on a cold start (see module).
+            backend_warmup::spawn_keep_warm();
+
+            // Pre-build the (hidden) overlay a few seconds after launch so
+            // the first Start/shortcut press only has to show it. Delayed so
+            // it never slows the app's own startup; built on the main thread
+            // (window creation must be). No capture or session is started.
+            let prebuild_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                let inner = prebuild_handle.clone();
+                let _ = prebuild_handle.run_on_main_thread(move || interview_mode::prebuild_overlay_window(&inner));
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -201,6 +234,7 @@ pub fn run() {
             commands::pause_recording,
             commands::resume_recording,
             commands::stop_audio_capture,
+            commands::begin_audio_prebuffer,
             audio_test::prepare_audio_test_phrase,
             audio_test::play_audio_test_phrase,
             audio_test::stop_audio_test_phrase,
@@ -219,7 +253,9 @@ pub fn run() {
             shortcuts::get_shortcuts,
             shortcuts::set_shortcut,
             shortcuts::suspend_shortcuts,
+            shortcuts::shortcut_session_settled,
             tray::hide_to_tray,
+            backend_warmup::warm_backend,
             interview_mode::commands::capture_screenshot,
             interview_mode::commands::remove_screenshot,
             interview_mode::commands::clear_screenshots,
@@ -232,6 +268,7 @@ pub fn run() {
             documents::delete_document,
             commands::quit_app,
             commands::signal_window_content_ready,
+            crash_guard::log_frontend_error,
             commands::minimize_to_bubble,
             commands::restore_from_bubble,
             commands::drag_bubble_window,
@@ -266,6 +303,20 @@ pub fn run() {
             auth::commands::get_auth_session,
             auth::commands::get_entitlement,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .run(tauri::generate_context!());
+
+    // Startup failures (most commonly a missing/broken WebView2 runtime)
+    // used to `expect()`-panic here, which in a windowless release build
+    // meant the app silently never appeared. Explain it instead.
+    if let Err(err) = result {
+        log::error!("failed to start Smallbird: {err}");
+        crash_guard::show_fatal_error(&format!(
+            "Smallbird couldn't start.
+
+{err}
+
+             If this keeps happening, reinstall Smallbird or install the              Microsoft Edge WebView2 Runtime, then try again."
+        ));
+        std::process::exit(1);
+    }
 }

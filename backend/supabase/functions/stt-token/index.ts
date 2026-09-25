@@ -12,6 +12,7 @@
 
 import { entitlementErrorResponse, requireEntitlement } from "../_shared/entitlement.ts";
 import { withCors } from "../_shared/cors.ts";
+import { revokeSessionKey } from "../_shared/deepgram.ts";
 
 // Hard ceiling regardless of balance. It is also how long the minted Deepgram
 // key stays valid, so it bounds the damage if a key ever leaks — but it must
@@ -68,9 +69,31 @@ Deno.serve(withCors(async (req) => {
         );
       }
 
-      // Force: end the other session, then retry the insert now that the
-      // unique slot is free. The other device's next heartbeat call will
-      // see its row is no longer "active" and surface this to that user.
+      // Force: end the other session (billing the time it ran and revoking
+      // its Deepgram key), then retry the insert now that the unique slot is
+      // free. The other device's next heartbeat call will see its row is no
+      // longer "active" and surface this to that user.
+      const { data: active } = await entitlement.admin
+        .from("interview_sessions")
+        .select("id")
+        .eq("user_id", entitlement.userId)
+        .eq("status", "active");
+      for (const old of active ?? []) {
+        const { data: ended, error: endErr } = await entitlement.admin.rpc("end_and_bill_session", {
+          p_session_id: old.id,
+          p_user_id: entitlement.userId,
+          p_status: "terminated",
+          p_reason: "force_ended_by_new_login",
+        });
+        if (endErr) {
+          console.error("stt-token: end_and_bill_session failed", old.id, endErr);
+          continue;
+        }
+        const keyId = Array.isArray(ended) ? ended[0]?.deepgram_key_id : null;
+        await revokeSessionKey(entitlement.admin, old.id, keyId);
+      }
+      // Anything still active (e.g. already-deducted rows the RPC won't
+      // claim) is ended the old way so the new session can start.
       await entitlement.admin
         .from("interview_sessions")
         .update({ status: "terminated", termination_reason: "force_ended_by_new_login", ended_at: new Date().toISOString() })
@@ -116,6 +139,17 @@ Deno.serve(withCors(async (req) => {
     }
 
     const dgKey = await dgResp.json();
+
+    // Remember the key so it can be revoked as soon as this session ends
+    // (usage-report / force-end / session-janitor) instead of living out its
+    // full TTL.
+    if (dgKey.api_key_id) {
+      const { error: keyErr } = await entitlement.admin
+        .from("interview_sessions")
+        .update({ deepgram_key_id: dgKey.api_key_id })
+        .eq("id", session.id);
+      if (keyErr) console.error("stt-token: storing deepgram_key_id failed", keyErr);
+    }
 
     return new Response(
       JSON.stringify({ sessionId: session.id, key: dgKey.key, expiresInSeconds: authorizedSeconds }),

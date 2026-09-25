@@ -6,8 +6,16 @@
 // Request body: { provider: "openai" | "anthropic", payload: <provider's
 // native request body>, sessionId?: string, requestKind?: string }
 
-import { entitlementErrorResponse, requireEntitlement } from "../_shared/entitlement.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { entitlementErrorResponse, requireEntitlement, userIdFromVerifiedJwt } from "../_shared/entitlement.ts";
 import { withCors } from "../_shared/cors.ts";
+import { isAllowedModel, MAX_BODY_BYTES, sanitizePayload, withinRateLimit } from "../_shared/llmguard.ts";
+
+const guardAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+function jsonError(error: string, status: number): Response {
+  return new Response(JSON.stringify({ error }), { status, headers: { "content-type": "application/json" } });
+}
 
 const PROVIDER_URLS: Record<string, string> = {
   openai: "https://api.openai.com/v1/chat/completions",
@@ -29,8 +37,22 @@ Deno.serve(withCors(async (req) => {
   }
 
   try {
-    const entitlement = await requireEntitlement(req);
-    const { provider, payload, sessionId, requestKind } = await req.json();
+    if (Number(req.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) return jsonError("Request too large", 413);
+    const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearers+/i, "");
+    // The rate check runs alongside the entitlement lookup, so it adds no
+    // latency in front of the answer.
+    const [entitlement, allowed, raw] = await Promise.all([
+      requireEntitlement(req),
+      jwt ? withinRateLimit(guardAdmin, userIdFromVerifiedJwt(jwt)).catch(() => true) : Promise.resolve(true),
+      req.text(),
+    ]);
+    if (!allowed) return jsonError("Too many requests — please slow down and try again in a minute", 429);
+    if (raw.length > MAX_BODY_BYTES) return jsonError("Request too large", 413);
+    const { provider, payload: rawPayload, sessionId, requestKind } = JSON.parse(raw);
+    if (!rawPayload || typeof rawPayload !== "object" || !isAllowedModel(rawPayload.model)) {
+      return jsonError(`Unsupported model: ${String(rawPayload?.model ?? "")}`, 400);
+    }
+    const payload = sanitizePayload(rawPayload);
 
     const providerUrl = PROVIDER_URLS[provider];
     if (!providerUrl) {

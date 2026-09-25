@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Manager};
+use crate::crash_guard::LockExt;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Note {
@@ -77,7 +78,7 @@ fn ensure_loaded(app: &AppHandle, guard: &mut Vec<Note>) {
 
 #[tauri::command]
 pub fn list_notes(app: AppHandle, store: tauri::State<'_, NotesStore>) -> Vec<Note> {
-    let mut guard = store.0.lock().unwrap();
+    let mut guard = store.0.lock_safe();
     ensure_loaded(&app, &mut guard);
     let mut notes = guard.clone();
     notes.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
@@ -86,7 +87,7 @@ pub fn list_notes(app: AppHandle, store: tauri::State<'_, NotesStore>) -> Vec<No
 
 #[tauri::command]
 pub fn get_note(app: AppHandle, store: tauri::State<'_, NotesStore>, id: String) -> Option<Note> {
-    let mut guard = store.0.lock().unwrap();
+    let mut guard = store.0.lock_safe();
     ensure_loaded(&app, &mut guard);
     guard.iter().find(|n| n.id == id).cloned()
 }
@@ -100,7 +101,7 @@ pub fn create_note(
     project: Option<String>,
     tags: Option<Vec<String>>,
 ) -> Result<Note, String> {
-    let mut guard = store.0.lock().map_err(|e| e.to_string())?;
+    let mut guard = store.0.lock_safe();
     ensure_loaded(&app, &mut guard);
 
     let now = now_ms();
@@ -130,7 +131,7 @@ pub fn update_note(
     tags: Option<Vec<String>>,
     linked_note_ids: Option<Vec<String>>,
 ) -> Result<Note, String> {
-    let mut guard = store.0.lock().map_err(|e| e.to_string())?;
+    let mut guard = store.0.lock_safe();
     ensure_loaded(&app, &mut guard);
 
     let note = guard.iter_mut().find(|n| n.id == id).ok_or_else(|| "note not found".to_string())?;
@@ -158,7 +159,7 @@ pub fn update_note(
 
 #[tauri::command]
 pub fn delete_note(app: AppHandle, store: tauri::State<'_, NotesStore>, id: String) -> Result<(), String> {
-    let mut guard = store.0.lock().map_err(|e| e.to_string())?;
+    let mut guard = store.0.lock_safe();
     ensure_loaded(&app, &mut guard);
     guard.retain(|n| n.id != id);
     save(&app, &guard)
@@ -169,7 +170,7 @@ pub fn delete_note(app: AppHandle, store: tauri::State<'_, NotesStore>, id: Stri
 /// feel instant as the user types).
 #[tauri::command]
 pub fn search_notes(app: AppHandle, store: tauri::State<'_, NotesStore>, query: String) -> Vec<Note> {
-    let mut guard = store.0.lock().unwrap();
+    let mut guard = store.0.lock_safe();
     ensure_loaded(&app, &mut guard);
     let needle = query.trim().to_lowercase();
     if needle.is_empty() {

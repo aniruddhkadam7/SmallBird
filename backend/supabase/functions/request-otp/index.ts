@@ -7,6 +7,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { withCors } from "../_shared/cors.ts";
+import { allowRequest, clientIp } from "../_shared/ratelimit.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
@@ -15,6 +16,9 @@ const FROM_ADDRESS = "SmallBird <noreply@smallbird.in>";
 const CODE_TTL_MS = 5 * 60 * 1000;
 const MAX_REQUESTS_PER_WINDOW = 5;
 const REQUEST_WINDOW_MS = 15 * 60 * 1000;
+// Codes one IP may request across ALL emails per 15 min — stops using this
+// endpoint to spray sign-in emails at many addresses from our domain.
+const MAX_REQUESTS_PER_IP = 10;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -51,6 +55,11 @@ Deno.serve(withCors(async (req) => {
   }
   if (!EMAIL_RE.test(email)) return json({ error: "Invalid email address" }, 400);
 
+  const ip = clientIp(req);
+  if (!(await allowRequest(admin, `otp-request-ip:${ip}`, MAX_REQUESTS_PER_IP, REQUEST_WINDOW_MS / 1000))) {
+    return json({ error: "Too many login attempts — please wait a few minutes and try again" }, 429);
+  }
+
   const windowStart = new Date(Date.now() - REQUEST_WINDOW_MS).toISOString();
   const { count, error: countErr } = await admin
     .from("login_otps")
@@ -69,7 +78,7 @@ Deno.serve(withCors(async (req) => {
   const codeHash = await sha256Hex(code);
   const expiresAt = new Date(Date.now() + CODE_TTL_MS).toISOString();
 
-  const { error: insertErr } = await admin.from("login_otps").insert({ email, code_hash: codeHash, expires_at: expiresAt });
+  const { error: insertErr } = await admin.from("login_otps").insert({ email, code_hash: codeHash, expires_at: expiresAt, request_ip: ip });
   if (insertErr) {
     console.error("request-otp: insert failed", insertErr);
     return json({ error: "Internal error" }, 500);

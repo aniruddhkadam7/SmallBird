@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { PersonalizationPanel } from "./PersonalizationPanel";
 import { AttachedDocumentsPanel } from "./AttachedDocumentsPanel";
 import { ShortcutsPanel } from "./ShortcutsPanel";
+import { Button } from "./ui";
 
 type SettingsSection = "SESSIONS" | "PERSONALIZATION" | "SHORTCUTS" | "CONTEXT" | "PRIVACY" | "ABOUT";
 
@@ -74,13 +75,16 @@ export function SettingsPopover({ onClose }: Props) {
                   Your past interviews — transcripts and details — are saved to your account and viewable from the
                   Smallbird dashboard on the web.
                 </p>
-                <button
-                  className="overlay-text-button primary"
+                {/* The main app's own primary button (white text on blue) — this
+                    used the overlay's dark-theme button class, which rendered
+                    black text on blue in the light main window. */}
+                <Button
+                  variant="primary"
                   style={{ marginTop: 12 }}
                   onClick={() => invoke("open_dashboard").catch((e) => console.error("Failed to open dashboard:", e))}
                 >
                   Open Dashboard
-                </button>
+                </Button>
               </div>
             )}
             {section === "PERSONALIZATION" && <PersonalizationPanel />}

@@ -21,6 +21,7 @@ use windows::core::{HSTRING, PCWSTR};
 use windows::Media::SpeechSynthesis::SpeechSynthesizer;
 use windows::Storage::Streams::DataReader;
 use windows::Win32::Media::Audio::{PlaySoundW, SND_MEMORY, SND_NODEFAULT, SND_PURGE, SND_SYNC};
+use crate::crash_guard::LockExt;
 
 const MAX_PHRASE_CHARS: usize = 160;
 
@@ -44,7 +45,7 @@ pub async fn prepare_audio_test_phrase(phrase: String) -> Result<(), String> {
         .await
         .map_err(|e| format!("test audio task failed: {e}"))?
         .map_err(|e| format!("could not prepare test audio: {e}"))?;
-    *PREPARED.lock().map_err(|e| e.to_string())? = Some(wav);
+    *PREPARED.lock_safe() = Some(wav);
     Ok(())
 }
 
@@ -52,8 +53,7 @@ pub async fn prepare_audio_test_phrase(phrase: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn play_audio_test_phrase() -> Result<(), String> {
     let wav = PREPARED
-        .lock()
-        .map_err(|e| e.to_string())?
+        .lock_safe()
         .take()
         .ok_or_else(|| "no test audio prepared".to_string())?;
     tauri::async_runtime::spawn_blocking(move || play_blocking(&wav))
@@ -66,9 +66,7 @@ pub async fn play_audio_test_phrase() -> Result<(), String> {
 /// Safe to call at any time.
 #[tauri::command]
 pub fn stop_audio_test_phrase() {
-    if let Ok(mut prepared) = PREPARED.lock() {
-        *prepared = None;
-    }
+    *PREPARED.lock_safe() = None;
     if PLAYING.load(Ordering::SeqCst) {
         unsafe {
             let _ = PlaySoundW(PCWSTR::null(), None, SND_PURGE);
@@ -173,8 +171,7 @@ pub async fn close_orphaned_audio_test_session(app: AppHandle, state: State<'_, 
     };
     let in_use = state
         .stt_session
-        .lock()
-        .map_err(|e| e.to_string())?
+        .lock_safe()
         .as_ref()
         .is_some_and(|s| s.session_id == pending.session_id);
     if in_use {

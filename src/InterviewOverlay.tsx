@@ -554,8 +554,15 @@ export function InterviewOverlay() {
   }, []);
 
   useEffect(() => {
-    invoke<OverlayCaptureStatus>("show_interview_overlay")
-      .then((status) => {
+    // Pre-built at launch (see lib.rs), this window loads hidden and must
+    // stay hidden until Start / the shortcut shows it — only an overlay
+    // that was built by being shown calls show here (to learn its capture
+    // status, as before).
+    overlayWindow
+      .isVisible()
+      .then((visible) => {
+        if (!visible) return;
+        return invoke<OverlayCaptureStatus>("show_interview_overlay").then((status) => {
         setCaptureExcluded(status.excluded);
         // show_interview_overlay always turns protection ON for a
         // brand-new window (it has no way to know a returning user
@@ -567,6 +574,7 @@ export function InterviewOverlay() {
             .then((s) => setCaptureExcluded(s.excluded))
             .catch(() => {});
         }
+        });
       })
       .catch((e) => setError(String(e)));
 
@@ -579,26 +587,10 @@ export function InterviewOverlay() {
       // Best-effort — the window simply stays at its default size.
     });
 
-    // Interview Mode can now be opened without having started a recording
-    // first (see App.tsx), but the live transcript this overlay listens to
-    // only exists once WASAPI+STT capture is actually running. Start it here
-    // if it isn't already active so "Listening" is never just a silent
-    // no-op; "capture already running" from a prior Start Recording click is
-    // the one expected/harmless failure — anything else (e.g. no audio
-    // device) must surface, or the overlay would sit on "Waiting for the
-    // interviewer to speak…" forever with no explanation.
-    invoke("start_system_audio_capture")
-      .then(() => setCaptureActive(true))
-      .catch((e) => {
-        if (String(e) !== "capture already running") {
-          setError(`Could not start audio capture: ${String(e)}`);
-        } else {
-          // A session was already started elsewhere (e.g. InterviewSetup's
-          // own call, which this effect always races against) — that
-          // session is genuinely active, so this is not a failure.
-          setCaptureActive(true);
-        }
-      });
+    // Audio capture is started only by App.tsx (Start button / overlay
+    // shortcut), never by this window on its own — it's pre-built hidden at
+    // launch, and nothing may record until the user explicitly starts.
+    // Capture state is tracked via recording:state (see syncRecordingState).
   }, []);
 
   // Mic/mute state comes from the backend's actual capture state, not a
@@ -626,6 +618,24 @@ export function InterviewOverlay() {
       unlisten.then((f) => f());
     };
   }, [applyRecordingState, syncRecordingState]);
+
+  // Emitted once live transcription has given up reconnecting (see
+  // stt/client.rs), or system-audio capture lost its output device with
+  // nothing to fall back to (audio/system_capture.rs). Without surfacing
+  // them, the overlay kept looking like it was listening while no questions
+  // ever arrived.
+  useEffect(() => {
+    const unlistenStt = listen<string>("stt:error", (event) => {
+      setError(`${event.payload}. Stop and start the session again to resume live transcription.`);
+    });
+    const unlistenCapture = listen<string>("audio:capture-error", (event) => {
+      setError(`Stopped hearing audio: ${event.payload}. Reconnect your speakers or headphones, then stop and start the session again.`);
+    });
+    return () => {
+      unlistenStt.then((f) => f());
+      unlistenCapture.then((f) => f());
+    };
+  }, []);
 
   // The overlay window is *reused* across interviews, not recreated (see
   // overlay_window.rs's show_overlay_window) — its WebView2 process/DOM
@@ -672,22 +682,24 @@ export function InterviewOverlay() {
       // show_overlay_window) — reconcile with a returning user's saved
       // preference the same way the very-first-open effect above does, so
       // choosing "off" once doesn't get silently reset on the next reopen.
-      if (!settingsRef.current.captureProtection) {
-        invoke<OverlayCaptureStatus>("set_overlay_capture_exclusion", { enabled: false })
-          .then((s) => setCaptureExcluded(s.excluded))
-          .catch(() => {});
-      }
+      invoke<OverlayCaptureStatus>("set_overlay_capture_exclusion", { enabled: settingsRef.current.captureProtection })
+        .then((s) => setCaptureExcluded(s.excluded))
+        .catch(() => {});
     });
     return () => {
       unlistenReset.then((f) => f());
     };
   }, []);
 
-  // Follow the conversation as it grows, the way a chat window does.
+  // One question/answer is shown at a time: when a new one appears, start at
+  // its top. While the answer streams in, the view stays put — following the
+  // growing text to the bottom pushed its opening lines out of sight in a
+  // small overlay before the user could start reading.
+  const activeTurnId = turns.length === 0 ? undefined : turns[Math.min(viewIndex ?? turns.length - 1, turns.length - 1)]?.id;
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [turns, question]);
+    if (el) el.scrollTop = 0;
+  }, [activeTurnId]);
 
   // Shared between `askAI` and `analyzeScreen` — both send the same
   // answer-shaping options to their respective backend commands.
@@ -1493,7 +1505,9 @@ export function InterviewOverlay() {
                 onChange={handleQuestionChange}
                 onKeyDown={handleQuestionKeyDown}
                 placeholder={
-                  hasConversation
+                  !captureActive
+                    ? "Starting to listen…"
+                    : hasConversation
                     ? "Next question…"
                     : isMeeting
                       ? "Waiting for someone to speak…"

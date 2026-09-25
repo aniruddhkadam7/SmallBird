@@ -14,6 +14,7 @@ use crate::backend::{
 use super::prompts::{analysis, ask, image_context, notes, screen, setup, state_tracker, ChatMessage};
 use super::provider::LlmProvider;
 use super::providers::{anthropic, openai};
+use crate::crash_guard::LockExt;
 
 /// Default model per provider (`settings.ask_model`/`settings.llm_model`
 /// fall back to a generic model-shaped string; Anthropic's own
@@ -349,7 +350,7 @@ fn dev_ask_model_override() -> Option<String> {
     if !cfg!(debug_assertions) {
         return None;
     }
-    DEV_ASK_MODEL_OVERRIDE.lock().ok().and_then(|m| m.clone())
+    DEV_ASK_MODEL_OVERRIDE.lock_safe().clone()
 }
 
 /// Dev builds only: routes every Ask AI / Analyze Screen answer to `model`
@@ -359,7 +360,7 @@ pub fn debug_set_ask_model(model: Option<String>, effort: Option<String>) -> Res
     if !cfg!(debug_assertions) {
         return Err("only available in development builds".to_string());
     }
-    *DEV_ASK_MODEL_OVERRIDE.lock().map_err(|e| e.to_string())? = model.filter(|m| !m.trim().is_empty());
+    *DEV_ASK_MODEL_OVERRIDE.lock_safe() = model.filter(|m| !m.trim().is_empty());
     super::providers::openai::set_dev_effort_override(effort);
     Ok(())
 }

@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::state::AppState;
+use crate::crash_guard::LockExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentMetadata {
@@ -52,7 +53,7 @@ fn new_document_id() -> String {
 /// is left to join. Used by `interview_mode::commands` to build ASK AI's
 /// LLM context without going through the Tauri command layer.
 pub fn latest_ready_text(state: &AppState, document_type: &str) -> Option<String> {
-    let store = state.documents.lock().ok()?;
+    let store = state.documents.lock_safe();
     let mut ready: Vec<&DocumentRecord> = store
         .values()
         .filter(|r| r.metadata.document_type == document_type && r.metadata.status == "READY")
@@ -63,6 +64,15 @@ pub fn latest_ready_text(state: &AppState, document_type: &str) -> Option<String
     ready.sort_by(|a, b| a.metadata.created_at.total_cmp(&b.metadata.created_at));
     Some(ready.iter().map(|r| r.text.as_str()).collect::<Vec<_>>().join("\n\n---\n\n"))
 }
+
+/// Largest file accepted for text extraction. Resumes/JDs are a few hundred
+/// KB; anything far past this is almost certainly the wrong file, and parsing
+/// it would stall the upload for a long time.
+const MAX_DOCUMENT_BYTES: usize = 25 * 1024 * 1024;
+
+/// Cap on a .docx's decompressed document.xml, so a malformed or malicious
+/// archive (a "zip bomb") can't exhaust memory.
+const MAX_DOCX_XML_BYTES: u64 = 64 * 1024 * 1024;
 
 fn decode_xml_entities(s: &str) -> String {
     s.replace("&amp;", "&")
@@ -84,6 +94,7 @@ fn extract_docx_text(bytes: &[u8]) -> Result<String, String> {
     archive
         .by_name("word/document.xml")
         .map_err(|e| format!(".docx is missing its document content: {e}"))?
+        .take(MAX_DOCX_XML_BYTES)
         .read_to_string(&mut xml)
         .map_err(|e| format!("failed to read .docx content: {e}"))?;
 
@@ -117,8 +128,21 @@ pub async fn upload_document(
     bytes: Vec<u8>,
     document_type: String,
 ) -> Result<DocumentMetadata, String> {
-    let extracted = extract_text(&filename, &bytes);
-    store_document(&state, filename, bytes.len() as u64, document_type, extracted)
+    let file_size = bytes.len() as u64;
+    let extracted = if bytes.len() > MAX_DOCUMENT_BYTES {
+        Err(format!("file is too large (max {} MB)", MAX_DOCUMENT_BYTES / (1024 * 1024)))
+    } else {
+        // Off the async runtime (a large PDF takes seconds to parse), and
+        // guarded: pdf-extract is known to panic on some malformed PDFs,
+        // which would otherwise leave this command's promise unresolved.
+        let name = filename.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::crash_guard::guard("reading this file", || extract_text(&name, &bytes))
+        })
+        .await
+        .unwrap_or_else(|e| Err(format!("reading this file failed unexpectedly: {e}")))
+    };
+    store_document(&state, filename, file_size, document_type, extracted)
 }
 
 /// Attaches an image (a pasted screenshot, a photo of a slide, a chart) as
@@ -176,26 +200,26 @@ fn store_document(
         error_message,
     };
 
-    let mut store = state.documents.lock().map_err(|e| e.to_string())?;
+    let mut store = state.documents.lock_safe();
     store.insert(metadata.document_id.clone(), DocumentRecord { metadata: metadata.clone(), text });
     Ok(metadata)
 }
 
 #[tauri::command]
 pub async fn get_document_text(state: State<'_, AppState>, document_id: String) -> Result<Option<String>, String> {
-    let store = state.documents.lock().map_err(|e| e.to_string())?;
+    let store = state.documents.lock_safe();
     Ok(store.get(&document_id).map(|r| r.text.clone()))
 }
 
 #[tauri::command]
 pub async fn list_documents(state: State<'_, AppState>) -> Result<Vec<DocumentMetadata>, String> {
-    let store = state.documents.lock().map_err(|e| e.to_string())?;
+    let store = state.documents.lock_safe();
     Ok(store.values().map(|r| r.metadata.clone()).collect())
 }
 
 #[tauri::command]
 pub async fn delete_document(state: State<'_, AppState>, document_id: String) -> Result<(), String> {
-    let mut store = state.documents.lock().map_err(|e| e.to_string())?;
+    let mut store = state.documents.lock_safe();
     store.remove(&document_id);
     Ok(())
 }

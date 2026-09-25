@@ -21,6 +21,18 @@ pub struct CaptureSession {
     pub recording_state: RecordingState,
 }
 
+/// System audio being recorded from the moment the user pressed Start/the
+/// shortcut, before the session's speech-to-text key and connection are
+/// ready (see `commands::begin_audio_prebuffer`). Chunks queue in
+/// `audio_rx`; the STT pipeline takes this over once connected and sends
+/// the backlog first, so nothing said after the press is lost.
+pub struct AudioPrebuffer {
+    pub id: u64,
+    pub audio_rx: crossbeam_channel::Receiver<crate::audio::AudioChunk>,
+    pub stop: crate::audio::StopSignal,
+    pub thread: JoinHandle<()>,
+}
+
 impl Default for CaptureSession {
     fn default() -> Self {
         Self {
@@ -75,6 +87,8 @@ pub struct AppState {
     /// question (see `ask_interview_question`); the overlay only ever holds
     /// the small thumbnails.
     pub screenshots: Mutex<Vec<(String, String)>>,
+    /// See `AudioPrebuffer`. `None` whenever no session is starting.
+    pub prebuffer: Mutex<Option<AudioPrebuffer>>,
 }
 
 impl Default for AppState {
@@ -88,6 +102,7 @@ impl Default for AppState {
             overlay_capture_protection_desired: AtomicBool::new(true),
             conversation_state: Mutex::default(),
             screenshots: Mutex::default(),
+            prebuffer: Mutex::default(),
         }
     }
 }

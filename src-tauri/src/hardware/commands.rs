@@ -3,6 +3,7 @@ use tauri::State;
 use super::manager::{PerformanceConfig, PerformanceMode};
 use super::tier::HardwareTier;
 use super::PerformanceState;
+use crate::crash_guard::LockExt;
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,7 +26,7 @@ pub struct PerformanceModeInfo {
 
 #[tauri::command]
 pub fn get_performance_mode(state: State<'_, PerformanceState>) -> Result<PerformanceModeInfo, String> {
-    let manager = state.0.lock().map_err(|e| e.to_string())?;
+    let manager = state.0.lock_safe();
     Ok(PerformanceModeInfo {
         mode: manager.mode(),
         detected_tier: manager.detected_tier(),

@@ -9,6 +9,7 @@ use crate::backend::{AskRequest, ConversationStateSnapshot, ConversationTurn, Me
 use crate::state::AppState;
 
 use super::window::{self, OverlayCaptureStatus};
+use crate::crash_guard::LockExt;
 
 /// Answer-shaping options chosen in the overlay's settings panel. Everything
 /// is optional: `Default` reproduces the plain "natural, default length"
@@ -383,7 +384,7 @@ pub async fn ask_interview_question(
 /// overlay session) — otherwise state left over from a previous, unrelated
 /// interview would leak into this one.
 fn current_conversation_state(state: &State<'_, AppState>, is_fresh_session: bool) -> Result<ConversationStateSnapshot, String> {
-    let mut slot = state.conversation_state.lock().map_err(|e| e.to_string())?;
+    let mut slot = state.conversation_state.lock_safe();
     if is_fresh_session {
         *slot = ConversationStateSnapshot::default();
     }
@@ -401,10 +402,7 @@ fn spawn_conversation_state_update(app: AppHandle, access_token: String, llm_pro
         let client = crate::personal::DirectLlmClient::new(llm_provider.as_deref(), access_token);
         if let Some(updated) = client.update_conversation_state(&prior_state, &question, &answer).await {
             let state = app.state::<AppState>();
-            let lock_result = state.conversation_state.lock();
-            if let Ok(mut slot) = lock_result {
-                *slot = updated;
-            }
+            *state.conversation_state.lock_safe() = updated;
         }
     });
 }
@@ -434,7 +432,7 @@ pub struct ScreenshotInfo {
 /// behind each other on the command thread.
 #[tauri::command]
 pub async fn capture_screenshot(state: State<'_, AppState>) -> Result<ScreenshotInfo, String> {
-    if state.screenshots.lock().map_err(|e| e.to_string())?.len() >= MAX_PENDING_SCREENSHOTS {
+    if state.screenshots.lock_safe().len() >= MAX_PENDING_SCREENSHOTS {
         return Err(format!("Up to {MAX_PENDING_SCREENSHOTS} screenshots per question — send or remove some first."));
     }
     let shot = tauri::async_runtime::spawn_blocking(crate::interview_mode::screen::capture_shot)
@@ -444,19 +442,19 @@ pub async fn capture_screenshot(state: State<'_, AppState>) -> Result<Screenshot
         "shot-{}",
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
     );
-    state.screenshots.lock().map_err(|e| e.to_string())?.push((id.clone(), shot.image_base64));
+    state.screenshots.lock_safe().push((id.clone(), shot.image_base64));
     Ok(ScreenshotInfo { id, thumbnail: shot.thumbnail_data_url })
 }
 
 #[tauri::command]
 pub fn remove_screenshot(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    state.screenshots.lock().map_err(|e| e.to_string())?.retain(|(shot_id, _)| *shot_id != id);
+    state.screenshots.lock_safe().retain(|(shot_id, _)| *shot_id != id);
     Ok(())
 }
 
 #[tauri::command]
 pub fn clear_screenshots(state: State<'_, AppState>) -> Result<(), String> {
-    state.screenshots.lock().map_err(|e| e.to_string())?.clear();
+    state.screenshots.lock_safe().clear();
     Ok(())
 }
 
@@ -466,7 +464,7 @@ fn take_screenshots(state: &AppState, ids: &[String]) -> Result<Vec<String>, Str
     if ids.is_empty() {
         return Ok(Vec::new());
     }
-    let mut pending = state.screenshots.lock().map_err(|e| e.to_string())?;
+    let mut pending = state.screenshots.lock_safe();
     let images = ids
         .iter()
         .filter_map(|id| pending.iter().find(|(shot_id, _)| shot_id == id).map(|(_, png)| png.clone()))
@@ -622,7 +620,7 @@ pub async fn start_backend_session(
                 cancel_rx,
             ));
 
-            let mut slot = state.stt_session.lock().map_err(|e| e.to_string())?;
+            let mut slot = state.stt_session.lock_safe();
             *slot = Some(crate::stt::SttSession {
                 session_id: minted.session_id,
                 deepgram_key: minted.key,
@@ -642,7 +640,7 @@ pub async fn start_backend_session(
 #[tauri::command]
 pub async fn end_backend_session(state: State<'_, AppState>) -> Result<Option<()>, String> {
     let session = {
-        let mut slot = state.stt_session.lock().map_err(|e| e.to_string())?;
+        let mut slot = state.stt_session.lock_safe();
         slot.take()
     };
 

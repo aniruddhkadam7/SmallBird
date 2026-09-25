@@ -141,10 +141,11 @@ where
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
+    let mut pending_bytes = Vec::new();
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("stream read error: {e}"))?;
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        super::push_utf8_chunk(&mut pending_bytes, &mut buffer, &chunk);
 
         for delta in drain_text_deltas(&mut buffer) {
             on_delta(&delta);

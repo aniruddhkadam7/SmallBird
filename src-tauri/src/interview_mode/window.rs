@@ -19,6 +19,15 @@ pub fn close_overlay_window(app: &AppHandle) -> Result<(), String> {
     overlay_window::close_overlay_window(app, OVERLAY_WINDOW_LABEL)
 }
 
+pub fn prebuild_overlay_window(app: &AppHandle) {
+    overlay_window::prebuild_overlay_window(app, OVERLAY_WINDOW_LABEL, OVERLAY_TITLE)
+}
+
+pub fn is_overlay_visible(app: &AppHandle) -> bool {
+    use tauri::Manager;
+    app.get_webview_window(OVERLAY_WINDOW_LABEL).is_some_and(|w| w.is_visible().unwrap_or(false))
+}
+
 pub fn toggle_overlay_window(app: &AppHandle) -> Result<OverlayCaptureStatus, String> {
     overlay_window::toggle_overlay_window(app, OVERLAY_WINDOW_LABEL, OVERLAY_TITLE)
 }
