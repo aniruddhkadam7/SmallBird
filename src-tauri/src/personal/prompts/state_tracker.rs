@@ -15,13 +15,13 @@ use super::{extract_json_object, ChatMessage};
 
 pub const MAX_TOKENS: u32 = 80;
 
-const SYSTEM_PROMPT: &str = "You track lightweight conversation state for a live job-interview session, so short follow-up questions later can be resolved correctly.
+const SYSTEM_PROMPT: &str = "You track lightweight conversation state for a live job interview or work meeting, so short follow-up questions later can be resolved correctly.
 
-Given the prior state, the interviewer's latest question, and the candidate's answer, output ONLY a compact JSON object, no prose, no markdown fences:
+Given the prior state, the latest question (from the interviewer or a meeting participant), and the answer, output ONLY a compact JSON object, no prose, no markdown fences:
 
 {\"topic\": string or null, \"entity\": string or null}
 
-\"entity\" is the specific named project, system, or company the answer was actually about (e.g. \"Security Co-pilot project\", \"Acme Corp\") — null if the answer was generic/not about one specific thing.
+\"entity\" is the specific named project, system, company, or piece of work the answer was actually about (e.g. \"Security Co-pilot project\", \"Acme Corp\", \"client AI architecture assessment\") — null if the answer was generic/not about one specific thing.
 \"topic\" is the specific aspect currently being discussed (e.g. \"tech stack\", \"role and responsibilities\", \"challenges faced\", \"career background\") — null if there isn't a clear specific aspect.
 
 If the answer named a NEW project/entity different from the prior state's entity, report that new one. If the answer continued discussing the same entity as before, report that same one again. If the exchange was a topic switch away from a specific entity into something generic (e.g. \"tell me about yourself\"), set entity to null.";
@@ -38,7 +38,7 @@ pub fn build_messages(prior: &ConversationStateSnapshot, question: &str, answer:
     vec![
         ChatMessage::system(SYSTEM_PROMPT),
         ChatMessage::user(format!(
-            "{}\n\nInterviewer's latest question: {question}\n\nCandidate's answer: {answer}\n\nOutput the JSON object now.",
+            "{}\n\nLatest question: {question}\n\nAnswer: {answer}\n\nOutput the JSON object now.",
             build_prior_state_line(prior)
         )),
     ]

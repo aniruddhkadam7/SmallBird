@@ -26,6 +26,11 @@ pub fn shared_client() -> &'static reqwest::Client {
 /// — keep in sync (or factor into one shared constant once finalized).
 const SUPABASE_URL: &str = "https://xubbwgrjvvsbfvxcuzav.supabase.co";
 
+/// `llm-proxy-v2`, not the original `llm-proxy`: v1 held every streamed
+/// answer back until the provider had finished (measured: headers and all
+/// SSE chunks arriving together at the very end), so words never appeared
+/// progressively. v2 streams chunks through as they arrive — see its header
+/// comment. v1 stays deployed for already-installed older versions.
 pub fn llm_proxy_url() -> String {
-    format!("{SUPABASE_URL}/functions/v1/llm-proxy")
+    format!("{SUPABASE_URL}/functions/v1/llm-proxy-v2")
 }

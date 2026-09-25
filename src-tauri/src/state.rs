@@ -69,6 +69,12 @@ pub struct AppState {
     /// fresh Interview Mode session (see `ask_interview_question`, which
     /// resets it whenever the frontend sends empty history).
     pub conversation_state: Mutex<ConversationStateSnapshot>,
+    /// Screenshots captured from the overlay's Screenshot button and not yet
+    /// sent — (id, model-sized PNG as base64), in capture order. The next
+    /// Answer/Deep Answer takes the ones it names and sends them with the
+    /// question (see `ask_interview_question`); the overlay only ever holds
+    /// the small thumbnails.
+    pub screenshots: Mutex<Vec<(String, String)>>,
 }
 
 impl Default for AppState {
@@ -81,6 +87,7 @@ impl Default for AppState {
             stt_session: Mutex::default(),
             overlay_capture_protection_desired: AtomicBool::new(true),
             conversation_state: Mutex::default(),
+            screenshots: Mutex::default(),
         }
     }
 }

@@ -30,6 +30,10 @@ export interface OverlaySettings {
   // transcript:update listener in InterviewOverlay.tsx. Off by default so
   // existing behavior (manual Ask AI / Enter) is unchanged until opted in.
   autoAI: boolean;
+  // Deep thinking: while on, every answer (Answer, Enter, Auto Answer) uses
+  // the slower, stronger-reasoning model — see personal::client::DEEP_MODEL.
+  // Toggled from the overlay's Deep pill or Ctrl+D; off by default.
+  deepThinking: boolean;
   // Whether the overlay asks Windows to exclude it from screen captures
   // (WDA_EXCLUDEFROMCAPTURE). On by default. Some legacy screen-share/
   // screenshot pipelines still render an excluded window as a solid black
@@ -60,6 +64,7 @@ export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
   englishLevel: "simple",
   humanization: "natural",
   autoAI: false,
+  deepThinking: false,
   captureProtection: true,
   mode: "interview",
   meetingTopic: "",

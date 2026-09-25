@@ -34,9 +34,14 @@ use super::providers::{anthropic, openai};
 /// e.g. restating the asked-about category ("Retrieval Performance
 /// Metrics") instead of naming real, specific frameworks/tools — which is a
 /// worse failure than the extra seconds during a live interview.
+// gpt-4.1 replaced gpt-4o as the default (Sept 2026): same no-reasoning,
+// first-token-fast shape the comment above argues for, but it follows the
+// long Ask AI prompts far more reliably (measured on a real meeting replay:
+// gpt-4o kept naming platforms instead of assessment tools, and proprietary
+// products when open source was asked for), and it costs less per token.
 fn default_model(provider: LlmProvider) -> &'static str {
     match provider {
-        LlmProvider::OpenAi => "gpt-4o",
+        LlmProvider::OpenAi => "gpt-4.1",
         LlmProvider::Anthropic => "claude-sonnet-5",
     }
 }
@@ -63,11 +68,15 @@ impl DirectLlmClient {
         Self { provider, access_token }
     }
 
-    async fn generate(&self, messages: &[ChatMessage], temperature: f32, max_tokens: u32) -> Result<String, String> {
-        let model = default_model(self.provider);
+    /// One non-streamed call on the model chosen for this job (`openai_model`,
+    /// "model" or "model@effort" — see the `*_MODEL` consts below). The
+    /// Anthropic provider keeps its own single default.
+    async fn generate_as(&self, openai_model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32) -> Result<String, String> {
         match self.provider {
-            LlmProvider::OpenAi => openai::generate(&self.access_token, model, messages, temperature, max_tokens).await,
-            LlmProvider::Anthropic => anthropic::generate(&self.access_token, model, messages, temperature, max_tokens).await,
+            LlmProvider::OpenAi => openai::generate(&self.access_token, openai_model, messages, temperature, max_tokens).await,
+            LlmProvider::Anthropic => {
+                anthropic::generate(&self.access_token, default_model(self.provider), messages, temperature, max_tokens).await
+            }
         }
     }
 
@@ -75,7 +84,13 @@ impl DirectLlmClient {
     where
         F: FnMut(&str),
     {
-        let model = default_model(self.provider);
+        self.stream_with_model(default_model(self.provider), messages, temperature, max_tokens, on_delta).await
+    }
+
+    async fn stream_with_model<F>(&self, model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32, on_delta: F) -> Result<(), String>
+    where
+        F: FnMut(&str),
+    {
         match self.provider {
             LlmProvider::OpenAi => openai::stream(&self.access_token, model, messages, temperature, max_tokens, on_delta).await,
             LlmProvider::Anthropic => anthropic::stream(&self.access_token, model, messages, temperature, max_tokens, on_delta).await,
@@ -87,7 +102,7 @@ impl DirectLlmClient {
     pub async fn ask(&self, request: &AskRequest) -> Result<AskResponse, String> {
         let messages = ask::build_messages(request);
         let max_tokens = ask::max_tokens_for_question(request);
-        let answer = self.generate(&messages, 0.65, max_tokens).await?;
+        let answer = self.generate_as(&self.ask_model(request), &messages, ask_temperature(request), max_tokens).await?;
         Ok(AskResponse { answer: answer.trim().to_string(), latency_ms: 0.0 })
     }
 
@@ -98,7 +113,7 @@ impl DirectLlmClient {
         let messages = ask::build_messages(request);
         let max_tokens = ask::max_tokens_for_question(request);
         let mut full_answer = String::new();
-        self.stream(&messages, 0.65, max_tokens, |delta| {
+        self.stream_with_model(&self.ask_model(request), &messages, ask_temperature(request), max_tokens, |delta| {
             full_answer.push_str(delta);
             on_delta(delta);
         })
@@ -115,7 +130,7 @@ impl DirectLlmClient {
     {
         let messages = screen::build_messages(request, image_png_base64);
         let mut full_answer = String::new();
-        self.stream(&messages, 0.65, screen::MAX_TOKENS, |delta| {
+        self.stream_with_model(&self.ask_model(request), &messages, ask_temperature(request), screen::MAX_TOKENS, |delta| {
             full_answer.push_str(delta);
             on_delta(delta);
         })
@@ -127,7 +142,7 @@ impl DirectLlmClient {
     /// into plain text, once, at attach time.
     pub async fn transcribe_image(&self, image_png_base64: String) -> Result<String, String> {
         let messages = image_context::build_messages(image_png_base64);
-        let text = self.generate(&messages, image_context::TEMPERATURE, image_context::MAX_TOKENS).await?;
+        let text = self.generate_as(IMAGE_READING_MODEL, &messages, image_context::TEMPERATURE, image_context::MAX_TOKENS).await?;
         Ok(text.trim().to_string())
     }
 
@@ -142,7 +157,7 @@ impl DirectLlmClient {
     /// question, which is a safe degrade, not a user-visible error.
     pub async fn update_conversation_state(&self, prior: &ConversationStateSnapshot, question: &str, answer: &str) -> Option<ConversationStateSnapshot> {
         let messages = state_tracker::build_messages(prior, question, answer);
-        let raw = self.generate(&messages, 0.0, state_tracker::MAX_TOKENS).await.ok()?;
+        let raw = self.generate_as(TRACKING_MODEL, &messages, 0.0, state_tracker::MAX_TOKENS).await.ok()?;
         state_tracker::parse_response(prior, &raw)
     }
 
@@ -202,7 +217,7 @@ impl DirectLlmClient {
     async fn analyze_one_question(&self, qa: &crate::backend::WireQuestionAnswer, request: &InterviewAnalysisRequest, max_output_tokens: u32) -> QuestionAnalysis {
         let (system_prompt, user_prompt) = analysis::build_question_prompt(qa, &request.role, &request.company, &request.job_description);
         let messages = analysis::question_messages(&system_prompt, &user_prompt);
-        match self.generate(&messages, 0.2, max_output_tokens).await {
+        match self.generate_as(ANALYSIS_MODEL, &messages, 0.2, max_output_tokens).await {
             Ok(raw) => analysis::parse_question_analysis(&raw, qa),
             Err(err) => analysis::provider_failure_question_analysis(qa, err),
         }
@@ -216,7 +231,7 @@ impl DirectLlmClient {
         let (system_prompt, user_prompt) = analysis::build_overall_prompt(&question_analyses, &request.role, &request.company, &request.job_description);
         let messages = analysis::question_messages(&system_prompt, &user_prompt);
 
-        match self.generate(&messages, 0.2, max_output_tokens).await {
+        match self.generate_as(ANALYSIS_MODEL, &messages, 0.2, max_output_tokens).await {
             Ok(raw) => match analysis::parse_overall_result(&raw, question_analyses.clone(), session_id) {
                 Ok(result) => Ok(result),
                 Err(err) => Ok(analysis::average_score_fallback(question_analyses, session_id, &err)),
@@ -231,14 +246,14 @@ impl DirectLlmClient {
         let messages = notes::build_ask_messages(request);
         // Notes ask has no try/except in the reference implementation — a
         // provider failure propagates as an Err here too, matching that.
-        let answer = self.generate(&messages, 0.65, notes::ASK_MAX_TOKENS).await?;
+        let answer = self.generate_as(WRITING_MODEL, &messages, 0.65, notes::ASK_MAX_TOKENS).await?;
         Ok(NotesAskResponse { answer: answer.trim().to_string(), latency_ms: 0.0 })
     }
 
     pub async fn notes_summarize(&self, request: &NotesSummaryRequest) -> Result<NoteSummary, String> {
         let messages = notes::build_summary_messages(request);
         const MAX_OUTPUT_TOKENS: u32 = 1500;
-        match self.generate(&messages, 0.2, MAX_OUTPUT_TOKENS).await {
+        match self.generate_as(WRITING_MODEL, &messages, 0.2, MAX_OUTPUT_TOKENS).await {
             Ok(raw) => match notes::parse_summary(&raw) {
                 Ok(summary) => Ok(summary),
                 Err(err) => Ok(notes::summary_failure(&err)),
@@ -253,9 +268,121 @@ impl DirectLlmClient {
         let Some(messages) = setup::build_messages(request) else {
             return Ok(setup::empty_response());
         };
-        match self.generate(&messages, setup::TEMPERATURE, setup::MAX_TOKENS).await {
+        match self.generate_as(WRITING_MODEL, &messages, setup::TEMPERATURE, setup::MAX_TOKENS).await {
             Ok(raw) => Ok(setup::parse_response(&raw)),
             Err(_) => Ok(setup::empty_response()),
         }
     }
+}
+
+/// Interview answers keep some variety (0.65) so repeated questions don't
+/// read identically. Meeting answers are advice a client or colleague will
+/// act on — named tools and facts must be right — so they run cooler, which
+/// measurably reduces confidently-invented names.
+fn ask_temperature(request: &AskRequest) -> f32 {
+    if request.meeting.is_some() {
+        0.35
+    } else {
+        0.65
+    }
+}
+
+impl DirectLlmClient {
+    /// Every Ask AI answer uses `ANSWER_MODEL` unless Deep is on, which
+    /// uses `DEEP_MODEL`. Background jobs (conversation tracking, reading
+    /// attached images, notes, analysis) stay on `default_model`.
+    ///
+    /// Meeting answers need real domain expertise — naming the right tools
+    /// for a client assessment, not just plausible-sounding ones — which
+    /// gpt-4o measurably got wrong even with explicit prompt rules (it kept
+    /// offering the platforms under assessment, and proprietary products when
+    /// open source was asked for). gpt-4.1 follows those instructions far
+    /// more reliably at similar latency and lower per-token cost. Interview
+    /// answers stay on `default_model`, which is tuned for that flow.
+    fn ask_model(&self, request: &AskRequest) -> String {
+        if let (LlmProvider::OpenAi, Some(model)) = (self.provider, dev_ask_model_override()) {
+            return model;
+        }
+        match self.provider {
+            LlmProvider::OpenAi if request.deep => DEEP_MODEL.to_string(),
+            LlmProvider::OpenAi => ANSWER_MODEL.to_string(),
+            _ => default_model(self.provider).to_string(),
+        }
+    }
+}
+
+/// Conversation tracking after every answer (see `prompts::state_tracker`):
+/// a tiny JSON extraction that runs on every turn in the background — GPT-6
+/// Luna, ~20x cheaper than gpt-4.1. "none" thinking: the job has an 80-token
+/// output budget and needs no reasoning.
+pub const TRACKING_MODEL: &str = "gpt-6-luna@none";
+
+/// Reading an image/screenshot attached in the Context panel — runs once per
+/// image, and whatever it reads feeds every later answer, so it gets the
+/// strong model.
+pub const IMAGE_READING_MODEL: &str = "gpt-6-sol@low";
+
+/// Resume/JD summary and Notes (ask + summarize): accuracy matters, and the
+/// user may be waiting a few seconds.
+pub const WRITING_MODEL: &str = "gpt-6-sol@low";
+
+/// Post-interview analysis (scoring each answer + the overall assessment):
+/// real judgment, and nobody is waiting live.
+pub const ANALYSIS_MODEL: &str = "gpt-6-sol@medium";
+
+/// Every live answer (Answer, Enter, Auto Answer): GPT-6 Sol at "low"
+/// thinking — measured as fast to the first word as gpt-4.1 (~1.2s) with
+/// clearly stronger answers, for ~5% more per answer. "model@effort" — see
+/// `providers::openai::split_model_spec`.
+pub const ANSWER_MODEL: &str = "gpt-6-sol@low";
+
+/// Deep mode (the overlay's Deep toggle / Ctrl+D): the same model thinking
+/// harder — ~3-5s to the first word, the most thorough answers.
+pub const DEEP_MODEL: &str = "gpt-6-sol@medium";
+
+/// Dev-build-only switch for comparing OpenAI models on real questions
+/// without a rebuild per model (see `debug_set_ask_model`). Always `None`
+/// in a release build.
+static DEV_ASK_MODEL_OVERRIDE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn dev_ask_model_override() -> Option<String> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    DEV_ASK_MODEL_OVERRIDE.lock().ok().and_then(|m| m.clone())
+}
+
+/// Dev builds only: routes every Ask AI / Analyze Screen answer to `model`
+/// (`None` restores the normal choice). Refuses in a release build.
+#[tauri::command]
+pub fn debug_set_ask_model(model: Option<String>, effort: Option<String>) -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Err("only available in development builds".to_string());
+    }
+    *DEV_ASK_MODEL_OVERRIDE.lock().map_err(|e| e.to_string())? = model.filter(|m| !m.trim().is_empty());
+    super::providers::openai::set_dev_effort_override(effort);
+    Ok(())
+}
+
+/// Dev builds only: runs the conversation-state tracker on one exchange with
+/// a chosen model ("model" or "model@effort"), for comparing models on the
+/// same cases. Returns the raw output and the round-trip time.
+#[tauri::command]
+pub async fn debug_track_state(
+    state: tauri::State<'_, crate::state::AppState>,
+    model: String,
+    prior_topic: Option<String>,
+    prior_entity: Option<String>,
+    question: String,
+    answer: String,
+) -> Result<serde_json::Value, String> {
+    if !cfg!(debug_assertions) {
+        return Err("only available in development builds".to_string());
+    }
+    let access_token = crate::auth::current_access_token(&state).await?;
+    let prior = ConversationStateSnapshot { current_topic: prior_topic, current_entity: prior_entity, referenced_entities: vec![] };
+    let messages = state_tracker::build_messages(&prior, &question, &answer);
+    let started = std::time::Instant::now();
+    let raw = super::providers::openai::generate(&access_token, &model, &messages, 0.0, state_tracker::MAX_TOKENS).await?;
+    Ok(serde_json::json!({ "raw": raw, "ms": started.elapsed().as_millis() as u64 }))
 }

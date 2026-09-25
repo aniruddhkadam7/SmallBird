@@ -289,6 +289,39 @@ body.overlay-window #root {
   filter: brightness(1.1);
 }
 
+/* Deep Answer — the slower, stronger-reasoning option, set apart from the
+   plain Answer pill with a violet outline so it's never pressed by mistake
+   when a fast answer is wanted. */
+.overlay-pill-button.deep {
+  border-color: rgba(167, 139, 250, 0.7);
+  color: #ddd6fe;
+}
+
+.overlay-pill-button.deep:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.25);
+  border-color: #a78bfa;
+}
+
+.overlay-pill-button.deep.on {
+  background: #8b5cf6;
+  border-color: #a78bfa;
+  color: #fff;
+}
+
+.overlay-pill-button.deep.on:hover:not(:disabled) {
+  background: #7c3aed;
+}
+
+.chat-deep-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.25);
+  color: #ddd6fe;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 .overlay-pill-button.end {
   background: rgba(239, 68, 68, 0.85);
   color: #fff;
@@ -1237,4 +1270,187 @@ body.overlay-window #root {
 
 .overlay-button.primary:hover {
   background: #83b8ff;
+}
+
+/* ---- Action bar fits any overlay width ------------------------------------
+   The overlay root is a size container, so the action bar adapts to the
+   overlay's own width (Small/Medium/Large and manual resizes) rather than
+   the screen's. Long pill labels swap to short ones, then optional extras
+   drop out — End and Answer never shrink or leave the bar. */
+.overlay-root {
+  container-type: inline-size;
+  container-name: overlay;
+}
+
+/* Wraps as a last resort: if the pills still don't fit after the
+   breakpoints below drop labels and extras, they flow onto a second line
+   inside the bar instead of pushing End off the edge. End and the icon
+   controls never shrink (they used to be squeezed down to 14px). */
+.overlay-action-bar {
+  min-width: 0;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  border-radius: 16px;
+}
+
+.overlay-action-bar .overlay-pill-button.end,
+.overlay-action-bar .overlay-icon-button,
+.overlay-action-bar .overlay-status-icon,
+.overlay-action-bar .overlay-move-affordance {
+  flex-shrink: 0;
+}
+
+.overlay-action-bar .overlay-pill-button.end {
+  margin-left: auto;
+}
+
+.overlay-action-bar-spacer {
+  min-width: 0;
+}
+
+.overlay-pill-button .pill-short {
+  display: none;
+}
+
+.overlay-pill-button.with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.overlay-pill-button .pill-count {
+  margin-left: 5px;
+  display: inline-block;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent, #60a5fa);
+  color: #08131f;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* Breakpoints from the bar's measured content: full labels need ~605px
+   plus ~57px for the time-left counter. So the counter goes first (below
+   700px), full labels stay down to 620px, and only then do Deep Answer /
+   Auto Answer shorten to "Deep" / "Auto" (text, never icons). */
+@container overlay (max-width: 700px) {
+  .overlay-time-left {
+    display: none;
+  }
+}
+
+@container overlay (max-width: 620px) {
+  .overlay-pill-button .pill-long {
+    display: none;
+  }
+  .overlay-pill-button .pill-short {
+    display: inline;
+  }
+}
+
+@container overlay (max-width: 520px) {
+  .overlay-opacity-slider,
+  .overlay-opacity-readout,
+  .overlay-move-affordance {
+    display: none;
+  }
+  .overlay-action-bar {
+    gap: 4px;
+  }
+  .overlay-pill-button {
+    padding: 0 8px;
+  }
+}
+
+/* ---- Screenshot strip ------------------------------------------------------
+   Screenshots waiting for the next Answer, as small thumbnails with a remove
+   button — a compact, horizontally scrolling row so even a burst of taps
+   never pushes the question box or the answer out of view. */
+.overlay-shots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  overflow-x: auto;
+  flex: 0 0 auto;
+}
+
+.overlay-shot {
+  position: relative;
+  flex: 0 0 auto;
+  width: 64px;
+  height: 40px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.5);
+  display: grid;
+  place-items: center;
+}
+
+.overlay-shot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.overlay-shot-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: overlay-shot-spin 0.7s linear infinite;
+}
+
+@keyframes overlay-shot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.overlay-shot-remove {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.overlay-shot-remove:hover {
+  background: #ef4444;
+}
+
+.overlay-shots-hint {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.chat-card-shots {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.chat-card-shots img {
+  width: 36px;
+  height: 22px;
+  object-fit: cover;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }

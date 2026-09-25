@@ -38,14 +38,14 @@ fn split_system(messages: &[ChatMessage]) -> (Option<String>, Vec<serde_json::Va
             } else {
                 serde_json::json!({ "type": "text", "text": m.content })
             };
-            if let Some(image) = &m.image_png_base64 {
-                serde_json::json!({
-                    "role": m.role,
-                    "content": [
-                        { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": image } },
-                        text_block,
-                    ],
-                })
+            if !m.images.is_empty() {
+                let mut content: Vec<serde_json::Value> = m
+                    .images
+                    .iter()
+                    .map(|image| serde_json::json!({ "type": "image", "source": { "type": "base64", "media_type": crate::personal::prompts::image_mime(image), "data": image } }))
+                    .collect();
+                content.push(text_block);
+                serde_json::json!({ "role": m.role, "content": content })
             } else if m.cacheable {
                 serde_json::json!({ "role": m.role, "content": [text_block] })
             } else {

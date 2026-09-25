@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "0.1.22"
+version = "0.1.23"
 description = "Smallbird — AI interview copilot"
 authors = ["you"]
 edition = "2021"
@@ -77,6 +77,9 @@ tokio = { version = "1", features = ["time", "sync", "macros"] }
 # tls_init.rs) rather than pulling in a second TLS stack.
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 xcap = "0.9.8"
+# Same `image` crate xcap already uses (0.25) — listed only to switch on its
+# JPEG encoder, so overlay screenshots upload ~10x smaller than PNG.
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 base64 = "0.23.1"
 tauri-plugin-log = "2"
 

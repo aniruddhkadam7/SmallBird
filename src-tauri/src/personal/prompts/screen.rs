@@ -17,6 +17,16 @@ use super::{ask, ChatMessage};
 /// without being so large it slows down a short one.
 pub const MAX_TOKENS: u32 = 700;
 
+/// Stands in as the question when the user sends screenshots with nothing
+/// typed or transcribed — shown as the turn's question and replayed in later
+/// history, so it's the same fixed text everywhere.
+pub const SCREEN_QUESTION_LABEL: &str = "What's on my screen?";
+
+/// What to ask of screenshots sent with no question of their own.
+pub fn instruction(meeting: bool) -> &'static str {
+    if meeting { MEETING_INSTRUCTION } else { INSTRUCTION }
+}
+
 const INSTRUCTION: &str = "Look at the attached screenshot of what's currently on my screen during this interview — it might show a coding problem, a system-design/whiteboard diagram, written interview questions, or something else relevant to the interview. Identify what it is and answer/solve it directly, in the same spoken-sentence STYLE and FORMAT rules as any other question in this interview. If it's a coding problem, write real working code per FORMAT 7. If nothing on screen looks like an interview question or problem (e.g. it's an unrelated app), say briefly what you actually see instead of forcing an answer.";
 
 const MEETING_INSTRUCTION: &str = "Look at the attached screenshot of what's currently on my screen during this meeting — it might show slides, a document, a dashboard, a chat message, a question someone posted, or code. Work out what matters in it for this meeting and tell me what I should say about it, in the same spoken-sentence STYLE and FORMAT rules as anything else in this meeting. If it asks a question, answer it; if it's a slide or report, give me the key point worth raising. If it's code, handle it per FORMAT 7. If nothing on screen looks relevant to the meeting (e.g. it's an unrelated app), say briefly what you actually see instead of forcing an answer.";
@@ -60,6 +70,8 @@ mod tests {
             conversation_state: None,
             meeting: None,
             custom_instructions: None,
+            deep: false,
+            images: Vec::new(),
         }
     }
 
@@ -67,10 +79,10 @@ mod tests {
     fn attaches_image_to_final_message_only() {
         let messages = build_messages(&base_request(), "fake-base64".to_string());
         assert_eq!(messages.len(), 2); // system, user(instruction+image)
-        assert!(messages[0].image_png_base64.is_none());
+        assert!(messages[0].images.is_empty());
         let last = messages.last().unwrap();
         assert_eq!(last.role, "user");
-        assert_eq!(last.image_png_base64.as_deref(), Some("fake-base64"));
+        assert_eq!(last.images, vec!["fake-base64".to_string()]);
         assert!(last.content.contains("screenshot"));
     }
 
@@ -84,6 +96,6 @@ mod tests {
         assert!(messages[1].cacheable);
         assert!(messages[1].content.contains("Backend Engineer"));
         assert_eq!(messages[2].role, "assistant");
-        assert!(messages[3].image_png_base64.is_some());
+        assert!(!messages[3].images.is_empty());
     }
 }

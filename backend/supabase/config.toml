@@ -3,6 +3,9 @@ project_id = "smallbird-backend"
 [functions.llm-proxy]
 verify_jwt = true
 
+[functions.llm-proxy-v2]
+verify_jwt = true
+
 [functions.stt-token]
 verify_jwt = true
 

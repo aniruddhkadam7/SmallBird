@@ -70,6 +70,22 @@ interface Turn {
   /// Local-only reaction on the answer — never sent anywhere, just a
   /// personal "was this good" marker for the candidate to glance back at.
   feedback?: "up" | "down" | null;
+  /// Answered with the Deep Answer model (slower, stronger reasoning) —
+  /// shows a "Deep" badge and a "Thinking deeply…" state.
+  deep?: boolean;
+  /// Thumbnails of the screenshots sent with this question, shown on its
+  /// question card. Local-only.
+  shots?: string[];
+}
+
+/// A screenshot captured from the overlay's Screenshot button, waiting to be
+/// sent with the next Answer/Deep Answer. Only the thumbnail lives here — the
+/// full image stays on the Rust side (see `capture_screenshot`).
+interface Shot {
+  key: string;
+  id: string | null;
+  thumbnail: string | null;
+  status: "capturing" | "ready" | "error";
 }
 
 function formatTimestamp(ms: number): string {
@@ -174,6 +190,12 @@ export function InterviewOverlay() {
   const [viewIndex, setViewIndex] = useState<number | null>(null);
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
+  const [shots, setShots] = useState<Shot[]>([]);
+  // Latest shots for askAI, which awaits in-flight captures and so can't
+  // rely on the render-time `shots` it closed over.
+  const shotsRef = useRef<Shot[]>([]);
+  shotsRef.current = shots;
+  const captureInFlightRef = useRef<Set<Promise<unknown>>>(new Set());
   // Chat mode: a manual, typed-only way to ask something without touching
   // the live-transcript buffer — see `sendChat`. Off by default; the
   // overlay's primary flow stays transcript + Ask AI / Analyze Screen.
@@ -579,6 +601,32 @@ export function InterviewOverlay() {
       });
   }, []);
 
+  // Mic/mute state comes from the backend's actual capture state, not a
+  // one-time check. `captureActive` used to be set only when this window was
+  // first created — but the window is reused across sessions, so if that
+  // first check failed (or a session ended), every later session kept a
+  // stale value and the mute button stayed disabled. The backend emits
+  // recording:state on every transition (Starting/Recording/Paused/
+  // Stopping/Stopped/Idle); the sync call covers transitions that happened
+  // before this listener existed (e.g. capture started just before the
+  // overlay was shown).
+  const applyRecordingState = useCallback((state: string) => {
+    setCaptureActive(state === "RECORDING" || state === "PAUSED");
+    setMuted(state === "PAUSED");
+  }, []);
+  const syncRecordingState = useCallback(() => {
+    invoke<string>("get_recording_state")
+      .then(applyRecordingState)
+      .catch(() => {});
+  }, [applyRecordingState]);
+  useEffect(() => {
+    syncRecordingState();
+    const unlisten = listen<{ state: string }>("recording:state", (event) => applyRecordingState(event.payload.state));
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [applyRecordingState, syncRecordingState]);
+
   // The overlay window is *reused* across interviews, not recreated (see
   // overlay_window.rs's show_overlay_window) — its WebView2 process/DOM
   // stays alive while hidden between "Close" and the next "Start". Without
@@ -602,6 +650,12 @@ export function InterviewOverlay() {
       setShowEndedSummary(false);
       setSettingsOpen(false);
       setMuted(false);
+      // Capture was started just before this reset (App.tsx's
+      // startInterview awaits it before showing the overlay) — re-read it
+      // rather than trusting whatever this reused window last knew.
+      syncRecordingState();
+      setShots([]);
+      invoke("clear_screenshots").catch(() => {});
       committedRef.current = "";
       pendingPartialIdRef.current = null;
       suppressFinalIdRef.current = null;
@@ -661,46 +715,80 @@ export function InterviewOverlay() {
     };
   }, [settings]);
 
+  // Deep thinking (the Deep toggle / Ctrl+D) routes the answer to the slower,
+  // stronger-reasoning model. With Deep on and nothing new in the question
+  // box, Answer re-answers the last question instead, so a quick answer can
+  // be upgraded. Read from the ref so Auto Answer's timer sees the current
+  // toggle, not the one captured when it was scheduled.
   const askAI = useCallback(async () => {
+    const deep = settingsRef.current.deepThinking;
     const trimmed = question.trim();
-    if (!trimmed || busyRef.current) return;
+    if (busyRef.current) return;
+    busyRef.current = true;
+    // A tap on Answer right after a burst of Screenshot taps: let those
+    // captures land first so none of them is left behind.
+    if (captureInFlightRef.current.size > 0) {
+      await Promise.allSettled([...captureInFlightRef.current]);
+    }
+    const readyShots = shotsRef.current.filter((s) => s.status === "ready" && s.id);
+    const reasked =
+      !trimmed && deep && readyShots.length === 0
+        ? [...turns].reverse().find((t) => !t.pending && !t.failed && t.question.trim())
+        : undefined;
+    const questionText = trimmed || (readyShots.length > 0 ? ANALYZE_SCREEN_QUESTION_LABEL : reasked?.question);
+    if (!questionText) {
+      busyRef.current = false;
+      return;
+    }
 
     setError(null);
-    // The question moves into the conversation and the buffer resets, so
-    // anything said from here starts the next question instead of being
-    // appended onto one already sent.
     const turn: Turn = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      question: trimmed,
+      question: questionText,
       answer: "",
       pending: true,
       askedAt: Date.now(),
+      deep,
+      shots: readyShots.map((s) => s.thumbnail!).filter(Boolean),
     };
     setTurns((prev) => [...prev, turn]);
+    // Sent with this question (the Rust side consumes them) — clear the strip.
+    if (readyShots.length > 0) {
+      const sent = new Set(readyShots.map((s) => s.key));
+      setShots((prev) => prev.filter((s) => !sent.has(s.key)));
+    }
     setViewIndex(null);
-    setQuestion("");
-    committedRef.current = "";
     currentTurnIdRef.current = turn.id;
     revealRef.current.set(turn.id, { full: "", shown: 0, done: false });
-    // If the interviewer was still mid-utterance when Ask AI was pressed,
-    // its text already made it into `trimmed` via the live partial — the
-    // final that STT emits for that same segment a moment later must be
-    // dropped, not appended to the fresh buffer for the next question.
-    suppressFinalIdRef.current = pendingPartialIdRef.current;
+    if (trimmed) {
+      // The question moves into the conversation and the buffer resets, so
+      // anything said from here starts the next question instead of being
+      // appended onto one already sent.
+      setQuestion("");
+      committedRef.current = "";
+      // If the interviewer was still mid-utterance when Ask AI was pressed,
+      // its text already made it into `trimmed` via the live partial — the
+      // final that STT emits for that same segment a moment later must be
+      // dropped, not appended to the fresh buffer for the next question.
+      suppressFinalIdRef.current = pendingPartialIdRef.current;
+    }
     busyRef.current = true;
     setBusy(true);
 
     // Prior turns only — the one just pushed is the current question, and
-    // completed turns are the only ones worth replaying.
+    // completed turns are the only ones worth replaying. A re-ask leaves out
+    // the quick answer being replaced, so the deep model answers fresh
+    // instead of anchoring on (or repeating) it.
     const history = turns
-      .filter((t) => !t.pending && t.answer.trim() && !t.failed)
+      .filter((t) => !t.pending && t.answer.trim() && !t.failed && t !== reasked)
       .map((t) => ({ question: t.question, answer: t.answer }));
 
     try {
       await invoke<string>("ask_interview_question", {
-        question: trimmed,
+        question: questionText === ANALYZE_SCREEN_QUESTION_LABEL && readyShots.length > 0 ? "" : questionText,
         history,
-        options: buildAskOptions(),
+        options: { ...buildAskOptions(), deep },
+        screenshotIds: readyShots.map((s) => s.id),
       });
     } catch (e) {
       setError(String(e));
@@ -723,44 +811,30 @@ export function InterviewOverlay() {
   // Captures the primary screen and asks the LLM to identify/solve whatever
   // is shown (a coding problem, a diagram, written questions, etc.) — same
   // streamed-turn shape as askAI, just without a transcribed question.
-  const analyzeScreen = useCallback(async () => {
-    if (busyRef.current) return;
-
-    setError(null);
-    const turn: Turn = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      question: ANALYZE_SCREEN_QUESTION_LABEL,
-      answer: "",
-      pending: true,
-      askedAt: Date.now(),
-    };
-    setTurns((prev) => [...prev, turn]);
-    setViewIndex(null);
-    currentTurnIdRef.current = turn.id;
-    revealRef.current.set(turn.id, { full: "", shown: 0, done: false });
-    busyRef.current = true;
-    setBusy(true);
-
-    const history = turns
-      .filter((t) => !t.pending && t.answer.trim() && !t.failed)
-      .map((t) => ({ question: t.question, answer: t.answer }));
-
-    try {
-      await invoke<string>("analyze_screen_question", {
-        history,
-        options: buildAskOptions(),
+  // Screenshot button / Ctrl+Shift+Enter: capture only — no model call.
+  // Each tap is independent (no busy lock), so tap-tap-tap works; the shots
+  // ride along with the next Answer/Deep Answer.
+  const takeScreenshot = useCallback(() => {
+    const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setShots((prev) => [...prev, { key, id: null, thumbnail: null, status: "capturing" }]);
+    const capture = invoke<{ id: string; thumbnail: string }>("capture_screenshot")
+      .then((shot) =>
+        setShots((prev) =>
+          prev.map((s) => (s.key === key ? { ...s, id: shot.id, thumbnail: shot.thumbnail, status: "ready" } : s)),
+        ),
+      )
+      .catch((e) => {
+        setError(String(e));
+        setShots((prev) => prev.filter((s) => s.key !== key));
       });
-    } catch (e) {
-      setError(String(e));
-      setTurns((prev) =>
-        prev.map((t) => (t.id === turn.id ? { ...t, pending: false, failed: true } : t)),
-      );
-      if (currentTurnIdRef.current === turn.id) currentTurnIdRef.current = null;
-      revealRef.current.delete(turn.id);
-      busyRef.current = false;
-      setBusy(false);
-    }
-  }, [turns, buildAskOptions]);
+    captureInFlightRef.current.add(capture);
+    capture.finally(() => captureInFlightRef.current.delete(capture));
+  }, []);
+
+  const removeShot = useCallback((shot: Shot) => {
+    if (shot.id) invoke("remove_screenshot", { id: shot.id }).catch(() => {});
+    setShots((prev) => prev.filter((s) => s.key !== shot.key));
+  }, []);
 
   // Sends a manually typed message in Chat mode — independent of the live
   // transcript (`question`/committedRef), so switching into Chat mode never
@@ -944,6 +1018,8 @@ export function InterviewOverlay() {
     savedTurnCountRef.current = 0;
     setTurns([]);
     setQuestion("");
+    setShots([]);
+    invoke("clear_screenshots").catch(() => {});
     setError(null);
     busyRef.current = false;
     setBusy(false);
@@ -965,7 +1041,7 @@ export function InterviewOverlay() {
     setError(null);
     try {
       await invoke(muted ? "resume_recording" : "pause_recording");
-      setMuted((v) => !v);
+      setMuted(!muted);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -1056,10 +1132,15 @@ export function InterviewOverlay() {
       if (e.ctrlKey && !e.altKey && e.key === "Enter") {
         e.preventDefault();
         if (e.shiftKey) {
-          analyzeScreen();
+          takeScreenshot();
         } else {
           askAI();
         }
+        return;
+      }
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        setSettings((prev) => ({ ...prev, deepThinking: !prev.deepThinking }));
         return;
       }
       if (e.ctrlKey && e.shiftKey && !e.altKey && e.key.toLowerCase() === "c") {
@@ -1091,7 +1172,7 @@ export function InterviewOverlay() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [askAI, analyzeScreen, goPrevTurn, goNextTurn, settingsOpen, confirmingClose, showEndedSummary, dismissOverlay, requestClose]);
+  }, [askAI, takeScreenshot, goPrevTurn, goNextTurn, settingsOpen, confirmingClose, showEndedSummary, dismissOverlay, requestClose]);
 
   const overlayStyle: React.CSSProperties = {
     fontSize: `${settings.fontSize}px`,
@@ -1139,20 +1220,34 @@ export function InterviewOverlay() {
         <button
           type="button"
           className="overlay-pill-button"
-          onClick={askAI}
-          disabled={!question.trim() || busy}
-          data-tooltip="Answer (Ctrl+Enter)"
+          onClick={() => askAI()}
+          disabled={
+            busy ||
+            (!question.trim() &&
+              !shots.some((s) => s.status !== "error") &&
+              !(settings.deepThinking && turns.some((t) => !t.pending && !t.failed)))
+          }
+          data-tooltip={
+            settings.deepThinking && !question.trim() && !shots.length
+              ? "Answer the last question again with deep thinking (Ctrl+Enter)"
+              : "Answer (Ctrl+Enter)"
+          }
         >
           Answer
         </button>
         <button
           type="button"
-          className="overlay-pill-button"
-          onClick={analyzeScreen}
-          disabled={busy}
-          data-tooltip="Analyze what's on my screen (Ctrl+Shift+Enter)"
+          className={`overlay-pill-button deep${settings.deepThinking ? " on" : ""}`}
+          onClick={() => setSettings((prev) => ({ ...prev, deepThinking: !prev.deepThinking }))}
+          aria-pressed={settings.deepThinking}
+          data-tooltip={
+            settings.deepThinking
+              ? "Deep thinking is on — stronger reasoning, a few seconds slower (Ctrl+D)"
+              : "Deep thinking is off — fast answers (Ctrl+D)"
+          }
         >
-          Analyze Screen
+          <span className="pill-long">Deep Answer</span>
+          <span className="pill-short">Deep</span>
         </button>
         {/* Auto AI toggle — replaces the Chat button here; the manual typed
             follow-up it used to open is still reachable via Ctrl+Shift+C,
@@ -1167,7 +1262,17 @@ export function InterviewOverlay() {
               : "Auto Answer is off — use Answer or Enter to send"
           }
         >
-          Auto Answer
+          <span className="pill-long">Auto Answer</span>
+          <span className="pill-short">Auto</span>
+        </button>
+        <button
+          type="button"
+          className="overlay-pill-button"
+          onClick={takeScreenshot}
+          data-tooltip="Take a screenshot — tap as many times as you like; they're sent with your next Answer (Ctrl+Shift+Enter)"
+        >
+          Screenshot
+          {shots.length > 0 && <span className="pill-count">{shots.length}</span>}
         </button>
         {remainingSecondsAtStart !== null && (
           <span
@@ -1329,6 +1434,25 @@ export function InterviewOverlay() {
         <>
           {/* Transcript/chat bar — its own rounded island, sitting between
               the action bar and the answer panel. */}
+          {shots.length > 0 && (
+            <div className="overlay-shots" aria-label="Screenshots for the next answer">
+              {shots.map((shot) => (
+                <div key={shot.key} className={`overlay-shot${shot.status === "capturing" ? " capturing" : ""}`}>
+                  {shot.thumbnail ? <img src={shot.thumbnail} alt="Screenshot" draggable={false} /> : <span className="overlay-shot-spinner" />}
+                  <button
+                    type="button"
+                    className="overlay-shot-remove"
+                    onClick={() => removeShot(shot)}
+                    aria-label="Remove screenshot"
+                    data-tooltip="Remove"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <span className="overlay-shots-hint">Sent with your next answer</span>
+            </div>
+          )}
           {chatMode ? (
             <div className="overlay-header overlay-transcript-bar overlay-chat-compose">
               <AudioLevelBars active={sttSpeaking && !busy} />
@@ -1439,6 +1563,13 @@ export function InterviewOverlay() {
                   </span>
                   <span>Question:</span>
                   <span className="chat-card-question-text">{activeTurn.question}</span>
+                  {activeTurn.shots && activeTurn.shots.length > 0 && (
+                    <span className="chat-card-shots">
+                      {activeTurn.shots.map((thumb, i) => (
+                        <img key={i} src={thumb} alt="" draggable={false} />
+                      ))}
+                    </span>
+                  )}
                   <button
                     type="button"
                     className="chat-copy-button"
@@ -1455,6 +1586,7 @@ export function InterviewOverlay() {
                       <StarIcon size={13} />
                     </span>
                     <span>Answer:</span>
+                    {activeTurn.deep && <span className="chat-deep-badge">Deep</span>}
                     {!activeTurn.pending && (
                       <span className="chat-answer-timestamp">
                         {formatTimestamp(activeTurn.askedAt)}
@@ -1468,7 +1600,7 @@ export function InterviewOverlay() {
                   ) : activeTurn.failed ? (
                     <p className="chat-text muted">Couldn't get an answer.</p>
                   ) : (
-                    <p className="chat-text muted thinking">Thinking…</p>
+                    <p className="chat-text muted thinking">{activeTurn.deep ? "Thinking deeply…" : "Thinking…"}</p>
                   )}
                   {!activeTurn.pending && (
                     <div className="chat-answer-footer">

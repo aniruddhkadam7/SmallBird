@@ -5,7 +5,7 @@
 //! each rule; only the mechanical translation to Rust is new here.
 
 use crate::backend::AskRequest;
-use super::conversation::{classify_intent, resolution_block};
+use super::conversation::{classify_intent, resolution_block_for};
 use super::ChatMessage;
 
 pub const SYSTEM_PROMPT: &str = "You are the candidate, live in a job interview for a role in software engineering / technology, answering the interviewer's current question out loud in your own voice.
@@ -240,6 +240,31 @@ const CODE_MARKERS: &[&str] = &[
     "using sql", "what would the sql", "what would the code", "how would you code",
 ];
 
+/// Meeting questions that refer to a whole list in the meeting material
+/// ("those 11 points", "what did you understand about the use cases",
+/// "which tools for each service") — these must cover every item, so they
+/// get FORMAT 8 and a budget sized for a full item-by-item answer instead of
+/// a per-question tier that would cut the list short.
+const MEETING_LIST_MARKERS: &[&str] = &[
+    "those", "these", "all the", "each", "every", "points", "items", "list", "use case", "usecase",
+    "services", "which are", "understand", "understood", "summar", "overview", "go through",
+];
+
+fn is_meeting_list_question(request: &AskRequest) -> bool {
+    if request.meeting.is_none() {
+        return false;
+    }
+    let lowered = request.question.to_lowercase();
+    MEETING_LIST_MARKERS.iter().any(|m| lowered.contains(m))
+}
+
+const MEETING_LIST_FORMAT: &str = "FORMAT 8 (item-by-item): this refers to a list in the meeting material or the conversation. A one-sentence framing, then a numbered list covering EVERY item of that list (by name/number, in order; tight groups only if there are many) with a concrete answer for each — real, well-known tools/methods named and **bolded** where they're asked for. Never skip items or cherry-pick a few.";
+const MEETING_LIST_LENGTH: &str = "COMPLETE (length follows the number of items) — cover every item of the list being referred to, each with real substance. Completeness beats brevity here.";
+const MEETING_LIST_MAX_TOKENS: u32 = 1100;
+/// Meeting answers are advice for a live discussion, not interview sound
+/// bites — never budget them below the LONG tier.
+const MEETING_MIN_TOKENS: u32 = 450;
+
 /// Whole-word containment check — plain substring `contains` would match
 /// "type" inside "prototype" or "types" inside "stereotypes", which
 /// `ENUMERATION_WORDS`' single-word markers need to avoid.
@@ -309,7 +334,7 @@ fn length_target(tier: &str) -> LengthTarget {
             max_tokens: 80,
         },
         "direct_experience" => LengthTarget {
-            prompt_text: "SHORT (a direct \"Yeah, I have —\" sentence plus one or two sentences naming a concrete project, tool, or example) — a bare yes isn't enough; give one real, specific detail. Still don't turn this into a full story unless the interviewer's next question asks for more.",
+            prompt_text: "SHORT (a direct \"Yeah, I have —\" sentence plus one or two sentences naming a concrete project, tool, or example) — a bare yes isn't enough; give one real, specific detail. Still don't turn this into a full story unless the next question asks for more.",
             max_tokens: 150,
         },
         "short" => LengthTarget {
@@ -325,7 +350,7 @@ fn length_target(tier: &str) -> LengthTarget {
             max_tokens: 500,
         },
         "very_long" => LengthTarget {
-            prompt_text: "VERY LONG / DETAILED (a short intro sentence plus roughly 6-9 real sentences or numbered steps) — the interviewer explicitly asked for the complete picture. Give the fullest real explanation, covering every real stage — don't truncate this one to save words.",
+            prompt_text: "VERY LONG / DETAILED (a short intro sentence plus roughly 6-9 real sentences or numbered steps) — they explicitly asked for the complete picture. Give the fullest real explanation, covering every real stage — don't truncate this one to save words.",
             max_tokens: 700,
         },
         "unclassified" => LengthTarget {
@@ -486,7 +511,19 @@ fn build_user_prompt(request: &AskRequest) -> String {
     let mut parts: Vec<String> = Vec::new();
 
     let speaker = if request.meeting.is_some() { "Someone in the meeting says" } else { "The interviewer asks" };
-    parts.push(format!("{speaker}:\n{}", request.question));
+    if !request.images.is_empty() && request.question == super::screen::SCREEN_QUESTION_LABEL {
+        // Screenshots with no question of their own: the screen is the question.
+        let shots = if request.images.len() == 1 { "screenshot".to_string() } else { format!("{} screenshots (in the order taken)", request.images.len()) };
+        parts.push(format!("{}\n(Attached: {shots}.)", super::screen::instruction(request.meeting.is_some())));
+    } else {
+        parts.push(format!("{speaker}:\n{}", request.question));
+        if !request.images.is_empty() {
+            parts.push(format!(
+                "The user also attached {} screenshot(s) of their screen, in the order taken — use what they show (code, slides, a document, a question on screen) to answer this.",
+                request.images.len()
+            ));
+        }
+    }
 
     // Resolve the question against the conversation so far BEFORE the
     // format/length instructions below, so the model sees "here is what this
@@ -495,15 +532,21 @@ fn build_user_prompt(request: &AskRequest) -> String {
     // exists — the model's own inference from raw replayed history alone
     // was not reliable enough for short, bare-noun follow-ups.
     let intent = classify_intent(&request.question, !request.conversation_history.is_empty());
-    if let Some(block) = resolution_block(intent, request.conversation_state.as_ref(), request.conversation_history.last()) {
+    if let Some(block) = resolution_block_for(intent, request.conversation_state.as_ref(), request.conversation_history.last(), request.meeting.is_some()) {
         parts.push(block);
     }
 
-    let format_line = match classify_format(&request.question) {
-        Some(hint) => format!("{hint}\n\n"),
-        None => "Pick the matching FORMAT from the system prompt above.\n\n".to_string(),
+    let list_question = is_meeting_list_question(request);
+    let format_line = match (list_question, classify_format(&request.question)) {
+        (true, _) => format!("{MEETING_LIST_FORMAT}\n\n"),
+        (false, Some(hint)) => format!("{hint}\n\n"),
+        (false, None) => "Pick the matching FORMAT from the system prompt above.\n\n".to_string(),
     };
-    let (length_hint, _budget) = classify_length(&request.question);
+    let (length_hint, _budget) = if list_question {
+        (MEETING_LIST_LENGTH, MEETING_LIST_MAX_TOKENS)
+    } else {
+        classify_length(&request.question)
+    };
 
     parts.push(format!(
         "{format_line}TARGET LENGTH FOR THIS SPECIFIC QUESTION (the binding instruction — follow this number, not a habit of always answering the same length): {length_hint}\n(User's overall ceiling, only relevant if it would push you shorter than the target above: {})\n\n{} {} {}\n\nReply with the answer only, using that exact format and hitting that target length — two answers to different questions should read as clearly different lengths, not the same length every time. Remember the NON-NEGOTIABLE FORMATTING RULES: real **bold** on at least one key term, and a real Markdown numbered list or bullets instead of a run-on paragraph for anything with more than one point — every sentence still in plain, simple spoken words.",
@@ -539,7 +582,11 @@ pub fn build_messages(request: &AskRequest) -> Vec<ChatMessage> {
         messages.push(ChatMessage::assistant(turn.answer.clone()));
     }
 
-    messages.push(ChatMessage::user(build_user_prompt(request)));
+    if request.images.is_empty() {
+        messages.push(ChatMessage::user(build_user_prompt(request)));
+    } else {
+        messages.push(ChatMessage::user_with_images(build_user_prompt(request), request.images.clone()));
+    }
     messages
 }
 
@@ -547,7 +594,22 @@ pub fn build_messages(request: &AskRequest) -> Vec<ChatMessage> {
 /// only shrink it further, never inflate a SHORT/MEDIUM question or clip a
 /// LONG one down.
 pub fn max_tokens_for_question(request: &AskRequest) -> u32 {
-    let (_prompt_text, question_budget) = classify_length(&request.question);
+    // Screenshots often hold a whole coding problem or slide — never budget
+    // below what a full answer to one needs.
+    if !request.images.is_empty() {
+        return max_tokens_for_text(request).max(super::screen::MAX_TOKENS);
+    }
+    max_tokens_for_text(request)
+}
+
+fn max_tokens_for_text(request: &AskRequest) -> u32 {
+    if is_meeting_list_question(request) {
+        return MEETING_LIST_MAX_TOKENS;
+    }
+    let (_prompt_text, mut question_budget) = classify_length(&request.question);
+    if request.meeting.is_some() {
+        question_budget = question_budget.max(MEETING_MIN_TOKENS);
+    }
     if request.answer_length == "brief" {
         question_budget.min(120)
     } else {
@@ -577,7 +639,29 @@ mod tests {
             conversation_state: None,
             meeting: None,
             custom_instructions: None,
+            deep: false,
+            images: Vec::new(),
         }
+    }
+
+    #[test]
+    fn screenshots_ride_on_the_question_message() {
+        let mut req = base_request("Can you walk me through this code?");
+        req.images = vec!["img-a".into(), "img-b".into()];
+        let messages = build_messages(&req);
+        let last = messages.last().unwrap();
+        assert_eq!(last.images, vec!["img-a".to_string(), "img-b".to_string()]);
+        assert!(last.content.contains("attached 2 screenshot(s)"));
+        assert!(max_tokens_for_question(&req) >= super::super::screen::MAX_TOKENS);
+    }
+
+    #[test]
+    fn screenshots_with_no_question_ask_about_the_screen() {
+        let mut req = base_request(super::super::screen::SCREEN_QUESTION_LABEL);
+        req.images = vec!["img".into()];
+        let last = build_messages(&req).last().unwrap().clone();
+        assert!(last.content.starts_with("Look at the attached screenshot"));
+        assert!(!last.content.contains("The interviewer asks"));
     }
 
     #[test]
@@ -601,6 +685,45 @@ mod tests {
         let messages = build_messages(&req);
         assert_eq!(messages.len(), 2);
         assert!(!messages[1].content.contains("CUSTOM INSTRUCTIONS"));
+    }
+
+    #[test]
+    fn meeting_list_questions_get_item_by_item_format_and_full_budget() {
+        use crate::backend::MeetingContext;
+
+        let mut req = base_request("you are not understanding i am saying those 11 points can we use repos to assess the client");
+        req.meeting = Some(MeetingContext::default());
+        assert_eq!(max_tokens_for_question(&req), MEETING_LIST_MAX_TOKENS);
+        let prompt = build_messages(&req).last().unwrap().content.clone();
+        assert!(prompt.contains("FORMAT 8"));
+        assert!(prompt.starts_with("Someone in the meeting says:"));
+
+        // The same wording in an interview keeps the interview classifier.
+        let mut interview = req.clone();
+        interview.meeting = None;
+        assert_ne!(max_tokens_for_question(&interview), MEETING_LIST_MAX_TOKENS);
+    }
+
+    #[test]
+    fn meeting_answers_never_get_a_short_budget() {
+        use crate::backend::MeetingContext;
+
+        let mut req = base_request("What is Kubernetes?");
+        req.meeting = Some(MeetingContext::default());
+        assert_eq!(max_tokens_for_question(&req), MEETING_MIN_TOKENS);
+    }
+
+    #[test]
+    fn meeting_followups_label_the_other_side_as_a_participant() {
+        use crate::backend::MeetingContext;
+
+        let mut req = base_request("No, I mean the client's platform");
+        req.meeting = Some(MeetingContext::default());
+        req.conversation_history = vec![ConversationTurn { question: "what about tooling".into(), answer: "We use MLflow.".into() }];
+        let prompt = build_messages(&req).last().unwrap().content.clone();
+        assert!(prompt.contains("Participant: what about tooling"));
+        assert!(!prompt.contains("Interviewer"));
+        assert!(!prompt.contains("interviewer"));
     }
 
     #[test]

@@ -45,6 +45,11 @@ pub struct AskOptions {
     pub meeting_topic: Option<String>,
     #[serde(default)]
     pub participants: Option<String>,
+    /// The overlay's "Deep Answer" (button / Ctrl+D): slower, stronger
+    /// reasoning model for questions that deserve it. Off for every normal
+    /// Answer / Auto Answer.
+    #[serde(default)]
+    pub deep: bool,
 }
 
 fn default_mode() -> String {
@@ -97,6 +102,7 @@ impl Default for AskOptions {
             mode: default_mode(),
             meeting_topic: None,
             participants: None,
+            deep: false,
         }
     }
 }
@@ -159,6 +165,8 @@ fn build_ask_request(
         conversation_state: Some(conversation_state),
         meeting,
         custom_instructions,
+        deep: options.deep,
+        images: Vec::new(),
     }
 }
 
@@ -316,22 +324,26 @@ pub async fn ask_interview_question(
     question: String,
     options: Option<AskOptions>,
     history: Option<Vec<PriorTurn>>,
+    screenshot_ids: Option<Vec<String>>,
 ) -> Result<String, String> {
     use crate::hardware::telemetry::{finish, PipelineStage, Stopwatch};
 
     let question_to_answer = Stopwatch::start();
 
-    let trimmed = question.trim();
-    if trimmed.is_empty() {
-        return Err("no question text to send".into());
-    }
+    let images = take_screenshots(&state, &screenshot_ids.unwrap_or_default())?;
+    let trimmed = match question.trim() {
+        "" if images.is_empty() => return Err("no question text to send".into()),
+        "" => ANALYZE_SCREEN_QUESTION_LABEL,
+        text => text,
+    };
     let options = options.unwrap_or_default();
 
     let is_fresh_session = history.as_ref().map(|h| h.is_empty()).unwrap_or(true);
     let history = trim_history(history.unwrap_or_default());
     let conversation_state = current_conversation_state(&state, is_fresh_session)?;
 
-    let request = build_ask_request(&state, trimmed.to_string(), options, history, conversation_state.clone());
+    let mut request = build_ask_request(&state, trimmed.to_string(), options, history, conversation_state.clone());
+    request.images = images;
 
     let app_for_events = app.clone();
     let llm_timer = Stopwatch::start();
@@ -402,7 +414,66 @@ fn spawn_conversation_state_update(app: AppHandle, access_token: String, llm_pro
 /// replayed into later questions' history — there's no real transcribed
 /// question for a screen analysis, so this stands in for it consistently on
 /// both sides.
-pub const ANALYZE_SCREEN_QUESTION_LABEL: &str = "What's on my screen?";
+pub const ANALYZE_SCREEN_QUESTION_LABEL: &str = crate::personal::prompts::screen::SCREEN_QUESTION_LABEL;
+
+/// Most screenshots one question can carry — each is roughly a thousand
+/// input tokens, and past a handful the model reads them less carefully.
+const MAX_PENDING_SCREENSHOTS: usize = 8;
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenshotInfo {
+    pub id: String,
+    /// Small PNG data URL for the overlay's thumbnail strip.
+    pub thumbnail: String,
+}
+
+/// The overlay's Screenshot button: grabs the screen (the overlay itself is
+/// excluded from capture) and keeps it for the next Answer — no model call.
+/// Runs the capture/encode on a blocking worker so rapid taps never queue
+/// behind each other on the command thread.
+#[tauri::command]
+pub async fn capture_screenshot(state: State<'_, AppState>) -> Result<ScreenshotInfo, String> {
+    if state.screenshots.lock().map_err(|e| e.to_string())?.len() >= MAX_PENDING_SCREENSHOTS {
+        return Err(format!("Up to {MAX_PENDING_SCREENSHOTS} screenshots per question — send or remove some first."));
+    }
+    let shot = tauri::async_runtime::spawn_blocking(crate::interview_mode::screen::capture_shot)
+        .await
+        .map_err(|e| format!("screenshot task failed: {e}"))??;
+    let id = format!(
+        "shot-{}",
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
+    );
+    state.screenshots.lock().map_err(|e| e.to_string())?.push((id.clone(), shot.image_base64));
+    Ok(ScreenshotInfo { id, thumbnail: shot.thumbnail_data_url })
+}
+
+#[tauri::command]
+pub fn remove_screenshot(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state.screenshots.lock().map_err(|e| e.to_string())?.retain(|(shot_id, _)| *shot_id != id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_screenshots(state: State<'_, AppState>) -> Result<(), String> {
+    state.screenshots.lock().map_err(|e| e.to_string())?.clear();
+    Ok(())
+}
+
+/// Removes the named pending screenshots and returns their images in the
+/// order given — they're consumed by the question they're sent with.
+fn take_screenshots(state: &AppState, ids: &[String]) -> Result<Vec<String>, String> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut pending = state.screenshots.lock().map_err(|e| e.to_string())?;
+    let images = ids
+        .iter()
+        .filter_map(|id| pending.iter().find(|(shot_id, _)| shot_id == id).map(|(_, png)| png.clone()))
+        .collect();
+    pending.retain(|(shot_id, _)| !ids.contains(shot_id));
+    Ok(images)
+}
 
 /// Runs the "Analyze Screen" flow: captures the primary screen -> ONE vision
 /// LLM call -> stream. Mirrors `ask_interview_question`'s shape and event
@@ -641,9 +712,11 @@ mod tests {
     }
 
     #[test]
-    fn ask_options_default_to_natural_default_length() {
+    fn ask_options_default_to_natural_detailed_length() {
+        // "detailed" is the intended default (see `default_answer_length`,
+        // matching overlaySettings.ts's v5 default) — this test predated it.
         let options = AskOptions::default();
-        assert_eq!(options.answer_length, "default");
+        assert_eq!(options.answer_length, "detailed");
         assert_eq!(options.response_style, "natural");
         assert!(options.role.is_none());
     }

@@ -25,35 +25,45 @@ pub struct ChatMessage {
     /// questions in the same session, which is what its automatic prefix
     /// caching keys on.
     pub cacheable: bool,
-    /// A base64-encoded PNG attached to this message, for vision requests
-    /// (the "Analyze Screen" flow — see `prompts::screen`). `None` for every
-    /// ordinary text-only message.
-    pub image_png_base64: Option<String>,
+    /// Base64-encoded PNGs attached to this message, in order, for vision
+    /// requests (screenshots the user captured from the overlay, an image
+    /// attached as context — see `prompts::screen`/`prompts::image_context`).
+    /// Empty for every ordinary text-only message.
+    pub images: Vec<String>,
 }
 
 impl ChatMessage {
     pub fn system(content: impl Into<String>) -> Self {
-        Self { role: "system", content: content.into(), cacheable: false, image_png_base64: None }
+        Self { role: "system", content: content.into(), cacheable: false, images: Vec::new() }
     }
     pub fn user(content: impl Into<String>) -> Self {
-        Self { role: "user", content: content.into(), cacheable: false, image_png_base64: None }
+        Self { role: "user", content: content.into(), cacheable: false, images: Vec::new() }
     }
     pub fn assistant(content: impl Into<String>) -> Self {
-        Self { role: "assistant", content: content.into(), cacheable: false, image_png_base64: None }
+        Self { role: "assistant", content: content.into(), cacheable: false, images: Vec::new() }
     }
-    /// A user message with an attached screenshot (see `image_png_base64`
-    /// above).
+    /// A user message with one attached image (see `images` above).
     pub fn user_with_image(content: impl Into<String>, image_png_base64: impl Into<String>) -> Self {
-        Self {
-            role: "user",
-            content: content.into(),
-            cacheable: false,
-            image_png_base64: Some(image_png_base64.into()),
-        }
+        Self::user_with_images(content, vec![image_png_base64.into()])
+    }
+    /// A user message with any number of attached images, in order.
+    pub fn user_with_images(content: impl Into<String>, images: Vec<String>) -> Self {
+        Self { role: "user", content: content.into(), cacheable: false, images }
     }
     /// A user message worth caching (see `cacheable` above).
     pub fn cacheable_user(content: impl Into<String>) -> Self {
-        Self { role: "user", content: content.into(), cacheable: true, image_png_base64: None }
+        Self { role: "user", content: content.into(), cacheable: true, images: Vec::new() }
+    }
+}
+
+/// The MIME type of a base64-encoded image, from its magic bytes — overlay
+/// screenshots are JPEG, everything else attached so far is PNG. Providers
+/// reject an image whose declared type doesn't match its bytes.
+pub fn image_mime(base64_image: &str) -> &'static str {
+    if base64_image.starts_with("/9j/") {
+        "image/jpeg"
+    } else {
+        "image/png"
     }
 }
 

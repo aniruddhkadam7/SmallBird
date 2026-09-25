@@ -171,3 +171,12 @@ export function StarIcon(props: IconProps) {
     </Icon>
   );
 }
+
+export function CameraIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M14.5 4h-5L7.5 6.5H4.5A2 2 0 0 0 2.5 8.5v9a2 2 0 0 0 2 2h15a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-3z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </Icon>
+  );
+}

@@ -208,6 +208,15 @@ pub struct AskRequest {
     /// both modes and outranks the default length/style guidance.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_instructions: Option<String>,
+    /// "Deep Answer": route this question to the deep-reasoning model (see
+    /// `personal::client::DEEP_MODEL`) instead of the fast default. Local
+    /// routing only — never sent to the provider as-is.
+    #[serde(skip)]
+    pub deep: bool,
+    /// Screenshots the user captured for this question (base64 PNGs, in
+    /// order) — sent as images on the question's message.
+    #[serde(skip)]
+    pub images: Vec<String>,
 }
 
 /// Everything the user gave Meeting Mode about the meeting: the typed

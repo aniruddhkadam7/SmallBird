@@ -55,6 +55,12 @@ const CORRECTION_MARKERS: &[&str] = &[
     "no i mean", "no, i mean", "i mean the", "i meant", "not that", "not what i asked",
     "that's not what i asked", "thats not what i asked", "i asked for", "i asked about",
     "i was asking about", "actually i meant", "actually, i meant", "i didn't ask", "i didnt ask",
+    // Spoken pushback, as it actually comes through speech-to-text in a
+    // meeting ("you are not understanding i am saying those 11 points…").
+    "not understanding", "not understand", "don't understand", "dont understand", "not getting it",
+    "you are not getting", "you're not getting", "youre not getting", "i am saying", "i'm saying",
+    "im saying", "what i am asking", "what i'm asking", "what im asking", "that's wrong", "thats wrong",
+    "that is wrong", "not correct", "that's not it", "thats not it", "not what i mean",
 ];
 const TOPIC_SWITCH_MARKERS: &[&str] = &[
     "another project", "a different project", "different project", "other project",
@@ -149,12 +155,29 @@ fn referenced_list(state: Option<&ConversationStateSnapshot>) -> String {
 /// `None` for `QuestionIntent::New` — the existing prompt already handles a
 /// standalone question correctly, so nothing extra is added.
 pub fn resolution_block(intent: QuestionIntent, state: Option<&ConversationStateSnapshot>, prior_turn: Option<&ConversationTurn>) -> Option<String> {
+    resolution_block_for(intent, state, prior_turn, false)
+}
+
+/// `resolution_block`, worded for the session's mode — in Meeting Mode the
+/// other side is a meeting participant, not an interviewer, and there is no
+/// "candidate" or candidate background to pick projects from.
+pub fn resolution_block_for(
+    intent: QuestionIntent,
+    state: Option<&ConversationStateSnapshot>,
+    prior_turn: Option<&ConversationTurn>,
+    meeting: bool,
+) -> Option<String> {
+    let (speaker_label, speaker, background) = if meeting {
+        ("Participant", "the other participant", "the meeting material")
+    } else {
+        ("Interviewer", "the interviewer", "the candidate's background")
+    };
     let entity = entity_label(state);
     let topic = topic_label(state);
     let entity_or_fallback = entity.clone().unwrap_or_else(|| "the specific project/topic from the immediately preceding exchange".to_string());
 
     let prior_exchange = prior_turn
-        .map(|t| format!("\n\nThe immediately preceding exchange was:\nInterviewer: {}\nYou: {}", t.question, truncate(&t.answer, 600)))
+        .map(|t| format!("\n\nThe immediately preceding exchange was:\n{speaker_label}: {}\nYou: {}", t.question, truncate(&t.answer, 600)))
         .unwrap_or_default();
 
     let block = match intent {
@@ -164,20 +187,20 @@ pub fn resolution_block(intent: QuestionIntent, state: Option<&ConversationState
             topic_hint = topic.map(|t| format!(" (specifically: {t})")).unwrap_or_default(),
         ),
         QuestionIntent::Correction => format!(
-            "CONVERSATION CONTEXT — CORRECTION: the interviewer is telling you that your previous answer did not address what they actually asked. Do not repeat or lightly rephrase your previous answer. Re-read this question and the conversation so far, work out precisely what they now want (they may name it directly), and answer that specifically.{prior_exchange}"
+            "CONVERSATION CONTEXT — CORRECTION: {speaker} is telling you that your previous answer did not address what they actually asked — it was wrong or missed the point. Do not repeat or lightly rephrase your previous answer, and do not reuse its list or its examples. Re-read this question and the conversation so far, work out precisely what they now want (they may name it directly), and give a genuinely different answer to that.{prior_exchange}"
         ),
         QuestionIntent::Clarification => format!(
-            "CONVERSATION CONTEXT — CLARIFICATION REQUEST: the interviewer found your previous answer too vague or unclear. Be concrete this time — name the specific project/technology/term involved (currently: {entity_or_fallback}) rather than repeating a generic statement.{prior_exchange}"
+            "CONVERSATION CONTEXT — CLARIFICATION REQUEST: {speaker} found your previous answer too vague or unclear. Be concrete this time — name the specific project/technology/term involved (currently: {entity_or_fallback}) rather than repeating a generic statement.{prior_exchange}"
         ),
         QuestionIntent::TopicSwitch => format!(
-            "CONVERSATION CONTEXT — TOPIC SWITCH: the interviewer wants to move to a DIFFERENT project/topic than the one just discussed ({entity_or_fallback}). Pick a distinct project from the candidate's background that is not one of these already-covered ones: {referenced}. Discuss that new one specifically for the rest of this answer and going forward.",
+            "CONVERSATION CONTEXT — TOPIC SWITCH: {speaker} wants to move to a DIFFERENT project/topic than the one just discussed ({entity_or_fallback}). Pick a distinct one from {background} that is not one of these already-covered ones: {referenced}. Discuss that new one specifically for the rest of this answer and going forward.",
             referenced = referenced_list(state),
         ),
         QuestionIntent::Comparison => format!(
-            "CONVERSATION CONTEXT — COMPARISON: the interviewer wants a comparison that involves the current topic ({entity_or_fallback}). Anchor one side of the comparison to that specific project/technology, not a generic one.{prior_exchange}"
+            "CONVERSATION CONTEXT — COMPARISON: {speaker} wants a comparison that involves the current topic ({entity_or_fallback}). Anchor one side of the comparison to that specific project/technology, not a generic one.{prior_exchange}"
         ),
         QuestionIntent::Deepening => format!(
-            "CONVERSATION CONTEXT — DEEPENING: the interviewer wants more depth on the exact same thing just discussed ({entity_or_fallback}) — do not move to a new topic or re-summarize what was already said, go further into it.{prior_exchange}"
+            "CONVERSATION CONTEXT — DEEPENING: {speaker} wants more depth on the exact same thing just discussed ({entity_or_fallback}) — do not move to a new topic or re-summarize what was already said, go further into it.{prior_exchange}"
         ),
     };
     Some(block)
@@ -231,6 +254,15 @@ mod tests {
     fn explicit_correction_is_detected() {
         assert_eq!(classify_intent("No, I mean the Security Co-pilot project", true), QuestionIntent::Correction);
         assert_eq!(classify_intent("I asked for your project", true), QuestionIntent::Correction);
+    }
+
+    #[test]
+    fn spoken_meeting_pushback_is_a_correction() {
+        assert_eq!(
+            classify_intent("you are not understanding i am saying those 11 points can we use repos to assess of scan of client", true),
+            QuestionIntent::Correction
+        );
+        assert_eq!(classify_intent("no that's wrong", true), QuestionIntent::Correction);
     }
 
     #[test]

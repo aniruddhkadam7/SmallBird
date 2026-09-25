@@ -40,61 +40,204 @@ const REASONING_TOKEN_BUFFER: u32 = 300;
 /// independent of reasoning effort.
 const REASONING_EFFORT: &str = "minimal";
 
+/// Thinking level for a gpt-6 model when the caller didn't name one (see
+/// `split_model_spec`). gpt-6 rejects "minimal"; it accepts none/low/medium/
+/// high/xhigh/max and would default to medium if unset. "low" measured as
+/// fast as gpt-4.1 to the first word (~1.2s) with clearly stronger answers.
+pub const DEFAULT_GPT6_EFFORT: &str = "low";
+
+/// Callers pick a thinking level per request by naming the model as
+/// "model@effort" (e.g. "gpt-6-sol@medium" for Deep, "gpt-6-sol@low" for
+/// normal answers — see `personal::client`). Only the model part is sent as
+/// `model`; the effort becomes `reasoning_effort`.
+fn split_model_spec(spec: &str) -> (&str, Option<&str>) {
+    match spec.split_once('@') {
+        Some((model, effort)) if !effort.is_empty() => (model, Some(effort)),
+        _ => (spec, None),
+    }
+}
+
+/// Hidden thinking and the visible answer share `max_completion_tokens`. The
+/// 300-token buffer that suits gpt-5 at "minimal" would let gpt-6 spend the
+/// whole budget thinking and return nothing, so it gets far more headroom.
+/// Only tokens actually generated are billed, so a high cap costs nothing
+/// extra on its own.
+fn reasoning_buffer(model: &str) -> u32 {
+    if model.starts_with("gpt-6") { 6000 } else { REASONING_TOKEN_BUFFER }
+}
+
+/// A deep answer thinks before it streams, and the request timeout covers
+/// the whole streamed body — 30s could cut a long deep answer off mid-way.
+fn timeout_for(model: &str) -> Duration {
+    Duration::from_secs(if model.starts_with("gpt-6") { 120 } else { REQUEST_TIMEOUT_SECS })
+}
+
+/// Dev builds only: overrides the gpt-6 thinking level, for measuring levels
+/// against each other without a rebuild (see `client::debug_set_ask_model`).
+static DEV_EFFORT_OVERRIDE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+pub fn set_dev_effort_override(effort: Option<String>) {
+    if cfg!(debug_assertions) {
+        if let Ok(mut slot) = DEV_EFFORT_OVERRIDE.lock() {
+            *slot = effort.filter(|e| !e.trim().is_empty());
+        }
+    }
+}
+
+fn effort_for(model: &str, requested: Option<&str>) -> String {
+    if cfg!(debug_assertions) && model.starts_with("gpt-6") {
+        if let Some(effort) = DEV_EFFORT_OVERRIDE.lock().ok().and_then(|e| e.clone()) {
+            return effort;
+        }
+    }
+    if let Some(effort) = requested {
+        return effort.to_string();
+    }
+    if model.starts_with("gpt-6") {
+        DEFAULT_GPT6_EFFORT.to_string()
+    } else {
+        REASONING_EFFORT.to_string()
+    }
+}
+
+/// How to phrase the request's sampling/length parameters. `Auto` picks by
+/// model name (`is_reasoning_model`); the other two are what
+/// `post_with_param_fallback` retries with when OpenAI rejects the auto
+/// choice — a model family newer than this list (e.g. a "gpt-6") would
+/// otherwise fail every call with a 400 until this file learned its name.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum ParamStyle {
+    Auto,
+    Classic,
+    Reasoning { with_effort: bool },
+}
+
 fn build_request_body(model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32, stream: bool) -> serde_json::Value {
+    let (model, effort) = split_model_spec(model);
+    build_request_body_styled(model, effort, messages, temperature, max_tokens, stream, ParamStyle::Auto)
+}
+
+fn build_request_body_styled(
+    model: &str,
+    effort: Option<&str>,
+    messages: &[ChatMessage],
+    temperature: f32,
+    max_tokens: u32,
+    stream: bool,
+    style: ParamStyle,
+) -> serde_json::Value {
     let messages_json = messages
         .iter()
         .map(|m| {
-            if let Some(image) = &m.image_png_base64 {
-                serde_json::json!({
-                    "role": m.role,
-                    "content": [
-                        { "type": "image_url", "image_url": { "url": format!("data:image/png;base64,{image}") } },
-                        { "type": "text", "text": m.content },
-                    ],
-                })
+            if !m.images.is_empty() {
+                let mut content: Vec<serde_json::Value> = m
+                    .images
+                    .iter()
+                    .map(|image| serde_json::json!({ "type": "image_url", "image_url": { "url": format!("data:{};base64,{image}", crate::personal::prompts::image_mime(image)) } }))
+                    .collect();
+                content.push(serde_json::json!({ "type": "text", "text": m.content }));
+                serde_json::json!({ "role": m.role, "content": content })
             } else {
                 serde_json::json!({"role": m.role, "content": m.content})
             }
         })
         .collect::<Vec<_>>();
 
-    if is_reasoning_model(model) {
-        serde_json::json!({
-            "model": model,
-            "messages": messages_json,
-            "max_completion_tokens": max_tokens + REASONING_TOKEN_BUFFER,
-            "reasoning_effort": REASONING_EFFORT,
-            "stream": stream,
-        })
-    } else {
-        serde_json::json!({
+    let style = resolve_style(style, model);
+    match style {
+        ParamStyle::Reasoning { with_effort } => {
+            let mut body = serde_json::json!({
+                "model": model,
+                "messages": messages_json,
+                "max_completion_tokens": max_tokens + reasoning_buffer(model),
+                "stream": stream,
+            });
+            if with_effort {
+                body["reasoning_effort"] = serde_json::json!(effort_for(model, effort));
+            }
+            body
+        }
+        _ => serde_json::json!({
             "model": model,
             "messages": messages_json,
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": stream,
-        })
+        }),
     }
 }
 
-pub async fn generate(access_token: &str, model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32) -> Result<String, String> {
-    let client = shared_client();
-    let payload = build_request_body(model, messages, temperature, max_tokens, false);
-
-    let response = client
-        .post(llm_proxy_url())
-        .bearer_auth(access_token)
-        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .json(&serde_json::json!({ "provider": "openai", "payload": payload }))
-        .send()
-        .await
-        .map_err(|e| format!("failed to reach Smallbird's AI service: {e}"))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let text = response.text().await.unwrap_or_default();
-        return Err(format!("OpenAI returned {status}: {text}"));
+/// Which parameter style to retry with after OpenAI rejected `tried` with
+/// `error_body`, or `None` when the error isn't about those parameters.
+/// The concrete style `Auto` means for `model`: the gpt-6 family takes the
+/// reasoning-style params (with its own effort level, `effort_for`) on the
+/// first try — no rejected round-trips.
+fn resolve_style(style: ParamStyle, model: &str) -> ParamStyle {
+    match style {
+        ParamStyle::Auto if model.starts_with("gpt-6") || is_reasoning_model(model) => ParamStyle::Reasoning { with_effort: true },
+        ParamStyle::Auto => ParamStyle::Classic,
+        other => other,
     }
+}
+
+fn fallback_style(tried: ParamStyle, model: &str, error_body: &str) -> Option<ParamStyle> {
+    let effective = resolve_style(tried, model);
+    let body = error_body.to_lowercase();
+    match effective {
+        ParamStyle::Classic if body.contains("max_tokens") || body.contains("temperature") || body.contains("max_completion_tokens") => {
+            Some(ParamStyle::Reasoning { with_effort: true })
+        }
+        ParamStyle::Reasoning { with_effort: true } if body.contains("reasoning_effort") => {
+            Some(ParamStyle::Reasoning { with_effort: false })
+        }
+        _ => None,
+    }
+}
+
+/// POSTs to the proxy, and on a 400 that complains about the sampling/length
+/// parameters, retries (at most twice) with the other parameter style — see
+/// `ParamStyle`. Any other failure is returned as-is.
+async fn post_with_param_fallback(
+    access_token: &str,
+    model: &str,
+    effort: Option<&str>,
+    messages: &[ChatMessage],
+    temperature: f32,
+    max_tokens: u32,
+    stream: bool,
+) -> Result<reqwest::Response, String> {
+    let client = shared_client();
+    let mut style = ParamStyle::Auto;
+    for attempt in 0..3 {
+        let payload = build_request_body_styled(model, effort, messages, temperature, max_tokens, stream, style);
+        let response = client
+            .post(llm_proxy_url())
+            .bearer_auth(access_token)
+            .timeout(timeout_for(model))
+            .json(&serde_json::json!({ "provider": "openai", "payload": payload }))
+            .send()
+            .await
+            .map_err(|e| format!("failed to reach Smallbird's AI service: {e}"))?;
+
+        let status = response.status();
+        if status.is_success() {
+            return Ok(response);
+        }
+        let text = response.text().await.unwrap_or_default();
+        match fallback_style(style, model, &text) {
+            Some(next) if status == reqwest::StatusCode::BAD_REQUEST && attempt < 2 => {
+                log::warn!("openai: {model} rejected {style:?} params, retrying as {next:?}");
+                style = next;
+            }
+            _ => return Err(format!("OpenAI returned {status}: {text}")),
+        }
+    }
+    Err("OpenAI rejected every parameter style for this model".to_string())
+}
+
+pub async fn generate(access_token: &str, model: &str, messages: &[ChatMessage], temperature: f32, max_tokens: u32) -> Result<String, String> {
+    let (model, effort) = split_model_spec(model);
+    let response = post_with_param_fallback(access_token, model, effort, messages, temperature, max_tokens, false).await?;
 
     let json: serde_json::Value = response.json().await.map_err(|e| format!("OpenAI returned an unexpected response: {e}"))?;
     Ok(json
@@ -111,29 +254,20 @@ pub async fn stream<F>(access_token: &str, model: &str, messages: &[ChatMessage]
 where
     F: FnMut(&str),
 {
-    let client = shared_client();
-    let payload = build_request_body(model, messages, temperature, max_tokens, true);
-
-    let response = client
-        .post(llm_proxy_url())
-        .bearer_auth(access_token)
-        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .json(&serde_json::json!({ "provider": "openai", "payload": payload }))
-        .send()
-        .await
-        .map_err(|e| format!("failed to reach Smallbird's AI service: {e}"))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let text = response.text().await.unwrap_or_default();
-        return Err(format!("OpenAI returned {status}: {text}"));
-    }
+    let started = std::time::Instant::now();
+    let (model_name, effort) = split_model_spec(model);
+    let response = post_with_param_fallback(access_token, model_name, effort, messages, temperature, max_tokens, true).await?;
+    let headers_ms = started.elapsed().as_millis();
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
+    let mut chunks = 0u32;
+    let mut first_chunk_ms = None;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("stream read error: {e}"))?;
+        chunks += 1;
+        first_chunk_ms.get_or_insert_with(|| started.elapsed().as_millis());
         buffer.push_str(&String::from_utf8_lossy(&chunk));
 
         for delta in drain_sse_deltas(&mut buffer) {
@@ -143,6 +277,14 @@ where
         }
     }
 
+    // One line per answer: whether the answer actually streams (many chunks,
+    // first one early) or arrives in one lump at the end — the difference
+    // between words appearing within a second and a multi-second blank wait.
+    log::info!(
+        "openai stream: model={model} headers_ms={headers_ms} first_chunk_ms={} chunks={chunks} total_ms={}",
+        first_chunk_ms.unwrap_or(0),
+        started.elapsed().as_millis()
+    );
     Ok(())
 }
 
@@ -197,6 +339,41 @@ fn drain_sse_deltas(buffer: &mut String) -> Vec<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unknown_new_model_falls_back_to_reasoning_params_then_drops_effort() {
+        // A model family this file doesn't know yet (named "gpt-9" here).
+        let rejected_max_tokens = r#"{"error":{"message":"Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead."}}"#;
+        let next = fallback_style(ParamStyle::Auto, "gpt-9-x", rejected_max_tokens);
+        assert_eq!(next, Some(ParamStyle::Reasoning { with_effort: true }));
+
+        let rejected_effort = r#"{"error":{"message":"Unsupported value: 'reasoning_effort' does not support 'minimal' with this model."}}"#;
+        assert_eq!(fallback_style(next.unwrap(), "gpt-9-x", rejected_effort), Some(ParamStyle::Reasoning { with_effort: false }));
+
+        // Unrelated errors (bad model name, auth) are not retried.
+        assert_eq!(fallback_style(ParamStyle::Auto, "gpt-9-x", r#"{"error":{"message":"The model `gpt-9-x` does not exist"}}"#), None);
+
+        // gpt-6 is known: reasoning-style params with its own effort, first try.
+        assert_eq!(resolve_style(ParamStyle::Auto, "gpt-6-sol"), ParamStyle::Reasoning { with_effort: true });
+        let body = build_request_body("gpt-6-sol", &[], 0.5, 400, true);
+        assert_eq!(body["model"], "gpt-6-sol");
+        assert_eq!(body["reasoning_effort"], DEFAULT_GPT6_EFFORT);
+        assert_eq!(body["max_completion_tokens"], 400 + 6000);
+        assert!(body.get("temperature").is_none());
+
+        // A per-request level rides on the model spec; only the model name is sent.
+        let deep = build_request_body("gpt-6-sol@medium", &[], 0.5, 400, true);
+        assert_eq!(deep["model"], "gpt-6-sol");
+        assert_eq!(deep["reasoning_effort"], "medium");
+    }
+
+    #[test]
+    fn reasoning_body_without_effort_omits_it() {
+        let body = build_request_body_styled("x", None, &[], 0.5, 100, true, ParamStyle::Reasoning { with_effort: false });
+        assert!(body.get("reasoning_effort").is_none());
+        assert!(body.get("temperature").is_none());
+        assert_eq!(body["max_completion_tokens"], 100 + REASONING_TOKEN_BUFFER);
+    }
 
     #[test]
     fn parses_single_delta_chunk() {
