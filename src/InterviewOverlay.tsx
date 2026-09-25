@@ -149,6 +149,18 @@ function MarkdownCode({ className, children, ...rest }: React.ComponentPropsWith
   );
 }
 
+/// Role/company fields sent to `save_interview_session`. The transcripts
+/// table has no mode column, so a meeting is recorded as role "Meeting:
+/// <topic>" — enough to tell it apart on the dashboard without a schema
+/// change.
+function transcriptLabels(settings: OverlaySettings): { role: string | null; company: string | null } {
+  if (settings.mode === "meeting") {
+    const topic = settings.meetingTopic.trim();
+    return { role: topic ? `Meeting: ${topic}` : "Meeting", company: null };
+  }
+  return { role: settings.role.trim() || null, company: settings.company.trim() || null };
+}
+
 export function InterviewOverlay() {
   // The whole conversation, oldest first. Nothing is ever removed or replaced
   // — a new question appends, and streaming deltas only ever mutate the last
@@ -207,6 +219,8 @@ export function InterviewOverlay() {
   // change made afterward.
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  const isMeeting = settings.mode === "meeting";
+  const sessionNoun = isMeeting ? "meeting" : "interview";
   // Remaining plan balance at the moment this session started, in seconds —
   // ticked down locally by elapsedSeconds rather than re-fetched every
   // second, so the display doesn't depend on network latency. The real
@@ -491,11 +505,10 @@ export function InterviewOverlay() {
     invoke("save_interview_session", {
       id: sessionIdRef.current,
       startedAtMs: sessionStartedAtRef.current,
-      role: settings.role.trim() || null,
-      company: settings.company.trim() || null,
+      ...transcriptLabels(settings),
       turns: completed.map((t) => ({ question: t.question, answer: t.answer, askedAtMs: t.askedAt })),
     }).catch((e) => console.error("Failed to save interview progress:", e));
-  }, [turns, settings.role, settings.company]);
+  }, [turns, settings]);
 
   // Live countdown: fetch the plan balance once per session (on mount, and
   // again whenever the reused overlay window resets for a new interview —
@@ -634,6 +647,9 @@ export function InterviewOverlay() {
       jobDescription: settings.jobDescription.trim() || null,
       englishLevel: settings.englishLevel,
       humanization: settings.humanization,
+      mode: settings.mode,
+      meetingTopic: settings.meetingTopic.trim() || null,
+      participants: settings.participants.trim() || null,
       // DeepSeek isn't implemented backend-side yet (see
       // llmProviderSetting.ts) — the header dropdown keeps it disabled, so
       // only "anthropic"/"openai"/"gemini" ever actually reach here in
@@ -908,8 +924,7 @@ export function InterviewOverlay() {
         await invoke("save_interview_session", {
           id: sessionIdRef.current,
           startedAtMs: sessionStartedAtRef.current,
-          role: settings.role.trim() || null,
-          company: settings.company.trim() || null,
+          ...transcriptLabels(settings),
           turns: completed,
         });
       } catch (e) {
@@ -938,7 +953,7 @@ export function InterviewOverlay() {
     } else {
       dismissOverlay();
     }
-  }, [turns, settings.role, settings.company, dismissOverlay]);
+  }, [turns, settings, dismissOverlay]);
 
   // Entry point for both the End button and Escape: conversations with at least
   // one exchange ask for confirmation first (closing mid-interview is easy to
@@ -1148,7 +1163,7 @@ export function InterviewOverlay() {
           onClick={() => setSettings((prev) => ({ ...prev, autoAI: !prev.autoAI }))}
           data-tooltip={
             settings.autoAI
-              ? "Auto Answer is on — questions send automatically when the interviewer stops talking"
+              ? `Auto Answer is on — questions send automatically when the ${isMeeting ? "speaker" : "interviewer"} stops talking`
               : "Auto Answer is off — use Answer or Enter to send"
           }
         >
@@ -1211,7 +1226,7 @@ export function InterviewOverlay() {
           type="button"
           className="overlay-pill-button end"
           onClick={requestClose}
-          data-tooltip="End interview (Esc)"
+          data-tooltip={`End ${sessionNoun} (Esc)`}
         >
           End
         </button>
@@ -1274,7 +1289,7 @@ export function InterviewOverlay() {
 
       {showEndedSummary ? (
         <div className="overlay-confirm-close">
-          <p className="overlay-confirm-close-title">Interview ended</p>
+          <p className="overlay-confirm-close-title">{isMeeting ? "Meeting ended" : "Interview ended"}</p>
           <p className="overlay-confirm-close-body">
             Your transcript has been saved — view it anytime from the dashboard.
           </p>
@@ -1289,16 +1304,16 @@ export function InterviewOverlay() {
         </div>
       ) : confirmingClose ? (
         <div className="overlay-confirm-close">
-          <p className="overlay-confirm-close-title">Is the interview over?</p>
+          <p className="overlay-confirm-close-title">Is the {sessionNoun} over?</p>
           <p className="overlay-confirm-close-body">
-            Closing will save this conversation to your interview history.
+            Closing will save this conversation to your history.
           </p>
           <div className="overlay-confirm-close-actions">
             <button className="overlay-text-button" onClick={() => setConfirmingClose(false)}>
               Keep going
             </button>
             <button className="overlay-text-button primary" onClick={closeOverlay}>
-              Yes, end interview
+              Yes, end {sessionNoun}
             </button>
           </div>
         </div>
@@ -1353,7 +1368,13 @@ export function InterviewOverlay() {
                 value={question}
                 onChange={handleQuestionChange}
                 onKeyDown={handleQuestionKeyDown}
-                placeholder={hasConversation ? "Next question…" : "Waiting for the interviewer to speak…"}
+                placeholder={
+                  hasConversation
+                    ? "Next question…"
+                    : isMeeting
+                      ? "Waiting for someone to speak…"
+                      : "Waiting for the interviewer to speak…"
+                }
                 rows={1}
               />
               <button
@@ -1407,7 +1428,9 @@ export function InterviewOverlay() {
 
           <div className="overlay-chat" ref={scrollRef}>
             {!activeTurn ? (
-              <p className="overlay-empty">Waiting for the interviewer to speak…</p>
+              <p className="overlay-empty">
+                {isMeeting ? "Waiting for someone to speak…" : "Waiting for the interviewer to speak…"}
+              </p>
             ) : (
               <div className="chat-turn">
                 <div className="chat-card-label question">

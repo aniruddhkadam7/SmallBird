@@ -4,6 +4,8 @@
 // InterviewOverlay.tsx) so the shape is easy to share with the settings
 // panel component and to unit-test in isolation.
 
+import type { SessionMode } from "./sessionMode";
+
 export type AnswerLength = "brief" | "default" | "detailed";
 export type ResponseStyle = "natural" | "technical" | "concise";
 export type OverlayDensity = "compact" | "comfortable";
@@ -36,6 +38,13 @@ export interface OverlaySettings {
   // rather have the overlay plainly visible than show as an unexplained
   // black box on someone else's screen.
   captureProtection: boolean;
+  // Snapshot of the header's mode dropdown (sessionMode.ts) taken when Start
+  // is pressed, plus Meeting Mode's own start details. Interview sessions
+  // leave meetingTopic/participants blank; meeting sessions leave
+  // role/company blank.
+  mode: SessionMode;
+  meetingTopic: string;
+  participants: string;
 }
 
 export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
@@ -52,6 +61,9 @@ export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
   humanization: "natural",
   autoAI: false,
   captureProtection: true,
+  mode: "interview",
+  meetingTopic: "",
+  participants: "",
 };
 
 /// Fraction of the primary monitor's shorter dimension the overlay window

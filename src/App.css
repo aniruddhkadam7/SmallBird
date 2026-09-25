@@ -310,6 +310,86 @@ body.compact-transparent {
   box-shadow: 0 2px 6px rgba(16, 24, 40, 0.28), inset 0 -1px 1px rgba(0, 0, 0, 0.08);
 }
 
+/* Context/Settings expanded out of the bar (ExpandPanel.tsx): while one is
+   open, the bar's rounded bottom edge squares off and its bottom border
+   softens to a divider, so bar + panel read as one card that grew taller. */
+.app-shell-compact.panel-expanded .compact-header {
+  border-radius: 0;
+  border-bottom-color: var(--border);
+  box-shadow: none;
+}
+
+/* Height animates 0 → content via the grid-rows trick (auto heights can't
+   be transitioned directly); the clip hides the content mid-slide. */
+.expand-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms ease;
+}
+
+.expand-panel[data-expanded="true"] {
+  grid-template-rows: 1fr;
+}
+
+.expand-panel-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Sized to its content, capped to what fits in the fixed 720px window below
+   the 88px bar; taller content (Settings' longer sections) scrolls inside. */
+.expand-panel-card {
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  background: var(--surface);
+  border-left: 1px solid var(--border-strong);
+  border-right: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  box-shadow: 0 8px 18px rgba(16, 24, 40, 0.18);
+}
+
+/* The Settings/Context shells were built as full-window overlays; inside the
+   panel they just flow as ordinary blocks. */
+.expand-panel .popover-overlay {
+  position: static;
+  inset: auto;
+  background: none;
+  display: block;
+}
+
+.expand-panel .popover {
+  height: auto;
+  background: none;
+}
+
+.expand-panel .popover-footer {
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+}
+
+.expand-panel .settings-popover-content {
+  max-height: 460px;
+  overflow-y: auto;
+}
+
+/* Full bar width gives Context room for two columns of sections instead of
+   one long stack — shorter panel, less scrolling. */
+.expand-panel .setup-sections {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.expand-panel .setup-section {
+  padding: 0.5rem 0.6rem;
+  gap: 0.3rem;
+}
+
+.expand-panel .setup-textarea {
+  height: 56px;
+  font-size: 0.76rem;
+}
+
 /* Custom frameless title bar (see tauri.conf.json's decorations: false) —
    its own slim strip above .compact-header, not sharing that row, so the
    existing Model/Context/Start/Settings/Account row and its width
@@ -639,11 +719,12 @@ body.compact-transparent {
   overflow-y: auto;
 }
 
-/* Context, upload-file rows only (see .header-dropdown .setup-textarea
-   below) — a bit narrower than the other panels reads fine since there's
-   no paste-text box needing room to be usable. */
+/* Context (and the Start popover, which shares this class) — wide enough
+   for each section's type/paste box plus its Upload / Paste screenshot
+   buttons side by side. Taller content scrolls inside .header-dropdown's
+   max-height. */
 .header-dropdown.header-dropdown-wide {
-  width: 280px;
+  width: 340px;
 }
 
 /* The nested override promised above: Context/Settings/Account's own
@@ -694,14 +775,9 @@ body.compact-transparent {
 }
 
 /* DocumentContext's .setup-sections is a 3-column grid designed for the
-   full-width setup screen; at the Context dropdown's compact 360px it
-   needs to stack as a single narrow column instead. The paste-text
-   textarea is also hidden here — dropping it (upload-file only) is what
-   keeps three sections fitting with zero scrolling; pasting text is still
-   fully available from the full Preparation/setup screen elsewhere.
-   Presentational only — DocumentContext itself is unchanged, so a file
-   already uploaded (or, in principle, pasted text carried over from
-   elsewhere) still shows its filename chip normally. */
+   full-width setup screen; at the Context dropdown's compact width it
+   needs to stack as a single narrow column instead, with a shorter
+   type/paste box so several sections fit before scrolling. */
 .header-dropdown .setup-sections {
   grid-template-columns: 1fr;
   gap: 0.3rem;
@@ -713,7 +789,167 @@ body.compact-transparent {
 }
 
 .header-dropdown .setup-textarea {
-  display: none;
+  height: 56px;
+  font-size: 0.76rem;
+}
+
+/* Settings → Shortcuts: one row per bindable action — label/description on
+   the left, the click-to-record field plus Clear/Reset on the right. */
+.shortcuts-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.shortcut-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 0.75rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.shortcut-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.shortcut-row-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.shortcut-row-description {
+  margin: 0;
+  font-size: 0.72rem;
+}
+
+.shortcut-row-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+}
+
+.shortcut-field {
+  min-width: 150px;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid #aab0bb;
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--text);
+  font-family: "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+  text-align: center;
+  cursor: pointer;
+}
+
+.shortcut-field:hover {
+  border-color: #6b7280;
+}
+
+.shortcut-field.recording {
+  border-color: #2b2f36;
+  box-shadow: 0 0 0 3px rgba(107, 114, 128, 0.18);
+  color: #6b7280;
+}
+
+.shortcut-row-links {
+  display: flex;
+  gap: 0.6rem;
+  font-size: 0.72rem;
+}
+
+.shortcut-row-hint {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.72rem;
+}
+
+/* A Context section's text box with its Upload / Paste-screenshot icons
+   tucked into the bottom-right corner. The textarea gets extra bottom
+   padding so typed text never runs underneath the icons. */
+.context-input {
+  position: relative;
+}
+
+.context-input:not(.text-only) .setup-textarea {
+  padding-bottom: 1.9rem;
+}
+
+.context-input-icons {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: flex;
+  gap: 2px;
+}
+
+.context-input-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.context-input-icon:hover {
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+/* One attached file or screenshot: thumbnail (or doc icon), name + status,
+   Remove. */
+.context-attachment {
+  justify-content: flex-start;
+  padding: 0.35rem 0.5rem;
+}
+
+.context-attachment-thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.context-attachment-icon {
+  width: 36px;
+  text-align: center;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.context-attachment-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  gap: 0.1rem;
+}
+
+.context-attachment-main .setup-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-attachment-error {
+  font-size: 0.7rem;
 }
 
 /* Settings popover: nav rail on the left, selected section's content on
@@ -1220,6 +1456,14 @@ body.compact-transparent {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+/* Meeting Mode's "Add context" row — the three shortcut buttons into the
+   Context panel's meeting sections. Wraps so it never overflows the popover. */
+.meeting-context-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
 }
 
 .company-select {

@@ -1,6 +1,8 @@
 pub mod ask;
 pub mod analysis;
 pub mod conversation;
+pub mod image_context;
+pub mod meeting;
 pub mod notes;
 pub mod screen;
 pub mod setup;

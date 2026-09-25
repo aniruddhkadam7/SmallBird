@@ -19,8 +19,10 @@ pub const MAX_TOKENS: u32 = 700;
 
 const INSTRUCTION: &str = "Look at the attached screenshot of what's currently on my screen during this interview — it might show a coding problem, a system-design/whiteboard diagram, written interview questions, or something else relevant to the interview. Identify what it is and answer/solve it directly, in the same spoken-sentence STYLE and FORMAT rules as any other question in this interview. If it's a coding problem, write real working code per FORMAT 7. If nothing on screen looks like an interview question or problem (e.g. it's an unrelated app), say briefly what you actually see instead of forcing an answer.";
 
+const MEETING_INSTRUCTION: &str = "Look at the attached screenshot of what's currently on my screen during this meeting — it might show slides, a document, a dashboard, a chat message, a question someone posted, or code. Work out what matters in it for this meeting and tell me what I should say about it, in the same spoken-sentence STYLE and FORMAT rules as anything else in this meeting. If it asks a question, answer it; if it's a slide or report, give me the key point worth raising. If it's code, handle it per FORMAT 7. If nothing on screen looks relevant to the meeting (e.g. it's an unrelated app), say briefly what you actually see instead of forcing an answer.";
+
 pub fn build_messages(request: &AskRequest, image_png_base64: String) -> Vec<ChatMessage> {
-    let mut messages = vec![ChatMessage::system(ask::SYSTEM_PROMPT)];
+    let mut messages = vec![ChatMessage::system(ask::system_prompt(request))];
 
     if let Some(background) = ask::build_background_message(request) {
         messages.push(ChatMessage::cacheable_user(background));
@@ -32,7 +34,8 @@ pub fn build_messages(request: &AskRequest, image_png_base64: String) -> Vec<Cha
         messages.push(ChatMessage::assistant(turn.answer.clone()));
     }
 
-    messages.push(ChatMessage::user_with_image(INSTRUCTION, image_png_base64));
+    let instruction = if request.meeting.is_some() { MEETING_INSTRUCTION } else { INSTRUCTION };
+    messages.push(ChatMessage::user_with_image(instruction, image_png_base64));
     messages
 }
 
@@ -54,6 +57,9 @@ mod tests {
             english_level: "simple".to_string(),
             humanization: "natural".to_string(),
             llm_provider: None,
+            conversation_state: None,
+            meeting: None,
+            custom_instructions: None,
         }
     }
 

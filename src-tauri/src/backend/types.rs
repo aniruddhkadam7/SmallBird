@@ -197,6 +197,36 @@ pub struct AskRequest {
     /// independent of, and not trimmed alongside, `conversation_history`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conversation_state: Option<ConversationStateSnapshot>,
+    /// `Some` when this question comes from a Meeting Mode session — the AI
+    /// then answers as the user taking part in a meeting (see
+    /// `personal::prompts::meeting`) instead of as an interview candidate,
+    /// and the interview-only fields above are all left `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting: Option<MeetingContext>,
+    /// The user's own standing instructions for how answers should be
+    /// written (the Context panel's "Custom instructions" field) — applies in
+    /// both modes and outranks the default length/style guidance.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_instructions: Option<String>,
+}
+
+/// Everything the user gave Meeting Mode about the meeting: the typed
+/// purpose/participants from the Start popover, plus the full text of any
+/// agenda/documents/knowledge-base/previous-notes uploads.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct MeetingContext {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub participants: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agenda: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub documents: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub knowledge_base: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_notes: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

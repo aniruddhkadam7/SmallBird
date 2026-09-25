@@ -26,6 +26,17 @@ export function IconAttachment({ size = 16, className }: IconProps) {
   );
 }
 
+// A picture frame — used for "paste a screenshot / image".
+export function IconImage({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} className={className} {...BASE_PROPS} aria-hidden="true">
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+      <circle cx="9" cy="10" r="1.75" />
+      <path d="m20.5 16-4.5-4.5L6.5 19.5" />
+    </svg>
+  );
+}
+
 // Feather Icons' "settings" glyph (MIT licensed, feathericons.com) — a real
 // authored gear outline rather than a freehand approximation, so the tooth
 // spacing and proportions are actually correct.

@@ -3,12 +3,14 @@ import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { PersonalizationPanel } from "./PersonalizationPanel";
 import { AttachedDocumentsPanel } from "./AttachedDocumentsPanel";
+import { ShortcutsPanel } from "./ShortcutsPanel";
 
-type SettingsSection = "SESSIONS" | "PERSONALIZATION" | "CONTEXT" | "PRIVACY" | "ABOUT";
+type SettingsSection = "SESSIONS" | "PERSONALIZATION" | "SHORTCUTS" | "CONTEXT" | "PRIVACY" | "ABOUT";
 
 const SECTIONS: { key: SettingsSection; label: string }[] = [
   { key: "SESSIONS", label: "Sessions" },
   { key: "PERSONALIZATION", label: "Personalization" },
+  { key: "SHORTCUTS", label: "Shortcuts" },
   { key: "CONTEXT", label: "Context / Documents" },
   { key: "PRIVACY", label: "Privacy" },
   { key: "ABOUT", label: "About / Version" },
@@ -82,6 +84,7 @@ export function SettingsPopover({ onClose }: Props) {
               </div>
             )}
             {section === "PERSONALIZATION" && <PersonalizationPanel />}
+            {section === "SHORTCUTS" && <ShortcutsPanel />}
             {section === "CONTEXT" && <AttachedDocumentsPanel />}
             {section === "PRIVACY" && (
               <p className="setup-hint">

@@ -44,16 +44,24 @@ fn new_document_id() -> String {
     format!("doc-{}-{n}", now_secs())
 }
 
-/// Reads the most recently uploaded, successfully-extracted document of
-/// `document_type` — used by `interview_mode::commands` to build ASK AI's
+/// Reads every successfully-extracted document of `document_type`, oldest
+/// first, joined into one block — a Context section can hold several items
+/// at once (typed text plus any number of files/screenshots; see the
+/// frontend's DocumentContext.tsx), and each is its own record here. A
+/// replaced item's old record is deleted by the frontend, so nothing stale
+/// is left to join. Used by `interview_mode::commands` to build ASK AI's
 /// LLM context without going through the Tauri command layer.
 pub fn latest_ready_text(state: &AppState, document_type: &str) -> Option<String> {
     let store = state.documents.lock().ok()?;
-    store
+    let mut ready: Vec<&DocumentRecord> = store
         .values()
         .filter(|r| r.metadata.document_type == document_type && r.metadata.status == "READY")
-        .max_by(|a, b| a.metadata.updated_at.total_cmp(&b.metadata.updated_at))
-        .map(|r| r.text.clone())
+        .collect();
+    if ready.is_empty() {
+        return None;
+    }
+    ready.sort_by(|a, b| a.metadata.created_at.total_cmp(&b.metadata.created_at));
+    Some(ready.iter().map(|r| r.text.as_str()).collect::<Vec<_>>().join("\n\n---\n\n"))
 }
 
 fn decode_xml_entities(s: &str) -> String {
@@ -109,9 +117,41 @@ pub async fn upload_document(
     bytes: Vec<u8>,
     document_type: String,
 ) -> Result<DocumentMetadata, String> {
-    let file_size = bytes.len() as u64;
+    let extracted = extract_text(&filename, &bytes);
+    store_document(&state, filename, bytes.len() as u64, document_type, extracted)
+}
+
+/// Attaches an image (a pasted screenshot, a photo of a slide, a chart) as
+/// context: a vision model transcribes it to text once, here, and from then
+/// on it's an ordinary text document like any PDF. The frontend always sends
+/// PNG (it re-encodes pasted/picked images through a canvas), which is the
+/// only image format the provider layer declares.
+#[tauri::command]
+pub async fn upload_image_document(
+    state: State<'_, AppState>,
+    filename: String,
+    png_base64: String,
+    document_type: String,
+    llm_provider: Option<String>,
+) -> Result<DocumentMetadata, String> {
+    let file_size = (png_base64.len() as u64 * 3) / 4;
+    let access_token = crate::auth::current_access_token(&state).await?;
+    let extracted = crate::personal::DirectLlmClient::new(llm_provider.as_deref(), access_token)
+        .transcribe_image(png_base64)
+        .await
+        .map_err(|e| format!("couldn't read the image: {e}"));
+    store_document(&state, filename, file_size, document_type, extracted)
+}
+
+fn store_document(
+    state: &AppState,
+    filename: String,
+    file_size: u64,
+    document_type: String,
+    extracted: Result<String, String>,
+) -> Result<DocumentMetadata, String> {
     let now = now_secs();
-    let (status, error_message, text) = match extract_text(&filename, &bytes) {
+    let (status, error_message, text) = match extracted {
         // A scanned/image-only PDF (or an otherwise-valid but blank file) extracts
         // "successfully" to nothing usable — surface that distinctly from READY so
         // callers don't treat it as attached when the AI has nothing to work with.

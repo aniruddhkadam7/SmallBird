@@ -5,7 +5,7 @@
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::auth::client::{SUPABASE_ANON_KEY, SUPABASE_URL};
-use crate::backend::{AskRequest, ConversationStateSnapshot, ConversationTurn};
+use crate::backend::{AskRequest, ConversationStateSnapshot, ConversationTurn, MeetingContext};
 use crate::state::AppState;
 
 use super::window::{self, OverlayCaptureStatus};
@@ -36,6 +36,19 @@ pub struct AskOptions {
     /// `None` keeps the server-configured default.
     #[serde(default)]
     pub llm_provider: Option<String>,
+    /// "interview" | "meeting" — the header's mode dropdown. Meeting mode
+    /// swaps the candidate persona and resume/JD context for the meeting's
+    /// own purpose, participants and uploaded meeting documents.
+    #[serde(default = "default_mode")]
+    pub mode: String,
+    #[serde(default)]
+    pub meeting_topic: Option<String>,
+    #[serde(default)]
+    pub participants: Option<String>,
+}
+
+fn default_mode() -> String {
+    "interview".to_string()
 }
 
 fn default_answer_length() -> String {
@@ -81,7 +94,71 @@ impl Default for AskOptions {
             english_level: default_english_level(),
             humanization: default_humanization(),
             llm_provider: None,
+            mode: default_mode(),
+            meeting_topic: None,
+            participants: None,
         }
+    }
+}
+
+/// Builds the `AskRequest` shared by Ask AI and Analyze Screen, reading the
+/// uploaded documents that belong to the session's mode. Interview and
+/// Meeting documents use distinct document types (see the frontend's
+/// `headerPopups.ts`), so neither mode ever picks up the other's uploads.
+fn build_ask_request(
+    state: &AppState,
+    question: String,
+    options: AskOptions,
+    history: Vec<ConversationTurn>,
+    conversation_state: ConversationStateSnapshot,
+) -> AskRequest {
+    let is_meeting = options.mode == "meeting";
+    // Each mode keeps its own instructions (see the frontend's
+    // headerPopups.ts), since "answer as a senior candidate" and "keep my
+    // meeting replies to one line" rarely belong together.
+    let custom_instructions =
+        crate::documents::latest_ready_text(state, if is_meeting { "MEETING_INSTRUCTIONS" } else { "INTERVIEW_INSTRUCTIONS" });
+    let meeting = is_meeting.then(|| MeetingContext {
+        topic: options.meeting_topic.clone(),
+        participants: options.participants.clone(),
+        agenda: crate::documents::latest_ready_text(state, "MEETING_AGENDA"),
+        documents: crate::documents::latest_ready_text(state, "MEETING_DOCUMENTS"),
+        knowledge_base: crate::documents::latest_ready_text(state, "KNOWLEDGE_BASE"),
+        previous_notes: crate::documents::latest_ready_text(state, "PREVIOUS_MEETING_NOTES"),
+    });
+
+    let (candidate_context, role, company, job_description, additional_context) = if is_meeting {
+        (None, None, None, None, None)
+    } else {
+        (
+            crate::documents::latest_ready_text(state, "RESUME"),
+            options.role,
+            options.company,
+            // The uploaded document's full text (when present) is more
+            // complete than the settings panel's manually typed/pasted
+            // job_description field, so it takes priority; the typed field
+            // remains the fallback for users who never uploaded a JD file.
+            crate::documents::latest_ready_text(state, "JOB_DESCRIPTION").or(options.job_description),
+            crate::documents::latest_ready_text(state, "ADDITIONAL_CONTEXT").or(options.additional_context),
+        )
+    };
+
+    AskRequest {
+        question,
+        conversation_history: history,
+        candidate_context,
+        role,
+        company,
+        job_description,
+        additional_context,
+        answer_length: options.answer_length,
+        response_style: options.response_style,
+        english_level: options.english_level,
+        humanization: options.humanization,
+        llm_provider: options.llm_provider,
+        conversation_state: Some(conversation_state),
+        meeting,
+        custom_instructions,
     }
 }
 
@@ -254,29 +331,7 @@ pub async fn ask_interview_question(
     let history = trim_history(history.unwrap_or_default());
     let conversation_state = current_conversation_state(&state, is_fresh_session)?;
 
-    let resume_text = crate::documents::latest_ready_text(&state, "RESUME");
-    let uploaded_job_description = crate::documents::latest_ready_text(&state, "JOB_DESCRIPTION");
-    let uploaded_additional_context = crate::documents::latest_ready_text(&state, "ADDITIONAL_CONTEXT");
-
-    let request = AskRequest {
-        question: trimmed.to_string(),
-        conversation_history: history,
-        candidate_context: resume_text,
-        role: options.role,
-        company: options.company,
-        // The uploaded document's full text (when present) is more complete
-        // than the settings panel's manually typed/pasted job_description
-        // field, so it takes priority; the typed field remains the fallback
-        // for users who never uploaded a JD file at all.
-        job_description: uploaded_job_description.or(options.job_description),
-        additional_context: uploaded_additional_context.or(options.additional_context),
-        answer_length: options.answer_length,
-        response_style: options.response_style,
-        english_level: options.english_level,
-        humanization: options.humanization,
-        llm_provider: options.llm_provider,
-        conversation_state: Some(conversation_state.clone()),
-    };
+    let request = build_ask_request(&state, trimmed.to_string(), options, history, conversation_state.clone());
 
     let app_for_events = app.clone();
     let llm_timer = Stopwatch::start();
@@ -374,25 +429,7 @@ pub async fn analyze_screen_question(
     let png_bytes = crate::interview_mode::screen::capture_primary_screen_png()?;
     let image_base64 = base64::engine::general_purpose::STANDARD.encode(png_bytes);
 
-    let resume_text = crate::documents::latest_ready_text(&state, "RESUME");
-    let uploaded_job_description = crate::documents::latest_ready_text(&state, "JOB_DESCRIPTION");
-    let uploaded_additional_context = crate::documents::latest_ready_text(&state, "ADDITIONAL_CONTEXT");
-
-    let request = AskRequest {
-        question: ANALYZE_SCREEN_QUESTION_LABEL.to_string(),
-        conversation_history: history,
-        candidate_context: resume_text,
-        role: options.role,
-        company: options.company,
-        job_description: uploaded_job_description.or(options.job_description),
-        additional_context: uploaded_additional_context.or(options.additional_context),
-        answer_length: options.answer_length,
-        response_style: options.response_style,
-        english_level: options.english_level,
-        humanization: options.humanization,
-        llm_provider: options.llm_provider,
-        conversation_state: Some(conversation_state.clone()),
-    };
+    let request = build_ask_request(&state, ANALYZE_SCREEN_QUESTION_LABEL.to_string(), options, history, conversation_state.clone());
 
     let app_for_events = app.clone();
     let llm_timer = Stopwatch::start();
@@ -616,5 +653,15 @@ mod tests {
         let options: AskOptions = serde_json::from_str(r#"{"answerLength":"brief"}"#).unwrap();
         assert_eq!(options.answer_length, "brief");
         assert_eq!(options.response_style, "natural");
+        assert_eq!(options.mode, "interview");
+    }
+
+    #[test]
+    fn ask_options_deserialize_meeting_fields() {
+        let options: AskOptions =
+            serde_json::from_str(r#"{"mode":"meeting","meetingTopic":"Q3 roadmap","participants":"Priya"}"#).unwrap();
+        assert_eq!(options.mode, "meeting");
+        assert_eq!(options.meeting_topic.as_deref(), Some("Q3 roadmap"));
+        assert_eq!(options.participants.as_deref(), Some("Priya"));
     }
 }

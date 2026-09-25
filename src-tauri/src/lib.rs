@@ -18,6 +18,7 @@ mod main_window;
 mod notes_mode;
 mod overlay_window;
 mod personal;
+mod shortcuts;
 mod state;
 mod tls_init;
 // Public alongside `audio` so `src/bin/pipeline_test.rs` can drive the real
@@ -108,19 +109,20 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
+                .with_handler(|app, shortcut, event| {
                     // Only react on key-down, not key-up, so holding the
-                    // combination doesn't repeatedly toggle the overlay.
+                    // combination doesn't repeatedly toggle anything. Which
+                    // action a combination runs is user-configurable — see
+                    // `shortcuts`.
                     if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                        if let Err(err) = interview_mode::toggle_overlay_window(app) {
-                            log::warn!("failed to toggle Interview Mode overlay via hotkey: {err}");
-                        }
+                        shortcuts::handle(app, shortcut);
                     }
                 })
                 .build(),
         )
         .manage(AppState::default())
         .manage(history::HistoryStore::default())
+        .manage(shortcuts::ShortcutManager::default())
         .setup(|app| {
             // Hardware detection + performance mode load first, synchronously
             // — cheap (a few sysinfo/DXGI/IOCTL calls, no network/process
@@ -165,14 +167,11 @@ pub fn run() {
             );
             interview_mode::spawn_capture_protection_watchdog(app.handle().clone());
 
-            use tauri_plugin_global_shortcut::GlobalShortcutExt;
-            // Ctrl+Shift+Space: show/hide the Interview Mode overlay (spec
-            // section 19/21). Registration failure (e.g. the combination is
-            // already claimed by another application) is logged, not fatal —
-            // the overlay remains reachable from the main window's button.
-            if let Err(err) = app.global_shortcut().register("Ctrl+Shift+Space") {
-                log::warn!("failed to register Ctrl+Shift+Space global hotkey: {err}");
-            }
+            // Global shortcuts (overlay toggle, default Ctrl+Shift+Space; main
+            // window toggle, unbound by default) — user-configurable from
+            // Settings → Shortcuts. Registration failure (e.g. a combination
+            // already claimed by another application) is logged, not fatal.
+            shortcuts::init(&app.handle().clone());
 
             // Recovers transcripts a crashed/killed run left behind, then keeps
             // retrying any that haven't reached the server yet.
@@ -202,6 +201,10 @@ pub fn run() {
             commands::analyze_interview,
             commands::analyze_setup_context,
             documents::upload_document,
+            documents::upload_image_document,
+            shortcuts::get_shortcuts,
+            shortcuts::set_shortcut,
+            shortcuts::suspend_shortcuts,
             documents::get_document_text,
             documents::list_documents,
             documents::delete_document,

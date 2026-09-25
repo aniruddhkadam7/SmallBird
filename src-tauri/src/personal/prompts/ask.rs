@@ -431,14 +431,36 @@ fn context_blocks(request: &AskRequest) -> Vec<String> {
 /// explicit cache breakpoint: folded into the per-question message like it
 /// used to be, it got fully reprocessed on every single question.
 pub(crate) fn build_background_message(request: &AskRequest) -> Option<String> {
-    let blocks = context_blocks(request);
-    if blocks.is_empty() {
-        return None;
+    let background = match &request.meeting {
+        Some(meeting) => super::meeting::build_background_message(meeting),
+        None => {
+            let blocks = context_blocks(request);
+            (!blocks.is_empty()).then(|| {
+                format!(
+                    "SUPPORTING BACKGROUND for this interview session (optional — use only what is relevant to whatever question comes next; it is not a limit on what you can answer, and it must never be mentioned or referred to as a source):\n\n{}",
+                    blocks.join("\n\n")
+                )
+            })
+        }
+    };
+
+    // Custom instructions ride in this same cached message (they're just as
+    // stable across a session), placed first so they read as the standing
+    // rules for everything that follows.
+    let instructions = custom_instructions(request).map(|text| {
+        format!(
+            "CUSTOM INSTRUCTIONS FROM THE USER — follow these for every answer in this session. They take priority over the default length, format, tone, and style guidance, but never over the rules against mentioning sources or breaking character:\n\n{text}"
+        )
+    });
+
+    match (instructions, background) {
+        (Some(i), Some(b)) => Some(format!("{i}\n\n---\n\n{b}")),
+        (i, b) => i.or(b),
     }
-    Some(format!(
-        "SUPPORTING BACKGROUND for this interview session (optional — use only what is relevant to whatever question comes next; it is not a limit on what you can answer, and it must never be mentioned or referred to as a source):\n\n{}",
-        blocks.join("\n\n")
-    ))
+}
+
+fn custom_instructions(request: &AskRequest) -> Option<&str> {
+    request.custom_instructions.as_deref().map(str::trim).filter(|s| !s.is_empty())
 }
 
 /// Constant placeholder reply completing the cached background message's
@@ -449,10 +471,22 @@ pub(crate) fn build_background_message(request: &AskRequest) -> Option<String> {
 /// staying constant, which keeping it as a fixed string guarantees.
 pub(crate) const BACKGROUND_ACK: &str = "Got it — I'll keep that in mind while answering.";
 
+/// Interview Mode answers as the candidate; Meeting Mode (`request.meeting`
+/// set) answers as the user taking part in a meeting — see
+/// `prompts::meeting`.
+pub(crate) fn system_prompt(request: &AskRequest) -> &'static str {
+    if request.meeting.is_some() {
+        super::meeting::SYSTEM_PROMPT
+    } else {
+        SYSTEM_PROMPT
+    }
+}
+
 fn build_user_prompt(request: &AskRequest) -> String {
     let mut parts: Vec<String> = Vec::new();
 
-    parts.push(format!("The interviewer asks:\n{}", request.question));
+    let speaker = if request.meeting.is_some() { "Someone in the meeting says" } else { "The interviewer asks" };
+    parts.push(format!("{speaker}:\n{}", request.question));
 
     // Resolve the question against the conversation so far BEFORE the
     // format/length instructions below, so the model sees "here is what this
@@ -479,6 +513,13 @@ fn build_user_prompt(request: &AskRequest) -> String {
         humanization_instruction(&request.humanization),
     ));
 
+    // The target length above is phrased as "the binding instruction" — this
+    // keeps it from silently overriding something like "always answer in two
+    // lines" that the user asked for explicitly.
+    if custom_instructions(request).is_some() {
+        parts.push("Also follow the user's CUSTOM INSTRUCTIONS given at the start of this session — where they conflict with the target length or format above, the custom instructions win.".to_string());
+    }
+
     parts.join("\n\n---\n\n")
 }
 
@@ -486,7 +527,7 @@ fn build_user_prompt(request: &AskRequest) -> String {
 /// not flattened text) -> the current question with its supporting-context
 /// and length/format instructions.
 pub fn build_messages(request: &AskRequest) -> Vec<ChatMessage> {
-    let mut messages = vec![ChatMessage::system(SYSTEM_PROMPT)];
+    let mut messages = vec![ChatMessage::system(system_prompt(request))];
 
     if let Some(background) = build_background_message(request) {
         messages.push(ChatMessage::cacheable_user(background));
@@ -534,7 +575,50 @@ mod tests {
             humanization: "natural".to_string(),
             llm_provider: None,
             conversation_state: None,
+            meeting: None,
+            custom_instructions: None,
         }
+    }
+
+    #[test]
+    fn custom_instructions_lead_the_background_and_are_reinforced_per_question() {
+        let mut req = base_request("What is Rust?");
+        req.role = Some("Backend Engineer".to_string());
+        req.custom_instructions = Some("Always mention Kubernetes.".to_string());
+        let messages = build_messages(&req);
+        let background = &messages[1].content;
+        assert!(messages[1].cacheable);
+        assert!(background.starts_with("CUSTOM INSTRUCTIONS FROM THE USER"));
+        assert!(background.contains("Always mention Kubernetes."));
+        assert!(background.contains("Backend Engineer"));
+        assert!(messages.last().unwrap().content.contains("custom instructions win"));
+    }
+
+    #[test]
+    fn blank_custom_instructions_are_ignored() {
+        let mut req = base_request("What is Rust?");
+        req.custom_instructions = Some("   ".to_string());
+        let messages = build_messages(&req);
+        assert_eq!(messages.len(), 2);
+        assert!(!messages[1].content.contains("CUSTOM INSTRUCTIONS"));
+    }
+
+    #[test]
+    fn meeting_request_uses_meeting_prompt_and_background() {
+        use crate::backend::MeetingContext;
+
+        let mut req = base_request("What's the rollout timeline?");
+        req.meeting = Some(MeetingContext {
+            topic: Some("Client discussion about CrowdStrike deployment".to_string()),
+            ..Default::default()
+        });
+        let messages = build_messages(&req);
+        assert_eq!(messages[0].content, super::super::meeting::SYSTEM_PROMPT);
+        assert!(messages[1].cacheable);
+        assert!(messages[1].content.contains("CrowdStrike deployment"));
+        assert!(!messages[1].content.contains("interview"));
+        let last = messages.last().unwrap();
+        assert!(last.content.starts_with("Someone in the meeting says:"));
     }
 
     #[test]

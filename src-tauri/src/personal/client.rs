@@ -11,7 +11,7 @@ use crate::backend::{
     SetupAnalysisResponse,
 };
 
-use super::prompts::{analysis, ask, notes, screen, setup, state_tracker, ChatMessage};
+use super::prompts::{analysis, ask, image_context, notes, screen, setup, state_tracker, ChatMessage};
 use super::provider::LlmProvider;
 use super::providers::{anthropic, openai};
 
@@ -121,6 +121,14 @@ impl DirectLlmClient {
         })
         .await?;
         Ok(full_answer)
+    }
+
+    /// Transcribes an image attached as context (see `prompts::image_context`)
+    /// into plain text, once, at attach time.
+    pub async fn transcribe_image(&self, image_png_base64: String) -> Result<String, String> {
+        let messages = image_context::build_messages(image_png_base64);
+        let text = self.generate(&messages, image_context::TEMPERATURE, image_context::MAX_TOKENS).await?;
+        Ok(text.trim().to_string())
     }
 
     /// Updates the persisted conversation-state snapshot (topic/entity/

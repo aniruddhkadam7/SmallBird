@@ -5,8 +5,10 @@ import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import smallbirdLogo from "./assets/smallbird-logo.png";
 import {
+  countFilledSections,
   DocumentContext,
   emptyDocumentContextState,
+  mergeTextUploads,
   uploadDocumentContext,
   type DocumentContextState,
 } from "./DocumentContext";
@@ -14,6 +16,7 @@ import { Account } from "./Account";
 import { SettingsPopover } from "./SettingsPopover";
 import { LowEndHardwareBanner } from "./LowEndHardwareBanner";
 import { HeaderDropdown } from "./HeaderDropdown";
+import { ExpandPanel } from "./ExpandPanel";
 import { loadOverlaySettings, saveOverlaySettings } from "./overlaySettings";
 import { CompanySelect } from "./CompanySelect";
 import { Button, Spinner } from "./ui";
@@ -28,14 +31,20 @@ import {
   IconSettings,
 } from "./Icons";
 import { IconAnthropic, IconDeepSeek, IconOpenAI } from "./ProviderIcons";
-import { INTERVIEW_CONTEXT_SECTIONS } from "./headerPopups";
+import { INSTRUCTIONS_SECTION_KEY, INTERVIEW_CONTEXT_SECTIONS, MEETING_CONTEXT_SECTIONS } from "./headerPopups";
 import { loadLlmProvider, saveLlmProvider, type LlmProvider } from "./llmProviderSetting";
+import { loadSessionMode, saveSessionMode, type SessionMode } from "./sessionMode";
 import { getAuthSession, type AuthSessionInfo } from "./auth";
 import { checkForUpdate, installUpdate } from "./autoUpdate";
 import { AudioTestStatus, useAudioTest } from "./AudioTest";
 
 type SessionState = "IDLE" | "STARTING" | "LISTENING";
-type Popover = "MODEL" | "CONTEXT" | "SETTINGS" | "ACCOUNT" | "START_SETUP" | null;
+type Popover = "MODE" | "MODEL" | "CONTEXT" | "SETTINGS" | "ACCOUNT" | "START_SETUP" | null;
+
+const SESSION_MODES: { value: SessionMode; label: string; description: string }[] = [
+  { value: "interview", label: "Interview", description: "Answers as you, the candidate" },
+  { value: "meeting", label: "Meeting", description: "Suggests what to say in a meeting" },
+];
 
 // Only "openai" and "anthropic" have a real backend implementation (see
 // backend/supabase/functions/llm-proxy's PROVIDER_URLS). "gemini" was
@@ -49,6 +58,30 @@ const LLM_PROVIDERS: { value: LlmProvider; label: string; icon: typeof IconOpenA
   { value: "openai", label: "OpenAI", icon: IconOpenAI, available: true },
   { value: "deepseek", label: "DeepSeek", icon: IconDeepSeek, available: false },
 ];
+
+const instructionsStorageKey = (mode: SessionMode) => `smallbird:custom-instructions:${mode}`;
+
+function saveInstructions(mode: SessionMode, text: string): void {
+  try {
+    window.localStorage.setItem(instructionsStorageKey(mode), text);
+  } catch {
+    // localStorage unavailable — instructions just won't survive a restart.
+  }
+}
+
+/// Pre-fills the Custom instructions box with what was saved last time. It
+/// starts un-uploaded (uploadedText ""), so the next Start sends it.
+function withSavedInstructions(state: DocumentContextState, mode: SessionMode): DocumentContextState {
+  let saved = "";
+  try {
+    saved = window.localStorage.getItem(instructionsStorageKey(mode)) ?? "";
+  } catch {
+    // Fall through with nothing saved.
+  }
+  const section = state[INSTRUCTIONS_SECTION_KEY];
+  if (!saved || !section) return state;
+  return { ...state, [INSTRUCTIONS_SECTION_KEY]: { ...section, text: saved } };
+}
 
 // Deterministic hash-to-hue so the same email always gets the same avatar
 // color across sessions — mirrors the website's account-menu.tsx pattern so
@@ -72,9 +105,31 @@ function App() {
   const [isMaximized, setIsMaximized] = useState(false);
   const audioTest = useAudioTest();
 
+  const [sessionMode, setSessionMode] = useState<SessionMode>(() => loadSessionMode());
+  const isMeeting = sessionMode === "meeting";
+
   const [interviewContext, setInterviewContext] = useState<DocumentContextState>(() =>
-    emptyDocumentContextState(INTERVIEW_CONTEXT_SECTIONS),
+    withSavedInstructions(emptyDocumentContextState(INTERVIEW_CONTEXT_SECTIONS), "interview"),
   );
+  // Kept separate from interviewContext (and using its own document types)
+  // so switching modes never mixes a resume into a meeting or vice versa.
+  const [meetingContext, setMeetingContext] = useState<DocumentContextState>(() =>
+    withSavedInstructions(emptyDocumentContextState(MEETING_CONTEXT_SECTIONS), "meeting"),
+  );
+  const contextSections = isMeeting ? MEETING_CONTEXT_SECTIONS : INTERVIEW_CONTEXT_SECTIONS;
+  const contextState = isMeeting ? meetingContext : interviewContext;
+  const setContextState = isMeeting ? setMeetingContext : setInterviewContext;
+  const attachedMeetingSections = countFilledSections(
+    MEETING_CONTEXT_SECTIONS.filter((s) => s.key !== INSTRUCTIONS_SECTION_KEY),
+    meetingContext,
+  );
+
+  // Custom instructions are a standing preference, not per-session material
+  // like an agenda — remember each mode's across app restarts.
+  const interviewInstructions = interviewContext[INSTRUCTIONS_SECTION_KEY]?.text ?? "";
+  const meetingInstructions = meetingContext[INSTRUCTIONS_SECTION_KEY]?.text ?? "";
+  useEffect(() => saveInstructions("interview", interviewInstructions), [interviewInstructions]);
+  useEffect(() => saveInstructions("meeting", meetingInstructions), [meetingInstructions]);
 
   // "updating" replaces the entire window with a small "Updating…" screen
   // (see the early return in the JSX below) — no banner, no button, no
@@ -266,6 +321,7 @@ function App() {
   }, []);
 
   const closePopover = useCallback(() => setOpenPopover(null), []);
+  const expandedPanel = openPopover === "CONTEXT" || openPopover === "SETTINGS" ? openPopover : null;
 
   // The Test Audio result lives in the Interview details popover — closing it
   // ends any run in progress (releasing capture) and clears the old result.
@@ -290,8 +346,12 @@ function App() {
       // fire-and-forget, so a slow PDF extraction (or one that hadn't even
       // started yet) could lose the race against the interviewer's first
       // question, silently answering with no CV/JD context at all.
-      const uploaded = await uploadDocumentContext(INTERVIEW_CONTEXT_SECTIONS, interviewContext);
-      setInterviewContext(uploaded);
+      // Files/screenshots already uploaded when they were added — this only
+      // pushes typed text. A screenshot still being read when Start is
+      // pressed needn't be waited on: Ask AI reads documents live, so it's
+      // picked up on the first question after it finishes.
+      const uploaded = await uploadDocumentContext(contextSections, contextState);
+      setContextState(mergeTextUploads(uploaded));
 
       // Mints the session's Deepgram key and starts the metered
       // interview_sessions row server-side. Any rejection here (not logged
@@ -320,7 +380,7 @@ function App() {
       await invoke("show_interview_overlay");
       return true;
     },
-    [interviewContext, audioTest.cancel],
+    [contextSections, contextState, setContextState, audioTest.cancel],
   );
 
   const handleStart = useCallback(async () => {
@@ -330,6 +390,8 @@ function App() {
     closePopover();
     setStartRole("");
     setStartCompany("");
+    setStartMeetingTopic("");
+    setStartParticipants("");
     try {
       const started = await startInterview();
       setSessionState(started ? "LISTENING" : "IDLE");
@@ -347,12 +409,35 @@ function App() {
   // Start is actually pressed, not on every keystroke.
   const [startRole, setStartRole] = useState("");
   const [startCompany, setStartCompany] = useState("");
+  // Meeting Mode's start details — the purpose is the one required field
+  // (Start Meeting stays disabled without it); participants are optional.
+  const [startMeetingTopic, setStartMeetingTopic] = useState("");
+  const [startParticipants, setStartParticipants] = useState("");
 
   const handleConfirmStart = useCallback(async () => {
     const current = loadOverlaySettings();
-    saveOverlaySettings({ ...current, role: startRole.trim(), company: startCompany.trim() });
+    if (isMeeting) {
+      if (!startMeetingTopic.trim()) return;
+      saveOverlaySettings({
+        ...current,
+        mode: "meeting",
+        role: "",
+        company: "",
+        meetingTopic: startMeetingTopic.trim(),
+        participants: startParticipants.trim(),
+      });
+    } else {
+      saveOverlaySettings({
+        ...current,
+        mode: "interview",
+        role: startRole.trim(),
+        company: startCompany.trim(),
+        meetingTopic: "",
+        participants: "",
+      });
+    }
     await handleStart();
-  }, [startRole, startCompany, handleStart]);
+  }, [isMeeting, startRole, startCompany, startMeetingTopic, startParticipants, handleStart]);
 
   // "Skip" on the details prompt — must also clear any role/company saved
   // from a *previous* interview. Without this, skipping just reused
@@ -361,7 +446,7 @@ function App() {
   // where the user deliberately chose not to set one this time.
   const handleSkipStart = useCallback(async () => {
     const current = loadOverlaySettings();
-    saveOverlaySettings({ ...current, role: "", company: "" });
+    saveOverlaySettings({ ...current, mode: "interview", role: "", company: "", meetingTopic: "", participants: "" });
     await handleStart();
   }, [handleStart]);
 
@@ -430,7 +515,9 @@ function App() {
   }, []);
 
   return (
-    <main className={`app-shell ${isMaximized ? "" : "app-shell-compact"}`}>
+    <main
+      className={`app-shell ${isMaximized ? "" : "app-shell-compact"}${expandedPanel ? " panel-expanded" : ""}`}
+    >
       <div className="title-bar" data-tauri-drag-region>
         <div className="window-controls">
           <button className="window-control-btn" onClick={handleMinimize} aria-label="Minimize" title="Minimize">
@@ -527,6 +614,42 @@ function App() {
 
           <div className="dropdown-anchor">
             <button
+              className="compact-header-btn"
+              onClick={() => togglePopover("MODE")}
+              disabled={sessionState !== "IDLE"}
+              aria-haspopup="menu"
+              aria-expanded={openPopover === "MODE"}
+              title="Interview or meeting — changes what Start asks for and how the AI answers"
+            >
+              <span>{isMeeting ? "Meeting" : "Interview"}</span>
+              <IconChevronDown />
+            </button>
+            {openPopover === "MODE" && (
+              <HeaderDropdown onClose={closePopover} className="header-dropdown-menu header-dropdown-model">
+                <div role="menu">
+                  {SESSION_MODES.map((m) => (
+                    <button
+                      key={m.value}
+                      role="menuitemradio"
+                      aria-checked={sessionMode === m.value}
+                      className={`dropdown-item${sessionMode === m.value ? " active" : ""}`}
+                      title={m.description}
+                      onClick={() => {
+                        setSessionMode(m.value);
+                        saveSessionMode(m.value);
+                        closePopover();
+                      }}
+                    >
+                      <span>{m.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </HeaderDropdown>
+            )}
+          </div>
+
+          <div className="dropdown-anchor">
+            <button
               className="compact-header-btn icon"
               onClick={() => togglePopover("CONTEXT")}
               title="Context"
@@ -536,28 +659,6 @@ function App() {
               <IconAttachment />
               <span>Context</span>
             </button>
-            {openPopover === "CONTEXT" && (
-              <HeaderDropdown onClose={closePopover} className="header-dropdown-panel header-dropdown-wide">
-                <div className="popover-overlay">
-                  <div className="popover" role="dialog" aria-label="Context">
-                    <div className="popover-header">
-                      <span className="setup-section-label">Attach context</span>
-                      <button className="modal-close-btn" onClick={closePopover} aria-label="Close">
-                        ✕
-                      </button>
-                    </div>
-                    <div className="popover-body">
-                      <DocumentContext
-                        sections={INTERVIEW_CONTEXT_SECTIONS}
-                        state={interviewContext}
-                        onChange={setInterviewContext}
-                        isLive={sessionState === "LISTENING"}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </HeaderDropdown>
-            )}
           </div>
 
           {sessionState === "LISTENING" ? (
@@ -591,13 +692,69 @@ function App() {
               {openPopover === "START_SETUP" && (
                 <HeaderDropdown onClose={closePopover} className="header-dropdown-panel header-dropdown-wide header-dropdown-start">
                   <div className="popover-overlay">
-                    <div className="popover" role="dialog" aria-label="Interview details">
+                    <div className="popover" role="dialog" aria-label={isMeeting ? "Meeting context" : "Interview details"}>
                       <div className="popover-header">
-                        <span className="setup-section-label">Interview details</span>
+                        <span className="setup-section-label">{isMeeting ? "Meeting Context" : "Interview details"}</span>
                         <button className="modal-close-btn" onClick={closePopover} aria-label="Close">
                           ✕
                         </button>
                       </div>
+                      {isMeeting ? (
+                        <div className="popover-body start-setup-body">
+                          <div className="setup-identity-field">
+                            <label className="setup-section-label" htmlFor="start-setup-meeting-topic">
+                              What is this meeting about?
+                            </label>
+                            <input
+                              id="start-setup-meeting-topic"
+                              className="setup-input"
+                              type="text"
+                              value={startMeetingTopic}
+                              placeholder="e.g. Client discussion about endpoint security"
+                              autoFocus
+                              onChange={(e) => setStartMeetingTopic(e.target.value)}
+                              onKeyDown={(e) => e.key === "Enter" && handleConfirmStart()}
+                            />
+                          </div>
+                          <div className="setup-identity-field">
+                            <label className="setup-section-label" htmlFor="start-setup-participants">
+                              Participants <span className="setup-section-optional">Optional</span>
+                            </label>
+                            <input
+                              id="start-setup-participants"
+                              className="setup-input"
+                              type="text"
+                              value={startParticipants}
+                              placeholder="e.g. Priya (client CTO), Rahul"
+                              onChange={(e) => setStartParticipants(e.target.value)}
+                              onKeyDown={(e) => e.key === "Enter" && handleConfirmStart()}
+                            />
+                          </div>
+                          <div className="setup-identity-field">
+                            <label className="setup-section-label">
+                              Add context <span className="setup-section-optional">Optional</span>
+                              {attachedMeetingSections > 0 && (
+                                <span className="setup-section-status setup-section-status-ready">
+                                  {" "}
+                                  {attachedMeetingSections} added
+                                </span>
+                              )}
+                            </label>
+                            <div className="meeting-context-actions">
+                              <Button variant="secondary" size="sm" onClick={() => setOpenPopover("CONTEXT")}>
+                                📄 Documents & screenshots
+                              </Button>
+                              <Button variant="secondary" size="sm" onClick={() => setOpenPopover("CONTEXT")}>
+                                📋 Add agenda
+                              </Button>
+                              <Button variant="secondary" size="sm" onClick={() => setOpenPopover("CONTEXT")}>
+                                🧠 Knowledge base
+                              </Button>
+                            </div>
+                          </div>
+                          <AudioTestStatus state={audioTest.state} busy={audioTest.busy} onRetry={audioTest.start} />
+                        </div>
+                      ) : (
                       <div className="popover-body start-setup-body">
                         <div className="setup-identity-field">
                           <label className="setup-section-label" htmlFor="start-setup-company">
@@ -624,6 +781,7 @@ function App() {
                         </p>
                         <AudioTestStatus state={audioTest.state} busy={audioTest.busy} onRetry={audioTest.start} />
                       </div>
+                      )}
                       <div className="popover-footer">
                         <Button
                           variant="secondary"
@@ -634,11 +792,18 @@ function App() {
                         >
                           {audioTest.state.phase === "listening" || audioTest.state.phase === "connecting" ? "🔴 Listening..." : "🔊 Test Audio"}
                         </Button>
-                        <Button variant="ghost" onClick={handleSkipStart}>
-                          Skip
-                        </Button>
-                        <Button variant="primary" onClick={handleConfirmStart}>
-                          Start Interview
+                        {!isMeeting && (
+                          <Button variant="ghost" onClick={handleSkipStart}>
+                            Skip
+                          </Button>
+                        )}
+                        <Button
+                          variant="primary"
+                          onClick={handleConfirmStart}
+                          disabled={isMeeting && !startMeetingTopic.trim()}
+                          title={isMeeting && !startMeetingTopic.trim() ? "Say what the meeting is about first" : undefined}
+                        >
+                          {isMeeting ? "Start Meeting" : "Start Interview"}
                         </Button>
                       </div>
                     </div>
@@ -659,11 +824,6 @@ function App() {
             >
               <IconSettings />
             </button>
-            {openPopover === "SETTINGS" && (
-              <HeaderDropdown onClose={closePopover} className="header-dropdown-panel header-dropdown-settings">
-                <SettingsPopover onClose={closePopover} />
-              </HeaderDropdown>
-            )}
           </div>
 
           <div className="dropdown-anchor">
@@ -706,6 +866,39 @@ function App() {
           </div>
         </div>
       </header>
+
+      {/* Context and Settings open as part of the bar itself — it expands
+          downward to fit them and collapses back when closed (see
+          ExpandPanel), rather than as separate floating popups. */}
+      <ExpandPanel panelKey={expandedPanel} onClose={closePopover}>
+        {expandedPanel === "SETTINGS" ? (
+          <SettingsPopover onClose={closePopover} />
+        ) : (
+          <div className="popover" role="dialog" aria-label="Context">
+            <div className="popover-header">
+              <span className="setup-section-label">{isMeeting ? "Meeting context" : "Interview context"}</span>
+              <button className="modal-close-btn" onClick={closePopover} aria-label="Close">
+                ✕
+              </button>
+            </div>
+            <div className="popover-body">
+              <DocumentContext
+                sections={contextSections}
+                state={contextState}
+                onChange={setContextState}
+                isLive={sessionState === "LISTENING"}
+              />
+            </div>
+            {isMeeting && sessionState === "IDLE" && (
+              <div className="popover-footer">
+                <Button variant="primary" onClick={() => setOpenPopover("START_SETUP")}>
+                  Back to meeting setup
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </ExpandPanel>
 
       {activeElsewhereMessage ? (
         <div className="error compact-header-error" style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
