@@ -20,6 +20,18 @@ interface Transcript {
   turns: Turn[]
 }
 
+/// The desktop app records a Meeting Mode session with role "Meeting: <topic>"
+/// (interview_transcripts has no mode column), so that prefix is how the
+/// dashboard tells meetings apart from interviews — the other speaker in a
+/// meeting is a participant, not an interviewer.
+function isMeeting(transcript: Transcript) {
+  return transcript.role?.startsWith("Meeting") ?? false
+}
+
+function speakerLabel(transcript: Transcript) {
+  return isMeeting(transcript) ? "Participant" : "Interviewer"
+}
+
 function formatDate(ms: number) {
   return new Date(ms).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()
 }
@@ -47,7 +59,7 @@ function transcriptText(transcript: Transcript): string {
     "",
   ]
   transcript.turns.forEach((turn) => {
-    lines.push("Interviewer:", turn.question, "", "Smallbird:", turn.answer, "")
+    lines.push(`${speakerLabel(transcript)}:`, turn.question, "", "Smallbird:", turn.answer, "")
   })
   return lines.join("\n")
 }
@@ -103,7 +115,7 @@ function TranscriptModal({ transcript, onClose }: { transcript: Transcript; onCl
           {transcript.turns.map((turn, i) => (
             <div key={i} className="flex flex-col gap-3 border-t border-border pt-5 first:border-t-0 first:pt-0">
               <div className="rounded-lg border border-border bg-foreground/[0.03] px-3.5 py-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Interviewer</div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{speakerLabel(transcript)}</div>
                 <p className="mt-1 text-sm text-foreground">{turn.question}</p>
               </div>
               <div className="rounded-lg border border-blue-500/25 bg-blue-500/[0.07] px-3.5 py-3 dark:border-blue-400/25 dark:bg-blue-400/[0.08]">
@@ -171,7 +183,7 @@ function InterviewCard({ transcript, onView }: { transcript: Transcript; onView:
       <div className="flex items-center gap-2">
         <CompanyLogo company={transcript.company} />
         <div className="flex flex-col">
-          <span className="font-semibold text-foreground">{transcript.company ?? "Interview"}</span>
+          <span className="font-semibold text-foreground">{transcript.company ?? (isMeeting(transcript) ? "Meeting" : "Interview")}</span>
           {transcript.role && <span className="text-sm text-blue-600 dark:text-blue-400">{transcript.role}</span>}
         </div>
       </div>
