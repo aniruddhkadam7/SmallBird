@@ -83,10 +83,13 @@ export function BubbleWidget() {
           className="bubble-close-btn"
           onClick={(e) => {
             e.stopPropagation();
-            invoke("quit_app");
+            // Hides to the system tray instead of quitting, so global
+            // shortcuts keep working — the tray menu's "Quit Smallbird" is
+            // the real exit (see tray.rs).
+            invoke("hide_to_tray");
           }}
-          aria-label="Quit Smallbird"
-          title="Quit Smallbird"
+          aria-label="Close Smallbird (keeps running in the tray)"
+          title="Close (Smallbird keeps running in the tray — quit from the tray icon)"
         >
           ✕
         </button>

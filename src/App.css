@@ -801,6 +801,27 @@ body.compact-transparent {
   gap: 0.6rem;
 }
 
+.shortcut-autostart {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.shortcut-autostart input {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+}
+
+.shortcut-autostart > span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
 .shortcut-row {
   display: flex;
   flex-wrap: wrap;

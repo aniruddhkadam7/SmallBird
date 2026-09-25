@@ -95,10 +95,26 @@ export function ShortcutsPanel() {
   const [hint, setHint] = useState<string | null>(null);
   const [held, setHeld] = useState("");
 
+  // "Start with Windows" (autostart.rs) — lives here since its whole point
+  // is keeping these shortcuts available right after a reboot.
+  const [autostart, setAutostart] = useState<boolean | null>(null);
+
   useEffect(() => {
     invoke<ShortcutBindings>("get_shortcuts")
       .then(setBindings)
       .catch((e) => setError(String(e)));
+    invoke<boolean>("get_autostart")
+      .then(setAutostart)
+      .catch(() => setAutostart(null));
+  }, []);
+
+  const toggleAutostart = useCallback(async (enabled: boolean) => {
+    setError(null);
+    try {
+      setAutostart(await invoke<boolean>("set_autostart", { enabled }));
+    } catch (e) {
+      setError(String(e));
+    }
   }, []);
 
   const apply = useCallback(async (action: ShortcutAction, accelerator: string | null, reset = false) => {
@@ -196,8 +212,20 @@ export function ShortcutsPanel() {
   return (
     <div className="shortcuts-panel">
       <p className="setup-hint" style={{ margin: 0 }}>
-        Keyboard shortcuts that work from anywhere, even while another app is in front.
+        Keyboard shortcuts that work from anywhere, even while another app is in front. Closing Smallbird keeps
+        it running in the system tray so these keep working — quit it from the tray icon.
       </p>
+      {autostart !== null && (
+        <label className="shortcut-autostart">
+          <input type="checkbox" checked={autostart} onChange={(e) => toggleAutostart(e.target.checked)} />
+          <span>
+            <span className="shortcut-row-label">Start Smallbird when Windows starts</span>
+            <span className="setup-hint shortcut-row-description">
+              Starts quietly in the tray, so shortcuts work right after you turn on your PC.
+            </span>
+          </span>
+        </label>
+      )}
       {error && <p className="error">{error}</p>}
       {ACTIONS.map((a) => {
         const current = bindings?.[a.key] ?? null;

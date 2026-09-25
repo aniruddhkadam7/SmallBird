@@ -52,7 +52,11 @@ const TOP_MARGIN: f64 = 24.0;
 /// specifically so this can position it first — showing it already visible
 /// at its eventual default OS placement and then immediately moving it
 /// would be a visible jump/flash on every launch.
-pub fn position_top_center(app: &AppHandle) {
+///
+/// `show: false` positions it but leaves it hidden — used when Windows
+/// launched the app at login (see `autostart`), so it starts quietly in the
+/// tray and the window only appears once the user opens it.
+pub fn position_top_center(app: &AppHandle, show: bool) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
         return;
     };
@@ -66,8 +70,10 @@ pub fn position_top_center(app: &AppHandle) {
 
         let _ = window.set_position(LogicalPosition::new(x, y));
     }
-    let _ = window.show();
-    let _ = window.set_focus();
+    if show {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }
 
 /// No-op: the main window's real size is fixed (tauri.conf.json) and never

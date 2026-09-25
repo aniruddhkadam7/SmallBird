@@ -1,4 +1,5 @@
 mod analyzer;
+mod autostart;
 // Public so the `audio_probe` binary (src/bin/audio_probe.rs) can drive the
 // real capture path when measuring the pipeline, rather than a copy of it that
 // could drift from what actually ships.
@@ -21,6 +22,7 @@ mod personal;
 mod shortcuts;
 mod state;
 mod tls_init;
+mod tray;
 // Public alongside `audio` so `src/bin/pipeline_test.rs` can drive the real
 // recording pipeline headlessly instead of a reimplementation of it.
 pub mod stt;
@@ -105,6 +107,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![autostart::AUTOSTART_ARG]),
+        ))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(
@@ -149,7 +155,15 @@ pub fn run() {
                 windows_capture_protection::reconcile(&main_window, main_window::MAIN_WINDOW_LABEL, true);
             }
 
-            main_window::position_top_center(&app.handle().clone());
+            main_window::position_top_center(&app.handle().clone(), !autostart::launched_at_login());
+
+            // Tray icon: closing Smallbird hides it here instead of quitting,
+            // so global shortcuts keep working (see `tray`). Start-with-
+            // Windows is on by default for installed builds (see `autostart`).
+            if let Err(err) = tray::init(&app.handle().clone()) {
+                log::warn!("failed to create tray icon: {err}");
+            }
+            autostart::apply_default(&app.handle().clone());
 
             // Self-healing capture exclusion: `SetWindowDisplayAffinity` has
             // been observed to silently revert (monitor/DPI change, GPU
@@ -205,6 +219,9 @@ pub fn run() {
             shortcuts::get_shortcuts,
             shortcuts::set_shortcut,
             shortcuts::suspend_shortcuts,
+            tray::hide_to_tray,
+            autostart::get_autostart,
+            autostart::set_autostart,
             documents::get_document_text,
             documents::list_documents,
             documents::delete_document,

@@ -243,31 +243,27 @@ function App() {
     };
   }, []);
 
-  // Closing the main window (its own ✕, Alt+F4, etc.) previously just quit
-  // without ever telling the backend — same class of bug as the overlay's
-  // own close controls, but for the whole app. Intercepting the close lets
-  // this run one best-effort end_backend_session call first (safe/cheap to
-  // call even when no session is active — see end_backend_session's Rust
-  // doc) before actually closing. A true crash/force-kill still can't run
-  // this; that's what the backend's stale-session sweep is for.
-  //
-  // Ends with quit_app (Rust-side app.exit(0)) rather than
-  // appWindow.destroy(): once Interview Mode's overlay window has been
-  // opened at least once this session, it's only ever hidden afterward,
-  // never destroyed (see overlay_window.rs) — destroying just the main
-  // window left that hidden, skip_taskbar window alive and the whole
-  // process running invisibly in the background instead of actually
-  // quitting, which read as "the close button doesn't do anything."
+  // Closing the main window (its own ✕, Alt+F4, etc.) hides Smallbird to the
+  // system tray rather than quitting, so its global shortcuts keep working
+  // (see tray.rs — "Quit Smallbird" in the tray menu is the real exit). Any
+  // live session is still ended first, exactly as a real quit would:
+  // capture stops and end_backend_session finalizes the metered session
+  // (both safe/cheap no-ops when nothing is running). A true crash/force-
+  // kill still can't run this; that's what the backend's stale-session
+  // sweep is for.
   useEffect(() => {
     const appWindow = getCurrentWindow();
     const unlistenPromise = appWindow.onCloseRequested(async (event) => {
       event.preventDefault();
       try {
+        await invoke("stop_audio_capture").catch(() => {});
         await invoke("end_backend_session");
       } catch {
-        // Best-effort — never block the app from closing over this.
+        // Best-effort — never block closing over this.
       } finally {
-        await invoke("quit_app");
+        setSessionState("IDLE");
+        setOpenPopover(null);
+        await invoke("hide_to_tray");
       }
     });
     return () => {
