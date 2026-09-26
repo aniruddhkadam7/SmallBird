@@ -1171,9 +1171,13 @@ body.overlay-window #root {
 .overlay-error {
   flex: 0 0 auto;
   margin: 0;
-  padding: 6px 12px 10px;
-  color: #fca5a5;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: rgba(220, 38, 38, 0.95);
+  color: #fff;
   font-size: 0.85em;
+  font-weight: 500;
+  text-shadow: none;
 }
 
 /* Deliberately louder than .overlay-error (solid amber background, not just

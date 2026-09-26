@@ -10,6 +10,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { entitlementErrorResponse, requireEntitlement, userIdFromVerifiedJwt } from "../_shared/entitlement.ts";
 import { withCors } from "../_shared/cors.ts";
 import { isAllowedModel, MAX_BODY_BYTES, sanitizePayload, withinRateLimit } from "../_shared/llmguard.ts";
+import { endSessionIfTimeUp, TIME_UP_MESSAGE } from "../_shared/timelimit.ts";
 
 const guardAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -41,12 +42,17 @@ Deno.serve(withCors(async (req) => {
     const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearers+/i, "");
     // The rate check runs alongside the entitlement lookup, so it adds no
     // latency in front of the answer.
-    const [entitlement, allowed, raw] = await Promise.all([
+    const userId = jwt ? userIdFromVerifiedJwt(jwt) : null;
+    const [entitlement, allowed, timeUp, raw] = await Promise.all([
       requireEntitlement(req),
-      jwt ? withinRateLimit(guardAdmin, userIdFromVerifiedJwt(jwt)).catch(() => true) : Promise.resolve(true),
+      userId ? withinRateLimit(guardAdmin, userId).catch(() => true) : Promise.resolve(true),
+      // A session past its time gets no more answers (and is ended here),
+      // even if its app stopped sending heartbeats.
+      userId ? endSessionIfTimeUp(guardAdmin, userId).catch(() => false) : Promise.resolve(false),
       req.text(),
     ]);
     if (!allowed) return jsonError("Too many requests — please slow down and try again in a minute", 429);
+    if (timeUp) return jsonError(TIME_UP_MESSAGE, 402);
     // Minutes are deducted when a session ends, so a balance of 0 means
     // they're used up (a live session's own time is policed by
     // session-heartbeat).
