@@ -2772,24 +2772,316 @@ body.compact-transparent {
   margin-left: auto;
 }
 
-/* Solid, not a faint tint: messages like "you've used all your minutes"
-   have to read clearly over the window's translucent background. */
+/* A clear alert card — pale red with a strong red edge and dark red text —
+   so messages like "you've used all your minutes" read at a glance without
+   a harsh solid red block. */
 .error {
-  color: #fff;
+  color: #991b1b;
   font-size: 0.85rem;
   font-weight: 500;
   text-align: center;
-  background-color: var(--danger);
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-left: 4px solid var(--danger);
   border-radius: var(--radius-sm);
   padding: 0.5rem 0.8rem;
 }
 
-/* Buttons inside a banner (e.g. "End other session & continue") — a red
-   button would vanish on the solid red, so it turns white. */
-.error .btn.danger {
+/* ---------- Settings → Sessions (chat-app style history) ---------- */
+.sessions-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.sessions-panel-top {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.sessions-search {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sessions-dashboard-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.sessions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 2px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 440px;
+  overflow-y: auto;
+}
+
+.sessions-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sessions-item:hover {
+  border-color: #c7d2fe;
+}
+
+.sessions-item.open {
+  border-color: var(--accent);
+  box-shadow: 0 2px 10px rgba(59, 130, 246, 0.12);
+}
+
+.sessions-item-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.sessions-item-head:hover {
+  background: #f8fafc;
+}
+
+.sessions-item.open .sessions-item-head {
+  background: #eff6ff;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.sessions-item-title {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessions-item-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.sessions-mode {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.sessions-mode-interview {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.sessions-mode-meeting {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.sessions-mode-assistant {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.sessions-item-body {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.sessions-conversation {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #eef2f7;
+}
+
+.sessions-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sessions-turn-q,
+.sessions-turn-a {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.sessions-turn-label {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.sessions-turn-q .sessions-turn-label {
+  background: var(--accent);
+  color: #fff;
+}
+
+.sessions-turn-a .sessions-turn-label {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.sessions-turn-q p {
+  margin: 0;
+  padding: 7px 11px;
+  border-radius: 10px;
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  color: #1e3a8a;
+  font-weight: 600;
+  font-size: 0.84rem;
+  white-space: pre-wrap;
+}
+
+.sessions-answer {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
   background: #fff;
-  border-color: #fff;
-  color: var(--danger);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.sessions-answer > :first-child {
+  margin-top: 0;
+}
+
+.sessions-answer > :last-child {
+  margin-bottom: 0;
+}
+
+.sessions-answer p {
+  margin: 0 0 6px;
+}
+
+.sessions-answer ul,
+.sessions-answer ol {
+  margin: 0 0 6px;
+  padding-left: 1.3em;
+}
+
+.sessions-answer ul {
+  list-style: disc;
+}
+
+.sessions-answer ol {
+  list-style: decimal;
+}
+
+.sessions-answer li + li {
+  margin-top: 2px;
+}
+
+.sessions-answer strong {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.sessions-answer h1,
+.sessions-answer h2,
+.sessions-answer h3 {
+  margin: 8px 0 4px;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.sessions-answer code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  font-size: 0.9em;
+}
+
+.sessions-answer pre {
+  margin: 0 0 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sessions-answer pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+.sessions-answer table {
+  border-collapse: collapse;
+  margin: 0 0 6px;
+  font-size: 0.95em;
+}
+
+.sessions-answer th,
+.sessions-answer td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.sessions-answer th {
+  background: #f1f5f9;
+}
+
+.sessions-item-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Upgrade stands apart from the app's blue buttons: a light, warm amber. */
+.btn.upgrade-btn {
+  background: linear-gradient(180deg, #fde68a 0%, #fcd34d 100%);
+  border: 1px solid #f59e0b;
+  color: #78350f;
+  font-weight: 700;
+}
+
+.btn.upgrade-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #fcd34d 0%, #fbbf24 100%);
+  border-color: #d97706;
+  color: #78350f;
 }
 
 .error-with-action {
@@ -2800,10 +3092,6 @@ body.compact-transparent {
   flex-wrap: wrap;
 }
 
-.error .btn.ghost {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.6);
-}
 
 .hint {
   color: var(--text-muted);

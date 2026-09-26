@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import "./App.css";
 import smallbirdLogo from "./assets/smallbird-logo.png";
 import {
@@ -40,7 +40,8 @@ import {
 import { loadLlmProvider, saveLlmProvider, type LlmProvider } from "./llmProviderSetting";
 import { loadSessionMode, saveSessionMode, type SessionMode } from "./sessionMode";
 import { isOutOfMinutesMessage } from "./outOfMinutes";
-import { getAuthSession, type AuthSessionInfo } from "./auth";
+import { sessionDetails, type HistoryEntry } from "./SessionsPanel";
+import { getAuthSession, getEntitlement, type AuthSessionInfo } from "./auth";
 import { checkForUpdate, installUpdate } from "./autoUpdate";
 import { AudioTestStatus, useAudioTest } from "./AudioTest";
 
@@ -533,6 +534,72 @@ function App() {
     saveOverlaySettings({ ...current, mode: "assistant", role: "", company: "", meetingTopic: "", participants: "" });
     await handleStart();
   }, [handleStart]);
+
+  // An out-of-minutes message goes away by itself once there are minutes
+  // again (e.g. right after buying more on the website): while it's showing,
+  // the balance is re-checked every 15s and whenever this window regains
+  // focus. Nothing is polled when no such message is up.
+  const outOfMinutesShowing = isOutOfMinutesMessage(error);
+  useEffect(() => {
+    if (!outOfMinutesShowing) return;
+    let cancelled = false;
+    const check = () => {
+      getEntitlement()
+        .then((info) => {
+          if (!cancelled && info.remainingMinutes > 0) {
+            setError((current) => (isOutOfMinutesMessage(current) ? null : current));
+          }
+        })
+        .catch(() => {});
+    };
+    const timer = window.setInterval(check, 15000);
+    const unlistenFocus = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (focused) check();
+    });
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      unlistenFocus.then((f) => f());
+    };
+  }, [outOfMinutesShowing]);
+
+  // Settings → Sessions → "Continue this session": a new live session in
+  // that session's mode and details, with its conversation loaded into the
+  // overlay (the AI gets the recent turns as context, and new turns are
+  // saved into the same session).
+  const handleContinueSession = useCallback(
+    async (entry: HistoryEntry) => {
+      if (sessionStateRef.current !== "IDLE") {
+        setError("End the current session before continuing another one.");
+        return;
+      }
+      const { mode, role, company, meetingTopic } = sessionDetails(entry);
+      sessionStateRef.current = "STARTING";
+      setSessionMode(mode);
+      saveSessionMode(mode);
+      saveOverlaySettings({ ...loadOverlaySettings(), mode, role, company, meetingTopic, participants: "" });
+      // The mode's audio defaults before recording starts (the effect that
+      // normally sends these runs only after the mode change renders).
+      await invoke("set_source_defaults", { system: mode !== "assistant", mic: mode === "assistant" }).catch(() => {});
+      closePopover();
+      setError(null);
+      setActiveElsewhereMessage(null);
+      setSessionState("STARTING");
+      try {
+        const started = await startInterview(false, true, mode);
+        if (started) {
+          await emit("overlay:resume-session", entry);
+          setSessionState("LISTENING");
+        } else {
+          setSessionState("IDLE");
+        }
+      } catch (e) {
+        setError(String(e));
+        setSessionState("IDLE");
+      }
+    },
+    [startInterview, closePopover],
+  );
 
   // "Skip" on the details prompt — must also clear any role/company saved
   // from a *previous* interview. Without this, skipping just reused
@@ -1078,7 +1145,11 @@ function App() {
           ExpandPanel), rather than as separate floating popups. */}
       <ExpandPanel panelKey={expandedPanel} onClose={closePopover}>
         {expandedPanel === "SETTINGS" ? (
-          <SettingsPopover onClose={closePopover} />
+          <SettingsPopover
+            onClose={closePopover}
+            onContinueSession={handleContinueSession}
+            sessionRunning={sessionState !== "IDLE"}
+          />
         ) : (
           <div className="popover" role="dialog" aria-label="Context">
             <div className="popover-header">
@@ -1122,13 +1193,13 @@ function App() {
         error &&
         (isOutOfMinutesMessage(error) ? (
           <div className="error compact-header-error error-with-action">
-            <span>{error}</span>
-            <Button variant="danger" size="sm" onClick={() => invoke("open_upgrade").catch((e) => setError(String(e)))}>
+            <span>{error.replace(/^Error:\s*/, "")}</span>
+            <Button variant="primary" size="sm" className="upgrade-btn" onClick={() => invoke("open_upgrade").catch((e) => setError(String(e)))}>
               Upgrade
             </Button>
           </div>
         ) : (
-          <p className="error compact-header-error">{error}</p>
+          <p className="error compact-header-error">{error.replace(/^Error:\s*/, "")}</p>
         ))
       )}
 

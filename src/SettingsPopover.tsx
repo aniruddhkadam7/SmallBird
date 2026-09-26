@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
-import { invoke } from "@tauri-apps/api/core";
 import { PersonalizationPanel } from "./PersonalizationPanel";
 import { AttachedDocumentsPanel } from "./AttachedDocumentsPanel";
 import { ShortcutsPanel } from "./ShortcutsPanel";
-import { Button } from "./ui";
+import { SessionsPanel, type HistoryEntry } from "./SessionsPanel";
 
 type SettingsSection = "SESSIONS" | "PERSONALIZATION" | "SHORTCUTS" | "CONTEXT" | "PRIVACY" | "ABOUT";
 
@@ -19,6 +18,9 @@ const SECTIONS: { key: SettingsSection; label: string }[] = [
 
 interface Props {
   onClose: () => void;
+  /// Settings → Sessions' "Continue this session".
+  onContinueSession: (entry: HistoryEntry) => void;
+  sessionRunning: boolean;
 }
 
 /// Settings popover reached from the header's gear icon. Every section
@@ -35,7 +37,7 @@ interface Props {
 /// listed here — they live on the website dashboard (see the "Open
 /// Dashboard" button on the post-interview screen in InterviewOverlay.tsx),
 /// so Sessions just links out there instead of duplicating that list.
-export function SettingsPopover({ onClose }: Props) {
+export function SettingsPopover({ onClose, onContinueSession, sessionRunning }: Props) {
   const [section, setSection] = useState<SettingsSection>("SESSIONS");
   const [appVersion, setAppVersion] = useState<string | null>(null);
 
@@ -70,22 +72,7 @@ export function SettingsPopover({ onClose }: Props) {
 
           <div className="settings-popover-content">
             {section === "SESSIONS" && (
-              <div className="settings-sessions-panel">
-                <p className="setup-hint" style={{ margin: 0 }}>
-                  Your past interviews — transcripts and details — are saved to your account and viewable from the
-                  Smallbird dashboard on the web.
-                </p>
-                {/* The main app's own primary button (white text on blue) — this
-                    used the overlay's dark-theme button class, which rendered
-                    black text on blue in the light main window. */}
-                <Button
-                  variant="primary"
-                  style={{ marginTop: 12 }}
-                  onClick={() => invoke("open_dashboard").catch((e) => console.error("Failed to open dashboard:", e))}
-                >
-                  Open Dashboard
-                </Button>
-              </div>
+              <SessionsPanel onContinue={onContinueSession} sessionRunning={sessionRunning} />
             )}
             {section === "PERSONALIZATION" && <PersonalizationPanel />}
             {section === "SHORTCUTS" && <ShortcutsPanel />}

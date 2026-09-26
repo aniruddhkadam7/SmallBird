@@ -92,6 +92,9 @@ interface Turn {
   /// Answered with the Deep Answer model (slower, stronger reasoning) —
   /// shows a "Deep" badge and a "Thinking deeply…" state.
   deep?: boolean;
+  /// "speech" for a turn rebuilt from the raw transcript (see history.rs's
+  /// KIND_SPEECH) — kept when a continued session is saved again.
+  kind?: string | null;
   /// Thumbnails of the screenshots sent with this question, shown on its
   /// question card. Local-only.
   shots?: string[];
@@ -337,13 +340,17 @@ export function InterviewOverlay() {
   // speakerBuffer.ts's isEcho).
   const recentHeardRef = useRef<HeardSpeech[]>([]);
   const sessionStartedAtRef = useRef(Date.now());
+  // When the *saved record* began — the same as sessionStartedAtRef, except
+  // for a continued session, where it's the original session's start. (The
+  // live countdown always runs from sessionStartedAtRef, i.e. from now.)
+  const recordStartedAtRef = useRef(Date.now());
   // Stable id for the session currently in progress, generated once and
   // reused on every `save_interview_session` call for it (see the
   // turns-effect below and closeOverlay) — that's what makes each call an
   // upsert of the same row instead of a new one, so a transcript is durable
   // against a crash/quit mid-interview rather than only ever written once
   // at the end.
-  const sessionIdRef = useRef(crypto.randomUUID());
+  const sessionIdRef = useRef<string>(crypto.randomUUID());
   // How many completed turns have been saved so far for the current
   // session — only re-save when this count grows, so streaming updates to
   // an in-flight (still-pending) answer don't trigger redundant saves.
@@ -623,9 +630,9 @@ export function InterviewOverlay() {
     savedTurnCountRef.current = completed.length;
     invoke("save_interview_session", {
       id: sessionIdRef.current,
-      startedAtMs: sessionStartedAtRef.current,
+      startedAtMs: recordStartedAtRef.current,
       ...transcriptLabels(settings),
-      turns: completed.map((t) => ({ question: t.question, answer: t.answer, askedAtMs: t.askedAt })),
+      turns: completed.map((t) => ({ question: t.question, answer: t.answer, askedAtMs: t.askedAt, kind: t.kind ?? undefined })),
     }).catch((e) => console.error("Failed to save interview progress:", e));
   }, [turns, settings]);
 
@@ -781,6 +788,35 @@ export function InterviewOverlay() {
       if (quietTimer) window.clearTimeout(quietTimer);
     };
   }, []);
+  // Settings → Sessions → Continue: this session carries on an earlier one —
+  // its conversation shows here, the AI gets its recent turns as context, and
+  // new turns are saved into the same session (same id, original start).
+  useEffect(() => {
+    const unlisten = listen<{
+      id: string;
+      started_at_ms: number;
+      turns: { question: string; answer: string; askedAtMs?: number | null; kind?: string | null }[];
+    }>("overlay:resume-session", (event) => {
+      const entry = event.payload;
+      const restored: Turn[] = entry.turns.map((t, i) => ({
+        id: `${entry.id}-${i}`,
+        question: t.question,
+        answer: t.answer,
+        pending: false,
+        askedAt: t.askedAtMs ?? entry.started_at_ms,
+        kind: t.kind ?? null,
+      }));
+      sessionIdRef.current = entry.id;
+      recordStartedAtRef.current = entry.started_at_ms;
+      savedTurnCountRef.current = restored.filter((t) => t.answer.trim()).length;
+      setTurns(restored);
+      setViewIndex(null);
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+
   // A mode shortcut (Start Interview/Meeting/Assistant) was pressed: this
   // window was just shown and reset — take on that mode's wording and audio
   // icons now, before the main window gets to save it.
@@ -869,6 +905,7 @@ export function InterviewOverlay() {
       recentHeardRef.current = [];
       busyRef.current = false;
       sessionStartedAtRef.current = Date.now();
+      recordStartedAtRef.current = sessionStartedAtRef.current;
       sessionIdRef.current = crypto.randomUUID();
       savedTurnCountRef.current = 0;
       setElapsedSeconds(0);
@@ -1195,12 +1232,12 @@ export function InterviewOverlay() {
     setConfirmingClose(false);
     const completed = turns
       .filter((t) => !t.pending && !t.failed && t.answer.trim())
-      .map((t) => ({ question: t.question, answer: t.answer, askedAtMs: t.askedAt }));
+      .map((t) => ({ question: t.question, answer: t.answer, askedAtMs: t.askedAt, kind: t.kind ?? undefined }));
     if (completed.length > 0) {
       try {
         await invoke("save_interview_session", {
           id: sessionIdRef.current,
-          startedAtMs: sessionStartedAtRef.current,
+          startedAtMs: recordStartedAtRef.current,
           ...transcriptLabels(settings),
           turns: completed,
         });
@@ -1217,6 +1254,7 @@ export function InterviewOverlay() {
     partialsRef.current.clear();
     suppressFinalIdsRef.current.clear();
     sessionStartedAtRef.current = Date.now();
+    recordStartedAtRef.current = sessionStartedAtRef.current;
     sessionIdRef.current = crypto.randomUUID();
     savedTurnCountRef.current = 0;
     setTurns([]);
@@ -2022,7 +2060,7 @@ export function InterviewOverlay() {
                 <span>{error}</span>
                 <button
                   type="button"
-                  className="overlay-pill-button"
+                  className="overlay-pill-button upgrade"
                   onClick={() => invoke("open_upgrade").catch((e) => setError(String(e)))}
                 >
                   Upgrade
