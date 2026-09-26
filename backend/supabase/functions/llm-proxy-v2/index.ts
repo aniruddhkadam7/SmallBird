@@ -118,6 +118,12 @@ Deno.serve(withCors(async (req) => {
       req.text(),
     ]);
     if (!allowed) return jsonError("Too many requests — please slow down and try again in a minute", 429);
+    // Minutes are deducted when a session ends, so a balance of 0 means
+    // they're used up (a live session's own time is policed by
+    // session-heartbeat).
+    if (entitlement.remainingMinutes <= 0) {
+      return jsonError("You're out of minutes. Top up to keep getting answers.", 402);
+    }
     if (raw.length > MAX_BODY_BYTES) return jsonError("Request too large", 413);
     const { provider, payload: rawPayload, sessionId, requestKind } = JSON.parse(raw);
     if (!rawPayload || typeof rawPayload !== "object" || !isAllowedModel(rawPayload.model)) {

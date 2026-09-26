@@ -14,6 +14,10 @@
 
 import { entitlementErrorResponse, requireEntitlement } from "../_shared/entitlement.ts";
 import { withCors } from "../_shared/cors.ts";
+import { revokeSessionKey } from "../_shared/deepgram.ts";
+
+/// Shown in the app when a session is ended because its time ran out.
+const TIME_UP_MESSAGE = "You've used all your minutes, so this session has ended. Top up to keep going.";
 
 Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") {
@@ -26,6 +30,36 @@ Deno.serve(withCors(async (req) => {
     if (typeof sessionId !== "string") {
       return new Response(JSON.stringify({ error: "Invalid sessionId" }), {
         status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    // The session's time is up (its authorized duration — the balance it
+    // started with, capped at 4h — has passed): end and bill it here and
+    // revoke its speech key. The app ends the session when it gets this
+    // reply (every version handles SESSION_ENDED), so a session can't run
+    // past the user's minutes by more than one heartbeat interval.
+    const { data: current } = await entitlement.admin
+      .from("interview_sessions")
+      .select("started_at, authorized_max_duration_seconds, status")
+      .eq("id", sessionId)
+      .eq("user_id", entitlement.userId)
+      .maybeSingle();
+    if (
+      current?.status === "active" &&
+      Date.now() - new Date(current.started_at).getTime() >= current.authorized_max_duration_seconds * 1000
+    ) {
+      const { data: ended, error: endErr } = await entitlement.admin.rpc("end_and_bill_session", {
+        p_session_id: sessionId,
+        p_user_id: entitlement.userId,
+        p_status: "completed",
+        p_reason: "time_limit_reached",
+      });
+      if (endErr) throw endErr;
+      const row = Array.isArray(ended) ? ended[0] : null;
+      if (row) await revokeSessionKey(entitlement.admin, sessionId, row.deepgram_key_id);
+      return new Response(JSON.stringify({ error: TIME_UP_MESSAGE, code: "SESSION_ENDED" }), {
+        status: 410,
         headers: { "content-type": "application/json" },
       });
     }
@@ -48,11 +82,14 @@ Deno.serve(withCors(async (req) => {
         .single();
 
       const endedByNewLogin = row?.termination_reason === "force_ended_by_new_login";
+      const endedByTimeLimit = row?.termination_reason === "time_limit_reached";
       return new Response(
         JSON.stringify({
           error: endedByNewLogin
             ? "This session was ended because your account was used to start a new session elsewhere."
-            : "This session has already ended.",
+            : endedByTimeLimit
+              ? TIME_UP_MESSAGE
+              : "This session has already ended.",
           code: "SESSION_ENDED",
         }),
         { status: 410, headers: { "content-type": "application/json" } },

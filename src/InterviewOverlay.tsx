@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -62,6 +62,10 @@ function formatCountdownShort(totalSeconds: number): string {
 /// Under five minutes left, the counter turns amber so running out never
 /// comes as a surprise mid-answer.
 const LOW_TIME_SECONDS = 5 * 60;
+
+/// Shown when the countdown runs out (same wording the server uses when it
+/// ends a session for the same reason — see session-heartbeat).
+const TIME_UP_MESSAGE = "You've used all your minutes, so this session has ended. Top up to keep going.";
 
 interface OverlayCaptureStatus {
   excluded: boolean;
@@ -844,6 +848,7 @@ export function InterviewOverlay() {
       setSettingsOpen(false);
       setMuted(false);
       minimizedRef.current = false;
+      timeUpRef.current = false;
       setMinimized(false);
       setMiniStrip(false);
       setUnseenAnswer(false);
@@ -1268,6 +1273,23 @@ export function InterviewOverlay() {
       return !strip;
     });
   }, []);
+
+  // Time's up: save the conversation like End does, then end the session
+  // through the main window (it stops listening, closes this overlay — which
+  // ends the backend session — and shows why). The server enforces the same
+  // limit on its own via session-heartbeat; this just stops right on time
+  // instead of up to a heartbeat later.
+  const closeOverlayRef = useRef(closeOverlay);
+  closeOverlayRef.current = closeOverlay;
+  const timeUpRef = useRef(false);
+  useEffect(() => {
+    if (secondsLeft !== 0 || !captureActive || timeUpRef.current) return;
+    timeUpRef.current = true;
+    void (async () => {
+      await closeOverlayRef.current().catch(() => {});
+      await emit("stt:session-ended-elsewhere", TIME_UP_MESSAGE).catch(() => {});
+    })();
+  }, [secondsLeft, captureActive]);
 
   const requestClose = useCallback(() => {
     const hasConversation = turns.some((t) => !t.pending && t.answer.trim());
