@@ -2792,6 +2792,14 @@ body.compact-transparent {
   color: var(--danger);
 }
 
+.error-with-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .error .btn.ghost {
   color: #fff;
   border-color: rgba(255, 255, 255, 0.6);

@@ -39,6 +39,7 @@ import {
 } from "./headerPopups";
 import { loadLlmProvider, saveLlmProvider, type LlmProvider } from "./llmProviderSetting";
 import { loadSessionMode, saveSessionMode, type SessionMode } from "./sessionMode";
+import { isOutOfMinutesMessage } from "./outOfMinutes";
 import { getAuthSession, type AuthSessionInfo } from "./auth";
 import { checkForUpdate, installUpdate } from "./autoUpdate";
 import { AudioTestStatus, useAudioTest } from "./AudioTest";
@@ -1118,7 +1119,17 @@ function App() {
           </Button>
         </div>
       ) : (
-        error && <p className="error compact-header-error">{error}</p>
+        error &&
+        (isOutOfMinutesMessage(error) ? (
+          <div className="error compact-header-error error-with-action">
+            <span>{error}</span>
+            <Button variant="danger" size="sm" onClick={() => invoke("open_upgrade").catch((e) => setError(String(e)))}>
+              Upgrade
+            </Button>
+          </div>
+        ) : (
+          <p className="error compact-header-error">{error}</p>
+        ))
       )}
 
       {isMaximized && (

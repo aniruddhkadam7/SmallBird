@@ -281,23 +281,35 @@ async fn fetch_dashboard_handoff_token(access_token: &str) -> Option<String> {
 /// own command.
 #[tauri::command]
 pub async fn open_dashboard(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    open_website_page(&app, &state, "dashboard").await
+}
+
+/// "Upgrade" on an out-of-minutes message: the website's pricing page,
+/// signed in (same hand-off as the dashboard), so buying more minutes is one
+/// click away.
+#[tauri::command]
+pub async fn open_upgrade(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    open_website_page(&app, &state, "pricing").await
+}
+
+/// Opens `{WEBSITE_ORIGIN}/{page}` in the browser, signed in when possible.
+/// `page` is a fixed path from this file (letters only), never user input.
+async fn open_website_page(app: &AppHandle, state: &State<'_, AppState>, page: &str) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
 
-    let url = match crate::auth::current_access_token(&state).await {
+    let url = match crate::auth::current_access_token(state).await {
         Ok(access_token) => match fetch_dashboard_handoff_token(&access_token).await {
             // token_hash is a hex-encoded hash (Supabase's OTP hashed_token)
             // — always in [0-9a-f], so it needs no percent-encoding here.
-            Some(token_hash) => format!(
-                "{WEBSITE_ORIGIN}/auth/handoff?token_hash={token_hash}&next=%2Fdashboard"
-            ),
-            None => format!("{WEBSITE_ORIGIN}/dashboard"),
+            Some(token_hash) => format!("{WEBSITE_ORIGIN}/auth/handoff?token_hash={token_hash}&next=%2F{page}"),
+            None => format!("{WEBSITE_ORIGIN}/{page}"),
         },
-        Err(_) => format!("{WEBSITE_ORIGIN}/dashboard"),
+        Err(_) => format!("{WEBSITE_ORIGIN}/{page}"),
     };
 
     app.opener()
         .open_url(&url, None::<&str>)
-        .map_err(|e| format!("could not open dashboard: {e}"))
+        .map_err(|e| format!("could not open the website: {e}"))
 }
 
 /// Applied immediately when the user flips "Always on top" in the overlay's

@@ -1180,6 +1180,16 @@ body.overlay-window #root {
   text-shadow: none;
 }
 
+.overlay-error-with-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.overlay-error-with-action span {
+  flex: 1 1 auto;
+}
+
 /* Deliberately louder than .overlay-error (solid amber background, not just
    colored text) — this isn't a transient failure the user can shrug off, it
    means the window is not actually hidden from screen capture, so it needs

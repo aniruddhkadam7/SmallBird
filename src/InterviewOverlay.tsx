@@ -4,6 +4,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { isOutOfMinutesMessage } from "./outOfMinutes";
 import { CameraIcon, CloseIcon, MaximizeIcon, MinimizeIcon, RestoreSizeIcon, SpeakerIcon, VoiceIcon } from "./OverlayIcons";
 import { appendSpeech, hasSpeakerLabels, isEcho, rememberHeard, speakerLabel, type HeardSpeech } from "./speakerBuffer";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -2015,7 +2016,21 @@ export function InterviewOverlay() {
           </div>
           </div>
 
-          {error && <p className="overlay-error">{error}</p>}
+          {error &&
+            (isOutOfMinutesMessage(error) ? (
+              <div className="overlay-error overlay-error-with-action">
+                <span>{error}</span>
+                <button
+                  type="button"
+                  className="overlay-pill-button"
+                  onClick={() => invoke("open_upgrade").catch((e) => setError(String(e)))}
+                >
+                  Upgrade
+                </button>
+              </div>
+            ) : (
+              <p className="overlay-error">{error}</p>
+            ))}
         </>
       )}
     </div>
