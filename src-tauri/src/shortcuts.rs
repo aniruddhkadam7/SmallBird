@@ -1,8 +1,10 @@
 //! User-configurable global keyboard shortcuts (Settings → Shortcuts).
 //!
-//! Two actions can be bound: toggling the Interview/Meeting overlay (the
-//! long-standing Ctrl+Shift+Space default) and toggling the main Smallbird
-//! window (unbound until the user picks one). Bindings persist to
+//! Actions that can be bound: toggling the session overlay (the
+//! long-standing Ctrl+Shift+Space default — starts in whichever mode is
+//! selected), starting a session straight into a specific mode (Interview,
+//! Meeting, Assistant — unbound until the user picks them), and toggling the
+//! main Smallbird window (unbound until the user picks one). Bindings persist to
 //! `shortcuts.json` in the app data dir — same load/save-to-AppData-JSON
 //! pattern as `hardware::store` — and are registered at startup, before the
 //! frontend has even loaded, so they work from the first second.
@@ -25,6 +27,12 @@ pub struct ShortcutBindings {
     pub toggle_overlay: Option<String>,
     #[serde(default)]
     pub toggle_main_window: Option<String>,
+    #[serde(default)]
+    pub start_interview: Option<String>,
+    #[serde(default)]
+    pub start_meeting: Option<String>,
+    #[serde(default)]
+    pub start_assistant: Option<String>,
 }
 
 fn default_toggle_overlay() -> Option<String> {
@@ -33,7 +41,13 @@ fn default_toggle_overlay() -> Option<String> {
 
 impl Default for ShortcutBindings {
     fn default() -> Self {
-        Self { toggle_overlay: default_toggle_overlay(), toggle_main_window: None }
+        Self {
+            toggle_overlay: default_toggle_overlay(),
+            toggle_main_window: None,
+            start_interview: None,
+            start_meeting: None,
+            start_assistant: None,
+        }
     }
 }
 
@@ -41,15 +55,27 @@ impl Default for ShortcutBindings {
 enum Action {
     ToggleOverlay,
     ToggleMainWindow,
+    StartInterview,
+    StartMeeting,
+    StartAssistant,
 }
 
 impl Action {
-    const ALL: [Action; 2] = [Action::ToggleOverlay, Action::ToggleMainWindow];
+    const ALL: [Action; 5] = [
+        Action::ToggleOverlay,
+        Action::ToggleMainWindow,
+        Action::StartInterview,
+        Action::StartMeeting,
+        Action::StartAssistant,
+    ];
 
     fn from_wire(s: &str) -> Result<Self, String> {
         match s {
             "toggleOverlay" => Ok(Action::ToggleOverlay),
             "toggleMainWindow" => Ok(Action::ToggleMainWindow),
+            "startInterview" => Ok(Action::StartInterview),
+            "startMeeting" => Ok(Action::StartMeeting),
+            "startAssistant" => Ok(Action::StartAssistant),
             other => Err(format!("unknown shortcut action: {other}")),
         }
     }
@@ -58,6 +84,9 @@ impl Action {
         match self {
             Action::ToggleOverlay => b.toggle_overlay.as_ref(),
             Action::ToggleMainWindow => b.toggle_main_window.as_ref(),
+            Action::StartInterview => b.start_interview.as_ref(),
+            Action::StartMeeting => b.start_meeting.as_ref(),
+            Action::StartAssistant => b.start_assistant.as_ref(),
         }
     }
 
@@ -65,13 +94,16 @@ impl Action {
         match self {
             Action::ToggleOverlay => &mut b.toggle_overlay,
             Action::ToggleMainWindow => &mut b.toggle_main_window,
+            Action::StartInterview => &mut b.start_interview,
+            Action::StartMeeting => &mut b.start_meeting,
+            Action::StartAssistant => &mut b.start_assistant,
         }
     }
 
     fn default_binding(self) -> Option<String> {
         match self {
             Action::ToggleOverlay => default_toggle_overlay(),
-            Action::ToggleMainWindow => None,
+            _ => None,
         }
     }
 }
@@ -185,8 +217,11 @@ pub fn handle(app: &AppHandle, pressed: &Shortcut) {
     };
 
     let result = match action {
-        Some(Action::ToggleOverlay) => toggle_session(app),
+        Some(Action::ToggleOverlay) => toggle_session(app, None),
         Some(Action::ToggleMainWindow) => toggle_main_window(app),
+        Some(Action::StartInterview) => toggle_session(app, Some("interview")),
+        Some(Action::StartMeeting) => toggle_session(app, Some("meeting")),
+        Some(Action::StartAssistant) => toggle_session(app, Some("assistant")),
         None => Ok(()),
     };
     if let Err(err) = result {
@@ -200,7 +235,11 @@ pub fn handle(app: &AppHandle, pressed: &Shortcut) {
 /// it asks the main window to start a session exactly like the Start button
 /// (context, backend session, audio capture), showing the overlay at once.
 /// Nothing is ever recorded unless this, or Start, was pressed.
-fn toggle_session(app: &AppHandle) -> Result<(), String> {
+///
+/// `mode`: a mode shortcut (Start Interview/Meeting/Assistant) starts in
+/// that mode; `None` uses whichever mode is selected. Any of them ends a
+/// running session, whatever its mode.
+fn toggle_session(app: &AppHandle, mode: Option<&str>) -> Result<(), String> {
     use tauri::Emitter;
     if session_active(app) {
         // Also cancels a start still in progress: closing emits
@@ -211,7 +250,13 @@ fn toggle_session(app: &AppHandle) -> Result<(), String> {
         return crate::interview_mode::close_overlay_window(app);
     }
     START_PENDING_SINCE_MS.store(now_ms(), Ordering::Relaxed);
-    log::info!("shortcut: session start requested");
+    log::info!("shortcut: session start requested ({})", mode.unwrap_or("selected mode"));
+    // The mode decides what's heard (Assistant: the user's mic; the others:
+    // the call audio) — set before recording starts on the next line.
+    if let Some(mode) = mode {
+        let assistant = mode == "assistant";
+        crate::commands::apply_source_defaults(&app.state::<crate::state::AppState>(), !assistant, assistant);
+    }
     // Start recording right away (off the UI thread — WASAPI init takes a
     // moment); the session attaches to it once its key/connection are ready.
     let prebuffer_app = app.clone();
@@ -220,12 +265,28 @@ fn toggle_session(app: &AppHandle) -> Result<(), String> {
             log::warn!("shortcut: couldn't start recording immediately: {err}");
         }
     });
-    // Shown right here, on the key press (the window is pre-built at launch)
-    // — not after a round trip through the main window's JS, which ranged
-    // from ~20ms to ~2s. It reads "Starting to listen…" until capture is live.
-    crate::interview_mode::show_overlay_window(app)?;
-    app.emit_to(crate::main_window::MAIN_WINDOW_LABEL, "shortcut:start-session", ())
-        .map_err(|e| format!("failed to ask the main window to start a session: {e}"))
+    // Shown on the key press (the window is pre-built at launch) — not after
+    // a round trip through the main window's JS, which ranged from ~20ms to
+    // ~2s. It reads "Starting to listen…" until capture is live.
+    //
+    // Queued to run just after this handler returns rather than called from
+    // inside it: this handler runs on the event-loop thread, and a press in
+    // the first seconds after launch — before the overlay is pre-built — made
+    // it *build* the window right here, which deadlocked that thread and
+    // froze the whole app.
+    let mode = mode.map(str::to_string);
+    let show_app = app.clone();
+    app.run_on_main_thread(move || {
+        if let Err(err) = crate::interview_mode::show_overlay_window(&show_app) {
+            log::warn!("shortcut: couldn't show the overlay: {err}");
+        }
+        // To every window: the main window starts the session, and the
+        // overlay switches to the requested mode's wording and audio icons.
+        if let Err(err) = show_app.emit("shortcut:start-session", mode) {
+            log::warn!("shortcut: failed to ask the main window to start a session: {err}");
+        }
+    })
+    .map_err(|e| format!("failed to show the overlay: {e}"))
 }
 
 /// When a shortcut-started session began starting (ms since epoch), 0 when
@@ -315,7 +376,7 @@ pub fn set_shortcut(
         let new_shortcut = parse(new)?;
         for other in Action::ALL.into_iter().filter(|a| *a != action) {
             if other.binding(&bindings).and_then(|acc| parse(acc).ok()) == Some(new_shortcut) {
-                return Err(format!("{new} is already used by the other Smallbird shortcut."));
+                return Err(format!("{new} is already used by another Smallbird shortcut."));
             }
         }
     }

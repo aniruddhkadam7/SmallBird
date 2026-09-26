@@ -32,21 +32,67 @@ const DEFAULT_DEVICE_CHECK_INTERVAL: Duration = Duration::from_secs(2);
 const DEVICE_RECOVERY_WINDOW: Duration = Duration::from_secs(10);
 const DEVICE_RECOVERY_RETRY: Duration = Duration::from_millis(500);
 
-type FailureHandler = Box<dyn Fn(String) + Send + Sync>;
+type FailureHandler = Box<dyn Fn(AudioSource, String) + Send + Sync>;
 static FAILURE_HANDLER: OnceLock<FailureHandler> = OnceLock::new();
 
 /// Registers who to tell when capture stops mid-session for a reason it
 /// couldn't recover from (see `lib.rs`, which forwards it to the UI). Init
 /// failures aren't reported here — `start` already returns those to its
 /// caller. First registration wins.
-pub fn set_capture_failure_handler(handler: impl Fn(String) + Send + Sync + 'static) {
+pub fn set_capture_failure_handler(handler: impl Fn(AudioSource, String) + Send + Sync + 'static) {
     let _ = FAILURE_HANDLER.set(Box::new(handler));
 }
 
-fn report_failure(message: String) {
-    log::error!("system audio capture stopped: {message}");
+fn report_failure(kind: CaptureKind, message: String) {
+    log::error!("{} capture stopped: {message}", kind.label());
     if let Some(handler) = FAILURE_HANDLER.get() {
-        handler(message);
+        handler(kind.source(), message);
+    }
+}
+
+/// Which endpoint a capture thread records: everything the PC plays
+/// (loopback on the default output — the other people in the call) or the
+/// default microphone (the user themselves).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CaptureKind {
+    Loopback,
+    Microphone,
+}
+
+impl CaptureKind {
+    fn source(self) -> AudioSource {
+        match self {
+            CaptureKind::Loopback => AudioSource::SystemAudio,
+            CaptureKind::Microphone => AudioSource::Microphone,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            CaptureKind::Loopback => "system audio",
+            CaptureKind::Microphone => "microphone",
+        }
+    }
+
+    /// The endpoint whose default device this kind follows.
+    fn device_direction(self) -> Direction {
+        match self {
+            CaptureKind::Loopback => Direction::Render,
+            CaptureKind::Microphone => Direction::Capture,
+        }
+    }
+}
+
+/// Captures the default microphone — the user's own voice — the same way
+/// `SystemAudioCapture` captures what the PC plays: its own thread, 16kHz
+/// mono chunks tagged `AudioSource::Microphone`, following the default
+/// input device if it changes. Only ever started when the user turns the
+/// overlay's Mic on.
+pub struct MicrophoneCapture;
+
+impl MicrophoneCapture {
+    pub fn start(tx: Sender<AudioChunk>, stop: StopSignal) -> Result<JoinHandle<()>, String> {
+        start_capture(CaptureKind::Microphone, tx, stop, CaptureMetrics::new())
     }
 }
 
@@ -90,22 +136,33 @@ impl SystemAudioCapture {
         stop: StopSignal,
         metrics: Arc<CaptureMetrics>,
     ) -> Result<JoinHandle<()>, String> {
+        start_capture(CaptureKind::Loopback, tx, stop, metrics)
+    }
+}
+
+fn start_capture(
+    kind: CaptureKind,
+    tx: Sender<AudioChunk>,
+    stop: StopSignal,
+    metrics: Arc<CaptureMetrics>,
+) -> Result<JoinHandle<()>, String> {
+    {
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
         let handle = std::thread::Builder::new()
-            .name("system-audio-capture".into())
+            .name(format!("{}-capture", kind.label().replace(' ', "-")))
             .spawn(move || {
                 let started = AtomicBool::new(false);
                 let thread_stop = stop.clone();
                 // Guarded so a panic mid-session is reported like any other
                 // failure rather than capture silently vanishing.
-                let result = crate::crash_guard::guard("system audio capture", || {
-                    run_capture_loop(tx, thread_stop, metrics, ready_tx, &started)
+                let result = crate::crash_guard::guard(kind.label(), || {
+                    run_capture_loop(kind, tx, thread_stop, metrics, ready_tx, &started)
                 });
                 if let Err(err) = result {
                     // Init failures are returned to `start`'s caller instead;
                     // a stop the user asked for is not a failure.
                     if started.load(Ordering::Relaxed) && !stop.is_stopped() {
-                        report_failure(err);
+                        report_failure(kind, err);
                     }
                 }
             })
@@ -125,14 +182,14 @@ impl SystemAudioCapture {
                 // The thread ended without reporting either way — it
                 // panicked during init (already recorded by the panic hook).
                 let _ = handle.join();
-                Err("system audio capture failed while starting".to_string())
+                Err(format!("{} capture failed while starting", kind.label()))
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 // Timed out waiting — the thread never reached the send
                 // point (hung). Don't block the caller forever; report a
                 // clear, actionable timeout instead of silently returning
                 // "started".
-                Err("system audio capture did not initialize in time".to_string())
+                Err(format!("{} capture did not initialize in time", kind.label()))
             }
         }
     }
@@ -154,20 +211,25 @@ impl Drop for LoopbackStream {
     }
 }
 
-fn default_render_device_id() -> Option<String> {
+fn default_device_id(kind: CaptureKind) -> Option<String> {
     wasapi::DeviceEnumerator::new()
         .ok()?
-        .get_default_device(&Direction::Render)
+        .get_default_device(&kind.device_direction())
         .ok()?
         .get_id()
         .ok()
 }
 
-fn open_default_loopback() -> Result<LoopbackStream, String> {
+/// Opens the default device for `kind`: loopback on the default output, or
+/// a plain capture stream on the default microphone. Both are opened in
+/// shared mode as Direction::Capture — on a render device that is what makes
+/// it loopback.
+fn open_default(kind: CaptureKind) -> Result<LoopbackStream, String> {
     let enumerator = wasapi::DeviceEnumerator::new().map_err(|e| e.to_string())?;
-    let device = enumerator
-        .get_default_device(&Direction::Render)
-        .map_err(|e| format!("no default output device: {e}"))?;
+    let device = enumerator.get_default_device(&kind.device_direction()).map_err(|e| match kind {
+        CaptureKind::Loopback => format!("no default output device: {e}"),
+        CaptureKind::Microphone => format!("no microphone found: {e}"),
+    })?;
     let device_id = device.get_id().ok();
 
     let mut audio_client = device.get_iaudioclient().map_err(|e| e.to_string())?;
@@ -187,7 +249,13 @@ fn open_default_loopback() -> Result<LoopbackStream, String> {
 
     audio_client
         .initialize_client(&desired_format, &Direction::Capture, &mode)
-        .map_err(|e| format!("failed to initialize loopback client: {e}"))?;
+        .map_err(|e| match kind {
+            CaptureKind::Loopback => format!("failed to initialize loopback client: {e}"),
+            // Most often Windows' microphone privacy setting blocking desktop apps.
+            CaptureKind::Microphone => format!(
+                "couldn't open the microphone ({e}) — check Windows Settings > Privacy & security > Microphone"
+            ),
+        })?;
 
     let event_handle = audio_client.set_get_eventhandle().map_err(|e| e.to_string())?;
     let capture_client = audio_client.get_audiocaptureclient().map_err(|e| e.to_string())?;
@@ -195,7 +263,8 @@ fn open_default_loopback() -> Result<LoopbackStream, String> {
     audio_client.start_stream().map_err(|e| e.to_string())?;
 
     log::info!(
-        "system audio loopback started: {in_rate} Hz, {in_channels} ch -> {} Hz mono",
+        "{} capture started: {in_rate} Hz, {in_channels} ch -> {} Hz mono",
+        kind.label(),
         super::TARGET_SAMPLE_RATE
     );
 
@@ -219,6 +288,7 @@ enum PumpEnd {
 }
 
 fn run_capture_loop(
+    kind: CaptureKind,
     tx: Sender<AudioChunk>,
     stop: StopSignal,
     metrics: Arc<CaptureMetrics>,
@@ -228,7 +298,7 @@ fn run_capture_loop(
     let first = wasapi::initialize_mta()
         .ok()
         .map_err(|e| e.to_string())
-        .and_then(|()| open_default_loopback());
+        .and_then(|()| open_default(kind));
 
     let mut stream = match first {
         Ok(stream) => {
@@ -245,11 +315,11 @@ fn run_capture_loop(
     let mut byte_buf: Vec<u8> = Vec::new();
 
     loop {
-        match pump(&stream, &tx, &stop, &metrics, &mut byte_buf) {
+        match pump(kind, &stream, &tx, &stop, &metrics, &mut byte_buf) {
             PumpEnd::Stopped => break,
-            PumpEnd::DefaultChanged => match open_default_loopback() {
+            PumpEnd::DefaultChanged => match open_default(kind) {
                 Ok(new_stream) => {
-                    log::info!("default output device changed; capture moved to the new device");
+                    log::info!("default {} device changed; capture moved to the new device", kind.label());
                     stream = new_stream;
                 }
                 // The old device still works — keep capturing it and try
@@ -257,32 +327,37 @@ fn run_capture_loop(
                 Err(err) => log::warn!("default output device changed but couldn't be opened yet: {err}"),
             },
             PumpEnd::DeviceLost(reason) => {
-                log::warn!("output device lost ({reason}); reopening on the current default");
+                log::warn!("{} device lost ({reason}); reopening on the current default", kind.label());
                 drop(stream);
-                match reopen_with_retry(&stop) {
+                match reopen_with_retry(kind, &stop) {
                     Some(new_stream) => stream = new_stream,
                     None if stop.is_stopped() => {
-                        log::info!("system audio loopback stopped");
+                        log::info!("{} capture stopped", kind.label());
                         return Ok(());
                     }
                     None => {
-                        return Err(format!(
-                            "the audio output device was disconnected ({reason}) and no other output device became available"
-                        ))
+                        return Err(match kind {
+                            CaptureKind::Loopback => format!(
+                                "the audio output device was disconnected ({reason}) and no other output device became available"
+                            ),
+                            CaptureKind::Microphone => format!(
+                                "the microphone was disconnected ({reason}) and no other microphone became available"
+                            ),
+                        })
                     }
                 }
             }
         }
     }
 
-    log::info!("system audio loopback stopped");
+    log::info!("{} capture stopped", kind.label());
     Ok(())
 }
 
-fn reopen_with_retry(stop: &StopSignal) -> Option<LoopbackStream> {
+fn reopen_with_retry(kind: CaptureKind, stop: &StopSignal) -> Option<LoopbackStream> {
     let deadline = Instant::now() + DEVICE_RECOVERY_WINDOW;
     while !stop.is_stopped() && Instant::now() < deadline {
-        match open_default_loopback() {
+        match open_default(kind) {
             Ok(stream) => return Some(stream),
             Err(err) => log::debug!("reopen attempt failed: {err}"),
         }
@@ -295,6 +370,7 @@ fn reopen_with_retry(stop: &StopSignal) -> Option<LoopbackStream> {
 /// changes. Event waits time out routinely (loopback only signals while
 /// something is actually playing), so a timeout is never treated as failure.
 fn pump(
+    kind: CaptureKind,
     stream: &LoopbackStream,
     tx: &Sender<AudioChunk>,
     stop: &StopSignal,
@@ -308,7 +384,7 @@ fn pump(
     while !stop.is_stopped() {
         if last_device_check.elapsed() >= DEFAULT_DEVICE_CHECK_INTERVAL {
             last_device_check = Instant::now();
-            if let (Some(current), Some(ours)) = (default_render_device_id(), stream.device_id.as_ref()) {
+            if let (Some(current), Some(ours)) = (default_device_id(kind), stream.device_id.as_ref()) {
                 if &current != ours {
                     return PumpEnd::DefaultChanged;
                 }
@@ -379,20 +455,20 @@ fn pump(
                     .samples_emitted
                     .fetch_add(mono_resampled.len() as u64, Ordering::Relaxed);
             }
-            emit_chunk(tx, mono_resampled);
+            emit_chunk(tx, kind.source(), mono_resampled);
         }
     }
 
     PumpEnd::Stopped
 }
 
-fn emit_chunk(tx: &Sender<AudioChunk>, samples: Vec<f32>) {
+fn emit_chunk(tx: &Sender<AudioChunk>, source: AudioSource, samples: Vec<f32>) {
     if samples.is_empty() {
         return;
     }
     let rms_level = compute_rms(&samples);
     let _ = tx.send(AudioChunk {
-        source: AudioSource::SystemAudio,
+        source,
         samples,
         rms_level,
     });

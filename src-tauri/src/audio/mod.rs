@@ -17,7 +17,7 @@ pub use device_manager::{AudioDeviceInfo, AudioDeviceManager};
 pub use gap_fill::SilenceGapFiller;
 pub use metrics::{CaptureMetrics, MetricsSnapshot};
 pub use pipeline::run_stt_pipeline;
-pub use system_capture::{set_capture_failure_handler, SystemAudioCapture};
+pub use system_capture::{set_capture_failure_handler, MicrophoneCapture, SystemAudioCapture};
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

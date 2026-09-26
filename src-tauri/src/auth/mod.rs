@@ -13,6 +13,13 @@ pub use client::AuthSession;
 use crate::state::AppState;
 use crate::crash_guard::LockExt;
 
+/// Held while restoring or refreshing the session. Supabase refresh tokens
+/// are single-use: two refreshes racing with the same token (e.g. the main
+/// window's startup check and a background call at launch) left one of
+/// them "not logged in", which made a shortcut pressed right after launch
+/// open the login panel for a user who was signed in.
+static REFRESH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Returns a valid access token for the signed-in user, refreshing it first
 /// if it's near expiry. `Err` means "not logged in" or "session expired and
 /// couldn't be refreshed" — callers surface this as a normal error, the
@@ -33,6 +40,17 @@ pub async fn current_access_token(state: &tauri::State<'_, AppState>) -> Result<
         return Ok(session.access_token);
     }
 
+    // One refresh at a time; whoever waited uses the one that just happened.
+    let _turn = REFRESH_LOCK.lock().await;
+    let session = {
+        let guard = state.auth_session.lock_safe();
+        guard.clone()
+    }
+    .ok_or_else(|| "Not logged in. Please log in from the Account panel.".to_string())?;
+    if !client::needs_refresh(&session) {
+        return Ok(session.access_token);
+    }
+
     let refreshed = client::refresh_session(&session.refresh_token, &session.email).await?;
     let access_token = refreshed.access_token.clone();
     {
@@ -48,10 +66,28 @@ pub async fn current_access_token(state: &tauri::State<'_, AppState>) -> Result<
 /// treating it as fatal; `get_auth_session` reports the resulting logged-out
 /// state to the frontend the same way a fresh install would look.
 pub async fn restore_session_on_startup(state: &tauri::State<'_, AppState>) {
+    let _turn = REFRESH_LOCK.lock().await;
+    // Another caller may have restored it while this one waited its turn.
+    if state.auth_session.lock_safe().is_some() {
+        return;
+    }
     let Ok(Some((refresh_token, email))) = session_store::load_refresh_token() else {
         return;
     };
-    if let Ok(session) = client::refresh_session(&refresh_token, &email).await {
-        *state.auth_session.lock_safe() = Some(session);
+    // One retry: right after Windows starts (Smallbird launches with it) the
+    // network is often not up yet for the first attempt.
+    for attempt in 0..2 {
+        match client::refresh_session(&refresh_token, &email).await {
+            Ok(session) => {
+                *state.auth_session.lock_safe() = Some(session);
+                return;
+            }
+            Err(err) => {
+                log::warn!("restoring the saved sign-in failed (attempt {}): {err}", attempt + 1);
+                if attempt == 0 {
+                    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                }
+            }
+        }
     }
 }

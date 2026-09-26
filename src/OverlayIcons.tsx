@@ -38,6 +38,65 @@ export function MicIcon(props: IconProps) {
   );
 }
 
+/// A speaker — the call audio (what the PC plays: the other side). Crossed
+/// out when the user has turned it off.
+export function SpeakerIcon({ off = false, ...props }: IconProps & { off?: boolean }) {
+  return (
+    <Icon {...props}>
+      <path d="M11 5 6 9H2v6h4l5 4V5z" />
+      {off ? (
+        <line x1="22" y1="9" x2="16" y2="15" />
+      ) : (
+        <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+      )}
+      {off ? <line x1="16" y1="9" x2="22" y2="15" /> : <path d="M19 5a10 10 0 0 1 0 14" />}
+    </Icon>
+  );
+}
+
+/// A person speaking — the user's own voice (their microphone), as opposed
+/// to MicIcon's "the app is listening to the call". The two waves animate
+/// while the user is talking (see .overlay-voice-icon in overlay.css).
+export function VoiceIcon({ off = false, ...props }: IconProps & { off?: boolean }) {
+  return (
+    <Icon {...props}>
+      <circle cx="9" cy="7" r="4" />
+      <path d="M2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1" />
+      <path className="voice-wave" d="M18 7.5a3.5 3.5 0 0 1 0 5" />
+      <path className="voice-wave voice-wave-outer" d="M21 5a7.5 7.5 0 0 1 0 10" />
+      {off && <line x1="2" y1="2" x2="22" y2="22" />}
+    </Icon>
+  );
+}
+
+/// Maximize the overlay (fill the screen).
+export function MaximizeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="5" y="5" width="14" height="14" rx="1.5" />
+    </Icon>
+  );
+}
+
+/// Restore a maximized overlay to its previous size.
+export function RestoreSizeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="4" y="8" width="12" height="12" rx="1.5" />
+      <path d="M8 8V5.5A1.5 1.5 0 0 1 9.5 4H18.5A1.5 1.5 0 0 1 20 5.5V14.5A1.5 1.5 0 0 1 18.5 16H16" />
+    </Icon>
+  );
+}
+
+/// Minimize the overlay into the small corner box.
+export function MinimizeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </Icon>
+  );
+}
+
 export function MicOffIcon(props: IconProps) {
   return (
     <Icon {...props}>

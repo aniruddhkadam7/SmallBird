@@ -2,6 +2,11 @@ pub mod ask;
 pub mod analysis;
 pub mod conversation;
 pub mod image_context;
+/// Speech is transcribed as English, Hindi, or a mix (see stt/client.rs), in
+/// every mode — answers follow the language each question was asked in.
+pub const LANGUAGE_RULE: &str = "LANGUAGE (this overrides any rule above about writing in English): the conversation may be in English, Hindi, or a mix of both. Reply in the language the question was asked in — English if it was asked in English, Hindi in Devanagari script if it was asked in Hindi, and the same natural Hindi-English mix if that's how it was asked. Keep technical terms, product names and code in English, the way people actually say them.";
+
+pub mod assistant;
 pub mod meeting;
 pub mod notes;
 pub mod screen;

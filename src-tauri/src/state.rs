@@ -19,6 +19,18 @@ pub struct CaptureSession {
     pub system_audio_thread: Option<JoinHandle<()>>,
     pub pipeline_thread: Option<JoinHandle<()>>,
     pub recording_state: RecordingState,
+    /// The user's own microphone, when they've turned the overlay's Mic on
+    /// (see `commands::set_microphone_enabled`). Off by default.
+    pub mic: Option<MicSession>,
+}
+
+/// A running microphone capture + its own Deepgram connection. Shares the
+/// session's key and pause signal; has its own stop signal so the Mic can be
+/// turned off without ending the session.
+pub struct MicSession {
+    pub stop: StopSignal,
+    pub capture_thread: JoinHandle<()>,
+    pub pipeline_thread: JoinHandle<()>,
 }
 
 /// System audio being recorded from the moment the user pressed Start/the
@@ -28,8 +40,19 @@ pub struct CaptureSession {
 /// the backlog first, so nothing said after the press is lost.
 pub struct AudioPrebuffer {
     pub id: u64,
+    /// The call audio — absent when it's off for this session (Assistant
+    /// Mode's default).
+    pub system: Option<CaptureBuffer>,
+    /// The user's microphone, recording alongside when their Mic is on.
+    pub mic: Option<CaptureBuffer>,
+}
+
+/// Audio (either source) being recorded before its speech-to-text
+/// connection is up — from the key press, or from the moment the user turns
+/// the source on — so nothing said while it connects is lost.
+pub struct CaptureBuffer {
     pub audio_rx: crossbeam_channel::Receiver<crate::audio::AudioChunk>,
-    pub stop: crate::audio::StopSignal,
+    pub stop: StopSignal,
     pub thread: JoinHandle<()>,
 }
 
@@ -41,6 +64,7 @@ impl Default for CaptureSession {
             system_audio_thread: None,
             pipeline_thread: None,
             recording_state: RecordingState::Idle,
+            mic: None,
         }
     }
 }
@@ -89,6 +113,16 @@ pub struct AppState {
     pub screenshots: Mutex<Vec<(String, String)>>,
     /// See `AudioPrebuffer`. `None` whenever no session is starting.
     pub prebuffer: Mutex<Option<AudioPrebuffer>>,
+    /// The overlay's Mic toggle (a saved preference, sent on every change):
+    /// whether sessions should also hear the user's microphone.
+    pub mic_wanted: AtomicBool,
+    /// The overlay's call-audio icon: whether to hear what the PC plays.
+    /// On by default; the user can turn it off and keep only their mic.
+    pub system_wanted: AtomicBool,
+    /// What each new session starts with, per mode (set by the main window:
+    /// Interview/Meeting hear the call, Assistant hears the user's mic).
+    pub system_default: AtomicBool,
+    pub mic_default: AtomicBool,
 }
 
 impl Default for AppState {
@@ -103,6 +137,10 @@ impl Default for AppState {
             conversation_state: Mutex::default(),
             screenshots: Mutex::default(),
             prebuffer: Mutex::default(),
+            mic_wanted: AtomicBool::new(false),
+            system_wanted: AtomicBool::new(true),
+            system_default: AtomicBool::new(true),
+            mic_default: AtomicBool::new(false),
         }
     }
 }

@@ -205,8 +205,14 @@ pub fn run() {
             // (output device gone, nothing to fall back to) — tell the UI
             // rather than leaving it showing "Listening" over silence.
             let capture_app = app.handle().clone();
-            audio::set_capture_failure_handler(move |message| {
-                let _ = capture_app.emit("audio:capture-error", message);
+            audio::set_capture_failure_handler(move |source, message| {
+                // A microphone failure only turns the Mic off — the session
+                // itself keeps listening to the call.
+                let event = match source {
+                    audio::AudioSource::SystemAudio => "audio:capture-error",
+                    audio::AudioSource::Microphone => "audio:mic-error",
+                };
+                let _ = capture_app.emit(event, message);
             });
 
             bubble_window::ensure_bubble_window(&app.handle().clone());
@@ -235,6 +241,9 @@ pub fn run() {
             commands::resume_recording,
             commands::stop_audio_capture,
             commands::begin_audio_prebuffer,
+            commands::set_microphone_enabled,
+            commands::set_system_audio_enabled,
+            commands::set_source_defaults,
             audio_test::prepare_audio_test_phrase,
             audio_test::play_audio_test_phrase,
             audio_test::stop_audio_test_phrase,
@@ -274,6 +283,9 @@ pub fn run() {
             commands::drag_bubble_window,
             interview_mode::commands::show_interview_overlay,
             interview_mode::commands::hide_interview_overlay,
+            interview_mode::commands::minimize_interview_overlay,
+            interview_mode::commands::restore_interview_overlay,
+            interview_mode::commands::toggle_maximize_interview_overlay,
             interview_mode::commands::toggle_interview_overlay,
             interview_mode::commands::open_dashboard,
             interview_mode::commands::ask_interview_question,

@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-type ShortcutAction = "toggleOverlay" | "toggleMainWindow";
+type ShortcutAction = "toggleOverlay" | "toggleMainWindow" | "startInterview" | "startMeeting" | "startAssistant";
 
-interface ShortcutBindings {
-  toggleOverlay: string | null;
-  toggleMainWindow: string | null;
-}
+type ShortcutBindings = Record<ShortcutAction, string | null>;
 
 const ACTIONS: { key: ShortcutAction; label: string; description: string; defaultLabel: string }[] = [
   {
@@ -19,6 +16,24 @@ const ACTIONS: { key: ShortcutAction; label: string; description: string; defaul
     key: "toggleMainWindow",
     label: "Show / hide Smallbird",
     description: "Brings the main Smallbird window forward, or tucks it back into the floating bubble.",
+    defaultLabel: "none",
+  },
+  {
+    key: "startInterview",
+    label: "Start Interview",
+    description: "Starts an Interview session right away (listens to the call). Press again to end it.",
+    defaultLabel: "none",
+  },
+  {
+    key: "startMeeting",
+    label: "Start Meeting",
+    description: "Starts a Meeting session right away, with your last meeting's details. Press again to end it.",
+    defaultLabel: "none",
+  },
+  {
+    key: "startAssistant",
+    label: "Start Assistant",
+    description: "Starts your personal Assistant right away (listens to your mic). Press again to end it.",
     defaultLabel: "none",
   },
 ];

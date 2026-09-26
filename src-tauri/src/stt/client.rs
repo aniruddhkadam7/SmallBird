@@ -25,8 +25,11 @@ use crate::audio::AudioSource;
 
 use super::events::{SttEvent, SttEventKind};
 
-const DEEPGRAM_WS_URL: &str =
-    "wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000";
+/// Flux multilingual, hinted for English and Hindi: transcribes either
+/// language — and Hinglish, switching mid-sentence — in every mode, with no
+/// language to pick. Same turn-based protocol as the English-only model; its
+/// extra `languages` fields are simply ignored.
+const DEEPGRAM_WS_URL: &str = "wss://api.deepgram.com/v2/listen?model=flux-general-multi&encoding=linear16&sample_rate=16000&language_hint=en&language_hint=hi";
 
 /// How long `SttClient::spawn` waits for Deepgram's `Connected` message
 /// before giving up — mirrors the old sidecar's `STT_READY_TIMEOUT_MS`

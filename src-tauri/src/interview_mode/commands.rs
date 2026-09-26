@@ -51,6 +51,10 @@ pub struct AskOptions {
     /// Answer / Auto Answer.
     #[serde(default)]
     pub deep: bool,
+    /// The overlay's Mic is on, so the question arrives as "Them:" / "You:"
+    /// labeled lines.
+    #[serde(default)]
+    pub speaker_labeled: bool,
 }
 
 fn default_mode() -> String {
@@ -104,6 +108,7 @@ impl Default for AskOptions {
             meeting_topic: None,
             participants: None,
             deep: false,
+            speaker_labeled: false,
         }
     }
 }
@@ -120,11 +125,25 @@ fn build_ask_request(
     conversation_state: ConversationStateSnapshot,
 ) -> AskRequest {
     let is_meeting = options.mode == "meeting";
+    let is_assistant = options.mode == "assistant";
     // Each mode keeps its own instructions (see the frontend's
     // headerPopups.ts), since "answer as a senior candidate" and "keep my
     // meeting replies to one line" rarely belong together.
-    let custom_instructions =
-        crate::documents::latest_ready_text(state, if is_meeting { "MEETING_INSTRUCTIONS" } else { "INTERVIEW_INSTRUCTIONS" });
+    let custom_instructions = crate::documents::latest_ready_text(
+        state,
+        if is_assistant {
+            "ASSISTANT_INSTRUCTIONS"
+        } else if is_meeting {
+            "MEETING_INSTRUCTIONS"
+        } else {
+            "INTERVIEW_INSTRUCTIONS"
+        },
+    );
+    // Assistant Mode reads only its own document types, so nothing from an
+    // interview or meeting (resume, agenda, ...) reaches it, or vice versa.
+    let assistant = is_assistant.then(|| crate::backend::AssistantContext {
+        notes: crate::documents::latest_ready_text(state, "ASSISTANT_CONTEXT"),
+    });
     let meeting = is_meeting.then(|| MeetingContext {
         topic: options.meeting_topic.clone(),
         participants: options.participants.clone(),
@@ -134,7 +153,7 @@ fn build_ask_request(
         previous_notes: crate::documents::latest_ready_text(state, "PREVIOUS_MEETING_NOTES"),
     });
 
-    let (candidate_context, role, company, job_description, additional_context) = if is_meeting {
+    let (candidate_context, role, company, job_description, additional_context) = if is_meeting || is_assistant {
         (None, None, None, None, None)
     } else {
         (
@@ -168,6 +187,8 @@ fn build_ask_request(
         custom_instructions,
         deep: options.deep,
         images: Vec::new(),
+        speaker_labeled: options.speaker_labeled,
+        assistant,
     }
 }
 
@@ -193,6 +214,27 @@ pub async fn hide_interview_overlay(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn toggle_interview_overlay(app: AppHandle) -> Result<OverlayCaptureStatus, String> {
     run_on_main(&app, window::toggle_overlay_window).await
+}
+
+/// The overlay's Minimize button: shrinks it into a small box in the
+/// bottom-right corner. The session keeps running. `strip`: the box's own
+/// minimize button, folding it down to just its top strip.
+#[tauri::command]
+pub async fn minimize_interview_overlay(app: AppHandle, strip: Option<bool>) -> Result<(), String> {
+    let strip = strip.unwrap_or(false);
+    run_on_main(&app, move |app| window::minimize_overlay(app, strip)).await
+}
+
+/// The overlay's maximize button. Returns whether it's now maximized.
+#[tauri::command]
+pub async fn toggle_maximize_interview_overlay(app: AppHandle) -> Result<bool, String> {
+    run_on_main(&app, window::toggle_maximize_overlay).await
+}
+
+/// Clicking the minimized box: back to the full overlay, where it was.
+#[tauri::command]
+pub async fn restore_interview_overlay(app: AppHandle) -> Result<(), String> {
+    run_on_main(&app, window::restore_overlay).await
 }
 
 /// Website origin — base for both the plain dashboard URL (signed-out
@@ -365,7 +407,9 @@ pub async fn ask_interview_question(
     // is corrected.
     let answer = crate::personal::format_fixup::ensure_markdown_structure(&answer);
 
-    spawn_conversation_state_update(app.clone(), access_token, request.llm_provider.clone(), conversation_state, request.question.clone(), answer.clone());
+    if request.assistant.is_none() {
+        spawn_conversation_state_update(app.clone(), access_token, request.llm_provider.clone(), conversation_state, request.question.clone(), answer.clone());
+    }
 
     let ctx = crate::hardware::perf_context(&app);
     if let Some(ms) = first_token.elapsed_ms() {
@@ -514,7 +558,9 @@ pub async fn analyze_screen_question(
         .await?;
     let answer = crate::personal::format_fixup::ensure_markdown_structure(&answer);
 
-    spawn_conversation_state_update(app.clone(), access_token, request.llm_provider.clone(), conversation_state, request.question.clone(), answer.clone());
+    if request.assistant.is_none() {
+        spawn_conversation_state_update(app.clone(), access_token, request.llm_provider.clone(), conversation_state, request.question.clone(), answer.clone());
+    }
 
     let ctx = crate::hardware::perf_context(&app);
     if let Some(ms) = first_token.elapsed_ms() {

@@ -3,6 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { CameraIcon, CloseIcon, MaximizeIcon, MinimizeIcon, RestoreSizeIcon, SpeakerIcon, VoiceIcon } from "./OverlayIcons";
+import { appendSpeech, hasSpeakerLabels, isEcho, rememberHeard, speakerLabel, type HeardSpeech } from "./speakerBuffer";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import type { TranscriptSegment } from "./types";
@@ -12,7 +15,6 @@ import {
   SIZE_FRACTIONS,
   type AnswerLength,
   type OverlaySettings,
-  type OverlaySize,
   type ResponseStyle,
 } from "./overlaySettings";
 import { OverlaySettingsPanel } from "./OverlaySettingsPanel";
@@ -20,7 +22,6 @@ import {
   AUTO_AI_SILENCE_MS_COMPLETE,
   AUTO_AI_SILENCE_MS_INCOMPLETE,
   classifyQuestionCompleteness,
-  joinSpeech,
 } from "./questionCompleteness";
 import { AudioLevelBars, useSttSpeaking } from "./ui";
 import {
@@ -29,11 +30,7 @@ import {
   CopyIcon,
   GearIcon,
   MessageIcon,
-  MicIcon,
-  MicOffIcon,
-  MoreVerticalIcon,
   MoveIcon,
-  ResizeIcon,
   SendIcon,
   StarIcon,
   ThumbsDownIcon,
@@ -44,10 +41,27 @@ import { getEntitlement } from "./auth";
 
 function formatCountdown(totalSeconds: number): string {
   const clamped = Math.max(0, Math.floor(totalSeconds));
-  const minutes = Math.floor(clamped / 60);
+  const hours = Math.floor(clamped / 3600);
+  const minutes = Math.floor((clamped % 3600) / 60);
   const seconds = clamped % 60;
+  // An hour or more: "2h 05m" — seconds ticking by don't matter yet.
+  if (hours > 0) return `${hours}h ${minutes.toString().padStart(2, "0")}m`;
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
+
+/// The small box has room for only a few characters: "2h 5m" / "42m" / "45s".
+function formatCountdownShort(totalSeconds: number): string {
+  const clamped = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(clamped / 3600);
+  const minutes = Math.floor((clamped % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m`;
+  return `${clamped}s`;
+}
+
+/// Under five minutes left, the counter turns amber so running out never
+/// comes as a surprise mid-answer.
+const LOW_TIME_SECONDS = 5 * 60;
 
 interface OverlayCaptureStatus {
   excluded: boolean;
@@ -106,7 +120,6 @@ const MAX_QUESTION_INPUT_PX = 160;
 const ANALYZE_SCREEN_QUESTION_LABEL = "What's on my screen?";
 
 /// Cycle order for the resize icon — small -> medium -> large -> small.
-const SIZE_ORDER: OverlaySize[] = ["small", "medium", "large"];
 
 /// Range for the header's opacity slider. The floor matches
 /// `MIN_USABLE_OPACITY` in overlaySettings.ts — below that the overlay is hard
@@ -170,6 +183,9 @@ function MarkdownCode({ className, children, ...rest }: React.ComponentPropsWith
 /// <topic>" — enough to tell it apart on the dashboard without a schema
 /// change.
 function transcriptLabels(settings: OverlaySettings): { role: string | null; company: string | null } {
+  if (settings.mode === "assistant") {
+    return { role: "Assistant", company: null };
+  }
   if (settings.mode === "meeting") {
     const topic = settings.meetingTopic.trim();
     return { role: topic ? `Meeting: ${topic}` : "Meeting", company: null };
@@ -203,7 +219,6 @@ export function InterviewOverlay() {
   const [chatDraft, setChatDraft] = useState("");
   // Whether Row B (status readout + Auto AI/opacity/settings) is revealed —
   // tucked behind the "⋮" (More) icon in Row A rather than always visible.
-  const [moreOpen, setMoreOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [captureExcluded, setCaptureExcluded] = useState<boolean | null>(null);
   // Whether audio capture is confirmed actually running, so the header can
@@ -219,7 +234,22 @@ export function InterviewOverlay() {
   // audio capture keeps running internally but nothing reaches STT or the
   // transcript while muted (see commands.rs's pause_recording doc comment).
   const [muted, setMuted] = useState(false);
-  const [muteBusy, setMuteBusy] = useState(false);
+  // The two audio sources, each switched by its own icon. Every session
+  // starts with its mode's defaults: the call audio on and the user's mic off
+  // in Interview/Meeting; the mic on and the call audio off in Assistant.
+  const [systemEnabled, setSystemEnabled] = useState(() => loadOverlaySettings().mode !== "assistant");
+  const [micEnabled, setMicEnabled] = useState(() => loadOverlaySettings().mode === "assistant");
+  const systemOnRef = useRef(systemEnabled);
+  // Minimized into the small box in the bottom-right corner (same window,
+  // resized — see overlay_window.rs's minimize_overlay). The session keeps
+  // running; an answer that finishes meanwhile shows as "Answer ready".
+  const [minimized, setMinimized] = useState(false);
+  const minimizedRef = useRef(false);
+  const [unseenAnswer, setUnseenAnswer] = useState(false);
+  // The minimized box folded down to just its top strip.
+  const [miniStrip, setMiniStrip] = useState(false);
+  const [maximized, setMaximized] = useState(false);
+  const miniScrollRef = useRef<HTMLDivElement | null>(null);
   // True only while STT is actively producing transcript output right now —
   // gates the listening animation so it doesn't run through silence just
   // because capture is technically still open.
@@ -242,7 +272,18 @@ export function InterviewOverlay() {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const isMeeting = settings.mode === "meeting";
-  const sessionNoun = isMeeting ? "meeting" : "interview";
+  const isAssistant = settings.mode === "assistant";
+  // Answers render like a chat app's in every mode — headings, tables,
+  // lists (GFM for tables; styling in .rich-markdown).
+  const markdownPlugins = [remarkGfm];
+  const markdownClass = " rich-markdown";
+  const sessionNoun = isAssistant ? "session" : isMeeting ? "meeting" : "interview";
+  // What the empty overlay says before anything has been asked.
+  const waitingText = isAssistant
+    ? "Ask me anything — type, speak, or take a screenshot"
+    : isMeeting
+      ? "Waiting for someone to speak…"
+      : "Waiting for the interviewer to speak…";
   // Remaining plan balance at the moment this session started, in seconds —
   // ticked down locally by elapsedSeconds rather than re-fetched every
   // second, so the display doesn't depend on network latency. The real
@@ -251,6 +292,8 @@ export function InterviewOverlay() {
   // running out mid-answer.
   const [remainingSecondsAtStart, setRemainingSecondsAtStart] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const secondsLeft = remainingSecondsAtStart === null ? null : Math.max(0, remainingSecondsAtStart - elapsedSeconds);
+  const lowTime = secondsLeft !== null && secondsLeft < LOW_TIME_SECONDS;
 
   const questionRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -272,12 +315,22 @@ export function InterviewOverlay() {
   // but the final for that same segment can still arrive afterward. Without
   // tracking this, that late final would land in the freshly-cleared buffer
   // and make the just-asked question reappear in the field.
-  const pendingPartialIdRef = useRef<string | null>(null);
-  // Segment id whose upcoming final_text should be dropped rather than
-  // appended, because it was already folded into a question that was just
-  // sent (see askAI). Cleared once that final arrives (or a new question
-  // starts).
-  const suppressFinalIdRef = useRef<string | null>(null);
+  // Keyed by segment id, with its source — with the Mic on, the other side
+  // and the user can both be mid-sentence at once.
+  const partialsRef = useRef(new Map<string, { source: TranscriptSegment["source"]; text: string }>());
+  // Segment ids whose upcoming final_text should be dropped rather than
+  // appended, because they were already folded into a question that was
+  // just sent (see askAI). Each is cleared once its final arrives (or a new
+  // question starts).
+  const suppressFinalIdsRef = useRef(new Set<string>());
+  // The user's microphone, confirmed on by the backend (see the Mic effect
+  // below); read from the transcript listener via the ref.
+  const [micActive, setMicActive] = useState(false);
+  const micOnRef = useRef(false);
+  // What the call audio said in the last few seconds — mic text that just
+  // repeats it is the speakers being picked up, not the user (see
+  // speakerBuffer.ts's isEcho).
+  const recentHeardRef = useRef<HeardSpeech[]>([]);
   const sessionStartedAtRef = useRef(Date.now());
   // Stable id for the session currently in progress, generated once and
   // reused on every `save_interview_session` call for it (see the
@@ -368,42 +421,80 @@ export function InterviewOverlay() {
       }
     };
 
-    const armAutoAiTimer = () => {
+    const armAutoAiTimer = (delayOverride?: number) => {
       clearAutoAiTimer();
       if (!autoAIEnabledRef.current || busyRef.current) return;
       const completeness = classifyQuestionCompleteness(committedRef.current);
       const delay =
-        completeness === "complete" ? AUTO_AI_SILENCE_MS_COMPLETE : AUTO_AI_SILENCE_MS_INCOMPLETE;
+        delayOverride ??
+        (completeness === "complete" ? AUTO_AI_SILENCE_MS_COMPLETE : AUTO_AI_SILENCE_MS_INCOMPLETE);
       autoAiTimerRef.current = window.setTimeout(() => {
         autoAiTimerRef.current = null;
         askAIRef.current();
       }, delay);
     };
 
+    // The field shows what's committed plus whatever is still mid-sentence.
+    // Mic off: plain dictation of the call audio, as always. Mic on: "Them:"
+    // / "You:" lines (see speakerBuffer.ts).
+    const renderQuestion = () => {
+      let text = committedRef.current;
+      for (const partial of partialsRef.current.values()) {
+        text = appendSpeech(text, speakerLabel(partial.source, micOnRef.current && systemOnRef.current, text), partial.text);
+      }
+      setQuestion(text);
+    };
+
     const unlistenTranscript = listen<TranscriptSegment>("transcript:update", (event) => {
       const segment = event.payload;
-      if (segment.source !== "SYSTEM_AUDIO") return;
+      const fromMic = segment.source === "MICROPHONE";
+      if (fromMic && !micOnRef.current) return;
       // While an answer is streaming, keep buffering finals silently: the
       // interviewer may already be asking the next question. They land in the
       // field, not in the answer that's still arriving.
       if (segment.final_text) {
-        if (suppressFinalIdRef.current === segment.id) {
+        partialsRef.current.delete(segment.id);
+        if (suppressFinalIdsRef.current.delete(segment.id)) {
           // This final belongs to the utterance that was already sent as
           // part of the previous question (via its partial text) — drop it
           // instead of letting it repopulate the now-cleared field.
-          suppressFinalIdRef.current = null;
-          if (pendingPartialIdRef.current === segment.id) pendingPartialIdRef.current = null;
+          renderQuestion();
           return;
         }
-        if (pendingPartialIdRef.current === segment.id) pendingPartialIdRef.current = null;
-        committedRef.current = joinSpeech(committedRef.current, segment.final_text);
-        setQuestion(committedRef.current);
-        armAutoAiTimer();
+        if (fromMic) {
+          if (isEcho(segment.final_text, recentHeardRef.current)) {
+            renderQuestion();
+            return;
+          }
+        } else {
+          recentHeardRef.current = rememberHeard(recentHeardRef.current, segment.final_text);
+        }
+        committedRef.current = appendSpeech(
+          committedRef.current,
+          speakerLabel(segment.source, micOnRef.current && systemOnRef.current, committedRef.current),
+          segment.final_text,
+        );
+        renderQuestion();
+        if (!fromMic || !systemOnRef.current) {
+          // The call audio — or, with it off, the user's own voice — is
+          // where questions come from.
+          armAutoAiTimer();
+        } else if (/^Them:/m.test(committedRef.current)) {
+          // The user finished speaking after the other side asked something:
+          // Auto Answer still helps (continuing their point), but with the
+          // longer pause so it never cuts in while they're gathering thoughts.
+          armAutoAiTimer(AUTO_AI_SILENCE_MS_INCOMPLETE);
+        }
       } else if (segment.partial_text) {
-        pendingPartialIdRef.current = segment.id;
-        setQuestion(joinSpeech(committedRef.current, segment.partial_text));
-        // Still speaking — any timer counting down from an earlier final must
-        // not fire mid-sentence.
+        if (suppressFinalIdsRef.current.has(segment.id)) return;
+        if (fromMic) {
+          const heardNow = [...partialsRef.current.values()].filter((p) => p.source !== "MICROPHONE").map((p) => p.text);
+          if (isEcho(segment.partial_text, recentHeardRef.current, heardNow)) return;
+        }
+        partialsRef.current.set(segment.id, { source: segment.source, text: segment.partial_text });
+        renderQuestion();
+        // Still speaking (either side) — any timer counting down from an
+        // earlier final must not fire mid-sentence.
         clearAutoAiTimer();
       }
     });
@@ -421,6 +512,7 @@ export function InterviewOverlay() {
     });
 
     const unlistenComplete = listen<string>("interview-mode:answer-complete", (event) => {
+      if (minimizedRef.current) setUnseenAnswer(true);
       const id = currentTurnIdRef.current;
       if (id) {
         const entry = revealRef.current.get(id) ?? { full: "", shown: 0, done: false };
@@ -619,6 +711,97 @@ export function InterviewOverlay() {
     };
   }, [applyRecordingState, syncRecordingState]);
 
+  // The Mic toggle is a saved preference; the microphone itself only runs
+  // while a session is live (the backend stops it with the session). Starts
+  // it when a session begins with Mic on, and follows the toggle mid-session.
+  useEffect(() => {
+    micOnRef.current = micActive;
+  }, [micActive]);
+  // Sent on every change and once on load: the backend records the mic from
+  // the very next key press when it's on, and turns it on/off mid-session.
+  useEffect(() => {
+    invoke<boolean>("set_microphone_enabled", { enabled: micEnabled }).catch((e) => {
+      setError(`Microphone: ${e}`);
+      setMicEnabled(false);
+    });
+  }, [micEnabled]);
+  useEffect(() => {
+    systemOnRef.current = systemEnabled;
+    invoke<boolean>("set_system_audio_enabled", { enabled: systemEnabled }).catch((e) => {
+      setError(`Call audio: ${e}`);
+      setSystemEnabled(true);
+    });
+  }, [systemEnabled]);
+  useEffect(() => {
+    if (!captureActive) setMicActive(false);
+  }, [captureActive]);
+  // Audio is recorded from the key press, seconds before the session has
+  // connected (captureActive) — the icons show "listening" from that moment.
+  const [prebuffering, setPrebuffering] = useState(false);
+  useEffect(() => {
+    const unlisten = listen<boolean>("audio:prebuffer", (event) => setPrebuffering(event.payload));
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+  useEffect(() => {
+    if (captureActive) setPrebuffering(false);
+  }, [captureActive]);
+  const listening = captureActive || prebuffering;
+  // Whether the user is talking right now (their mic's level), for the voice
+  // icon's waves. Only flips state on a change, not on every audio chunk.
+  const [youSpeaking, setYouSpeaking] = useState(false);
+  useEffect(() => {
+    let quietTimer: number | null = null;
+    let speaking = false;
+    const unlistenLevel = listen<{ source: string; rms_level: number }>("audio:level", (event) => {
+      if (event.payload.source !== "MICROPHONE" || event.payload.rms_level < 0.02) return;
+      if (!speaking) {
+        speaking = true;
+        setYouSpeaking(true);
+      }
+      if (quietTimer) window.clearTimeout(quietTimer);
+      quietTimer = window.setTimeout(() => {
+        speaking = false;
+        setYouSpeaking(false);
+      }, 400);
+    });
+    const unlistenState = listen<boolean>("audio:mic-state", (event) => {
+      setMicActive(event.payload);
+      if (!event.payload) setYouSpeaking(false);
+    });
+    return () => {
+      unlistenLevel.then((f) => f());
+      unlistenState.then((f) => f());
+      if (quietTimer) window.clearTimeout(quietTimer);
+    };
+  }, []);
+  // A mode shortcut (Start Interview/Meeting/Assistant) was pressed: this
+  // window was just shown and reset — take on that mode's wording and audio
+  // icons now, before the main window gets to save it.
+  useEffect(() => {
+    const unlisten = listen<OverlaySettings["mode"] | null>("shortcut:start-session", (event) => {
+      const mode = event.payload;
+      if (!mode) return;
+      setSettings((prev) => ({ ...prev, mode }));
+      setSystemEnabled(mode !== "assistant");
+      setMicEnabled(mode === "assistant");
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+  useEffect(() => {
+    const unlisten = listen<string>("audio:mic-error", (event) => {
+      setMicActive(false);
+      setMicEnabled(false);
+      setError(`Microphone stopped: ${event.payload}`);
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+
   // Emitted once live transcription has given up reconnecting (see
   // stt/client.rs), or system-audio capture lost its output device with
   // nothing to fall back to (audio/system_capture.rs). Without surfacing
@@ -660,6 +843,14 @@ export function InterviewOverlay() {
       setShowEndedSummary(false);
       setSettingsOpen(false);
       setMuted(false);
+      minimizedRef.current = false;
+      setMinimized(false);
+      setMiniStrip(false);
+      setUnseenAnswer(false);
+      setMaximized(false);
+      const assistantSession = loadOverlaySettings().mode === "assistant";
+      setSystemEnabled(!assistantSession);
+      setMicEnabled(assistantSession);
       // Capture was started just before this reset (App.tsx's
       // startInterview awaits it before showing the overlay) — re-read it
       // rather than trusting whatever this reused window last knew.
@@ -667,8 +858,9 @@ export function InterviewOverlay() {
       setShots([]);
       invoke("clear_screenshots").catch(() => {});
       committedRef.current = "";
-      pendingPartialIdRef.current = null;
-      suppressFinalIdRef.current = null;
+      partialsRef.current.clear();
+      suppressFinalIdsRef.current.clear();
+      recentHeardRef.current = [];
       busyRef.current = false;
       sessionStartedAtRef.current = Date.now();
       sessionIdRef.current = crypto.randomUUID();
@@ -700,6 +892,11 @@ export function InterviewOverlay() {
     const el = scrollRef.current;
     if (el) el.scrollTop = 0;
   }, [activeTurnId]);
+  const newestTurnId = turns.length > 0 ? turns[turns.length - 1].id : undefined;
+  useEffect(() => {
+    const el = miniScrollRef.current;
+    if (el) el.scrollTop = 0;
+  }, [newestTurnId]);
 
   // Shared between `askAI` and `analyzeScreen` — both send the same
   // answer-shaping options to their respective backend commands.
@@ -782,7 +979,8 @@ export function InterviewOverlay() {
       // its text already made it into `trimmed` via the live partial — the
       // final that STT emits for that same segment a moment later must be
       // dropped, not appended to the fresh buffer for the next question.
-      suppressFinalIdRef.current = pendingPartialIdRef.current;
+      for (const id of partialsRef.current.keys()) suppressFinalIdsRef.current.add(id);
+      partialsRef.current.clear();
     }
     busyRef.current = true;
     setBusy(true);
@@ -799,7 +997,7 @@ export function InterviewOverlay() {
       await invoke<string>("ask_interview_question", {
         question: questionText === ANALYZE_SCREEN_QUESTION_LABEL && readyShots.length > 0 ? "" : questionText,
         history,
-        options: { ...buildAskOptions(), deep },
+        options: { ...buildAskOptions(), deep, speakerLabeled: hasSpeakerLabels(questionText) },
         screenshotIds: readyShots.map((s) => s.id),
       });
     } catch (e) {
@@ -952,19 +1150,6 @@ export function InterviewOverlay() {
     }
   }, [chatMode]);
 
-  // Resize icon — cycles the overlay through its three preset sizes (see
-  // SIZE_FRACTIONS) and actually resizes the window itself; nothing else
-  // reacts to `settings.size` changes to do that on its own (the mount-time
-  // effect that calls resize_interview_overlay only ever runs once).
-  const cycleSize = useCallback(() => {
-    setSettings((prev) => {
-      const idx = SIZE_ORDER.indexOf(prev.size);
-      const nextSize = SIZE_ORDER[(idx + 1) % SIZE_ORDER.length];
-      invoke("resize_interview_overlay", { fraction: SIZE_FRACTIONS[nextSize] }).catch(() => {});
-      return { ...prev, size: nextSize };
-    });
-  }, []);
-
   // Actually hides the overlay window — the last step of ending an
   // interview, whether that's immediate (nothing was ever asked, see
   // requestClose) or after the user dismisses the post-interview summary
@@ -1023,8 +1208,8 @@ export function InterviewOverlay() {
       autoAiTimerRef.current = null;
     }
     committedRef.current = "";
-    pendingPartialIdRef.current = null;
-    suppressFinalIdRef.current = null;
+    partialsRef.current.clear();
+    suppressFinalIdsRef.current.clear();
     sessionStartedAtRef.current = Date.now();
     sessionIdRef.current = crypto.randomUUID();
     savedTurnCountRef.current = 0;
@@ -1047,19 +1232,42 @@ export function InterviewOverlay() {
   // one exchange ask for confirmation first (closing mid-interview is easy to
   // trigger by accident), while an empty session just closes immediately —
   // there's nothing to lose by skipping the prompt.
-  const toggleMute = useCallback(async () => {
-    if (muteBusy || !captureActive) return;
-    setMuteBusy(true);
-    setError(null);
-    try {
-      await invoke(muted ? "resume_recording" : "pause_recording");
-      setMuted(!muted);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setMuteBusy(false);
-    }
-  }, [muted, muteBusy, captureActive]);
+  const minimizeOverlay = useCallback(() => {
+    minimizedRef.current = true;
+    setUnseenAnswer(false);
+    setMiniStrip(false);
+    setMinimized(true);
+    invoke("minimize_interview_overlay").catch((e) => {
+      minimizedRef.current = false;
+      setMinimized(false);
+      setError(`Couldn't minimize: ${e}`);
+    });
+  }, []);
+
+  const toggleMaximize = useCallback(() => {
+    invoke<boolean>("toggle_maximize_interview_overlay")
+      .then(setMaximized)
+      .catch((e) => setError(`Couldn't resize: ${e}`));
+  }, []);
+
+  const restoreOverlay = useCallback(() => {
+    return invoke("restore_interview_overlay")
+      .catch(() => {})
+      .finally(() => {
+        minimizedRef.current = false;
+        setMinimized(false);
+        setMiniStrip(false);
+        setUnseenAnswer(false);
+      });
+  }, []);
+
+  // The box's own minimize: fold down to just the top strip, or back.
+  const toggleMiniStrip = useCallback(() => {
+    setMiniStrip((strip) => {
+      invoke("minimize_interview_overlay", { strip: !strip }).catch(() => {});
+      return !strip;
+    });
+  }, []);
 
   const requestClose = useCallback(() => {
     const hasConversation = turns.some((t) => !t.pending && t.answer.trim());
@@ -1196,10 +1404,136 @@ export function InterviewOverlay() {
     ["--overlay-alpha" as string]: settingsOpen ? 1 : settings.opacity,
   };
 
+  const miniTurn = turns.length > 0 ? turns[turns.length - 1] : null;
   const hasConversation = turns.length > 0;
   const displayIndex = turns.length === 0 ? -1 : Math.min(viewIndex ?? turns.length - 1, turns.length - 1);
   const activeTurn = displayIndex >= 0 ? turns[displayIndex] : null;
   const opacityPercent = Math.round(settings.opacity * 100);
+
+  if (minimized) {
+    const trimmedQuestion = question.trim();
+    const liveQuestion = trimmedQuestion.length > 240 ? `…${trimmedQuestion.slice(-240)}` : trimmedQuestion;
+    // Same rule as the full overlay's Answer button.
+    const canAnswer =
+      !busy &&
+      (!!trimmedQuestion ||
+        shots.some((s) => s.status !== "error") ||
+        (settings.deepThinking && turns.some((t) => !t.pending && !t.failed)));
+    const miniStatus = busy
+      ? "Answering…"
+      : unseenAnswer
+        ? "Answer ready"
+        : !systemEnabled && !micEnabled
+          ? "Not listening"
+          : listening
+            ? "Listening…"
+            : "Starting…";
+    return (
+      <div className="overlay-root overlay-mini-root" style={overlayStyle}>
+        {/* The whole box drags (buttons excepted); Open restores. No
+            data-tooltips here — the window is too small to show them. */}
+        <div className="overlay-mini">
+          <div className="overlay-mini-header" data-tauri-drag-region="deep">
+          {/* The same switches as the full overlay's two source icons. */}
+          <button
+            type="button"
+            className={`overlay-status-icon overlay-source-icon${systemEnabled ? " on" : " off"}`}
+            onClick={() => setSystemEnabled((on) => !on)}
+            aria-pressed={systemEnabled}
+            aria-label="Call audio"
+          >
+            <SpeakerIcon size={13} off={!systemEnabled} />
+            {systemEnabled && listening && !muted && <span className="overlay-status-dot" />}
+          </button>
+          <button
+            type="button"
+            className={`overlay-status-icon overlay-source-icon overlay-voice-icon${micEnabled ? " on" : " off"}${micEnabled && listening && !muted ? " live" : ""}${micEnabled && youSpeaking && !muted ? " speaking" : ""}`}
+            onClick={() => setMicEnabled((on) => !on)}
+            aria-pressed={micEnabled}
+            aria-label="Your microphone"
+          >
+            <VoiceIcon size={13} off={!micEnabled} />
+            {micEnabled && listening && !muted && <span className="overlay-status-dot voice" />}
+          </button>
+          <span className={`overlay-mini-status${unseenAnswer ? " ready" : ""}`}>{miniStatus}</span>
+          {secondsLeft !== null && (
+            <span className={`overlay-time-left overlay-mini-time${lowTime ? " low" : ""}`} aria-label="Time left on your plan">
+              {formatCountdownShort(secondsLeft)}
+            </span>
+          )}
+          <button
+            type="button"
+            className={`overlay-pill-button${settings.autoAI ? " on" : ""}`}
+            onClick={() => setSettings((prev) => ({ ...prev, autoAI: !prev.autoAI }))}
+            aria-pressed={settings.autoAI}
+            aria-label="Auto Answer"
+          >
+            Auto
+          </button>
+          <button type="button" className="overlay-icon-button overlay-mini-shot" onClick={takeScreenshot} aria-label="Screenshot">
+            <CameraIcon />
+            {shots.length > 0 && <span className="pill-count">{shots.length}</span>}
+          </button>
+          <button type="button" className="overlay-pill-button" onClick={() => askAI()} disabled={!canAnswer}>
+            Answer
+          </button>
+          <span className="overlay-window-controls">
+            <button
+              type="button"
+              className="overlay-icon-button"
+              onClick={toggleMiniStrip}
+              aria-label={miniStrip ? "Show the answer" : "Minimize further"}
+            >
+              <MinimizeIcon />
+            </button>
+            <button type="button" className="overlay-icon-button overlay-mini-open" onClick={restoreOverlay} aria-label="Open full overlay">
+              <MaximizeIcon />
+            </button>
+            <button
+              type="button"
+              className="overlay-icon-button overlay-window-close"
+              onClick={() => {
+                // With a conversation, ending asks first — that prompt lives
+                // in the full overlay, so open it before asking.
+                if (turns.some((t) => !t.pending && t.answer.trim())) void restoreOverlay().then(requestClose);
+                else requestClose();
+              }}
+              aria-label={`End ${sessionNoun}`}
+            >
+              <CloseIcon />
+            </button>
+          </span>
+          </div>
+          <div className="overlay-mini-body" ref={miniScrollRef} hidden={miniStrip}>
+            {/* What's being heard right now (the question field), newest
+                words kept in view. */}
+            {liveQuestion && (
+              <div className="overlay-mini-live">
+                <span className="overlay-mini-label">Hearing</span>
+                <p className="overlay-mini-live-text">{liveQuestion}</p>
+              </div>
+            )}
+            {miniTurn ? (
+              <>
+                <p className="overlay-mini-question">{miniTurn.question}</p>
+                {miniTurn.answer ? (
+                  <div className={`chat-markdown overlay-mini-answer${markdownClass}`}>
+                    <ReactMarkdown remarkPlugins={markdownPlugins} components={{ code: MarkdownCode }}>{miniTurn.answer}</ReactMarkdown>
+                  </div>
+                ) : miniTurn.failed ? (
+                  <p className="overlay-mini-muted">Couldn't get an answer.</p>
+                ) : (
+                  <p className="overlay-mini-muted">{miniTurn.deep ? "Thinking deeply…" : "Thinking…"}</p>
+                )}
+              </>
+            ) : (
+              !liveQuestion && <p className="overlay-mini-muted">{waitingText}</p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -1212,22 +1546,48 @@ export function InterviewOverlay() {
           themselves — Tauri's drag script already treats BUTTON as
           clickable and blocks dragging for it. */}
       <div className="overlay-header overlay-action-bar" data-tauri-drag-region="deep">
-        {/* Mic + system audio share one underlying capture/mute pipeline
-            (see toggleMute/pause_recording — there's no separate on/off for
-            each source). This single button mutes/unmutes both; a lit red
-            dot means the app is actually feeding the transcript right now.
-            This is also the overlay's only mute control — the transcript
-            bar used to have its own second mic icon here, which was just a
-            duplicate of this one. */}
+        <div className="overlay-action-bar-main">
+        {/* The two audio sources, each its own switch. Call audio (speaker):
+            what the PC plays — the other side; on by default, red dot while
+            it's being heard. Your voice (person): your microphone; off by
+            default, green dot while it's being heard. Either can be on
+            without the other. */}
         <button
           type="button"
-          className="overlay-status-icon"
-          onClick={toggleMute}
-          disabled={!captureActive || muteBusy}
-          data-tooltip={muted ? "Unmute — resume transcribing" : "Mute — pause transcribing"}
+          className={`overlay-status-icon overlay-source-icon${systemEnabled ? " on" : " off"}`}
+          onClick={() => setSystemEnabled((on) => !on)}
+          aria-pressed={systemEnabled}
+          aria-label="Call audio"
+          data-tooltip={
+            systemEnabled
+              ? "Listening to the call — click to stop hearing the call audio"
+              : "Call audio is off — click to hear the call again"
+          }
         >
-          {muted ? <MicOffIcon size={13} /> : <MicIcon size={13} />}
-          {captureActive && !muted && <span className="overlay-status-dot" />}
+          <SpeakerIcon size={13} off={!systemEnabled} />
+          {systemEnabled && listening && !muted && <span className="overlay-status-dot" />}
+        </button>
+        {/* Your own voice — the Mic switch. Off (dimmed, crossed out): only
+            the call is heard. On: green dot while your mic is being heard,
+            and the waves move while you talk. */}
+        <button
+          type="button"
+          className={`overlay-status-icon overlay-source-icon overlay-voice-icon${micEnabled ? " on" : " off"}${micEnabled && listening && !muted ? " live" : ""}${micEnabled && youSpeaking && !muted ? " speaking" : ""}`}
+          onClick={() => setMicEnabled((on) => !on)}
+          aria-pressed={micEnabled}
+          aria-label="Your microphone"
+          data-tooltip={
+            !micEnabled
+              ? "Your mic is off — click to hear your voice too"
+              : muted
+                ? "Muted — your voice isn't being heard"
+                : listening
+                  ? "Listening to your voice — click to turn your mic off"
+                  : "Your mic is on — your voice will be heard as soon as the session starts. Click to turn it off"
+          }
+        >
+          <VoiceIcon size={13} off={!micEnabled} />
+          {micEnabled && listening && !muted && <span className="overlay-status-dot voice" />}
         </button>
         <button
           type="button"
@@ -1270,7 +1630,7 @@ export function InterviewOverlay() {
           onClick={() => setSettings((prev) => ({ ...prev, autoAI: !prev.autoAI }))}
           data-tooltip={
             settings.autoAI
-              ? `Auto Answer is on — questions send automatically when the ${isMeeting ? "speaker" : "interviewer"} stops talking`
+              ? `Auto Answer is on — questions send automatically when the ${isAssistant ? "speaking" : isMeeting ? "speaker" : "interviewer"} stops${isAssistant ? "" : " talking"}`
               : "Auto Answer is off — use Answer or Enter to send"
           }
         >
@@ -1286,15 +1646,6 @@ export function InterviewOverlay() {
           Screenshot
           {shots.length > 0 && <span className="pill-count">{shots.length}</span>}
         </button>
-        {remainingSecondsAtStart !== null && (
-          <span
-            className="overlay-time-left"
-            style={{ opacity: 0.7, fontVariantNumeric: "tabular-nums" }}
-            data-tooltip="Time remaining on your plan this session"
-          >
-            {formatCountdown(Math.max(0, remainingSecondsAtStart - elapsedSeconds))} left
-          </span>
-        )}
         <div className="overlay-action-bar-spacer" />
         {/* Not a <button> — the whole bar is already the drag handle (see
             data-tauri-drag-region="deep" above); a real button here would
@@ -1325,67 +1676,48 @@ export function InterviewOverlay() {
         {opacityHint && <span className="overlay-opacity-readout">{opacityPercent}%</span>}
         <button
           type="button"
-          className="overlay-icon-button"
-          onClick={cycleSize}
-          data-tooltip={`Resize (currently ${settings.size})`}
+          className={`overlay-icon-button${settingsOpen ? " on" : ""}`}
+          onClick={() => setSettingsOpen((v) => !v)}
+          aria-label="Settings"
+          data-tooltip="Settings"
         >
-          <ResizeIcon />
+          <GearIcon />
         </button>
-        <button
-          type="button"
-          className={`overlay-icon-button${moreOpen ? " on" : ""}`}
-          onClick={() => setMoreOpen((v) => !v)}
-          data-tooltip="More"
-        >
-          <MoreVerticalIcon />
-        </button>
-        <button
-          type="button"
-          className="overlay-pill-button end"
-          onClick={requestClose}
-          data-tooltip={`End ${sessionNoun} (Esc)`}
-        >
-          End
-        </button>
+        </div>
+        {/* Window controls, like a browser's: minimize, maximize (which is
+            also the size control now), close — pinned to the top-right
+            corner however narrow the overlay gets. */}
+        <span className="overlay-window-controls">
+          <button
+            type="button"
+            className="overlay-icon-button"
+            onClick={minimizeOverlay}
+            aria-label="Minimize"
+            data-tooltip="Minimize to the corner — keeps listening and answering"
+          >
+            <MinimizeIcon />
+          </button>
+          <button
+            type="button"
+            className="overlay-icon-button"
+            onClick={toggleMaximize}
+            aria-label={maximized ? "Restore size" : "Maximize"}
+            data-tooltip={maximized ? "Restore size" : "Maximize"}
+          >
+            {maximized ? <RestoreSizeIcon /> : <MaximizeIcon />}
+          </button>
+          <button
+            type="button"
+            className="overlay-icon-button overlay-window-close"
+            onClick={requestClose}
+            aria-label={`End ${sessionNoun}`}
+            data-tooltip={`End ${sessionNoun} (Esc)`}
+          >
+            <CloseIcon />
+          </button>
+        </span>
       </div>
 
-      {/* Row B — status + Auto AI/opacity/full-settings, tucked behind "⋮"
-          (More) instead of permanently on screen, matching the reference's
-          minimal default chrome. */}
-      {moreOpen && (
-        <div className="overlay-header overlay-status-bar" data-tauri-drag-region="deep">
-          <div className="overlay-title">
-            {/* While adjusting, the title doubles as the readout — the
-                change itself can be hard to judge against a dark desktop,
-                and this avoids spending permanent header space on a number.
-                Before capture is confirmed active, this says "Starting…"
-                rather than claiming "Listening" while audio/STT may still be
-                initializing (or may have failed — see the error banner
-                below). */}
-            {opacityHint
-              ? `Opacity ${opacityPercent}%`
-              : busy
-                ? "Answering…"
-                : muted
-                  ? "Muted"
-                  : captureActive
-                    ? "Listening"
-                    : "Starting…"}
-          </div>
-
-          <div className="overlay-header-actions">
-            {/* Time-left and the Auto Answer toggle both moved to the main
-                action bar above — not duplicated here. */}
-            <button
-              className="overlay-icon-button"
-              onClick={() => setSettingsOpen((v) => !v)}
-              data-tooltip="Settings"
-            >
-              <GearIcon />
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Screen-capture exclusion (SetWindowDisplayAffinity/
           WDA_EXCLUDEFROMCAPTURE) can fail — older Windows builds don't
@@ -1406,7 +1738,9 @@ export function InterviewOverlay() {
 
       {showEndedSummary ? (
         <div className="overlay-confirm-close">
-          <p className="overlay-confirm-close-title">{isMeeting ? "Meeting ended" : "Interview ended"}</p>
+          <p className="overlay-confirm-close-title">
+            {isAssistant ? "Session ended" : isMeeting ? "Meeting ended" : "Interview ended"}
+          </p>
           <p className="overlay-confirm-close-body">
             Your transcript has been saved — view it anytime from the dashboard.
           </p>
@@ -1505,13 +1839,19 @@ export function InterviewOverlay() {
                 onChange={handleQuestionChange}
                 onKeyDown={handleQuestionKeyDown}
                 placeholder={
-                  !captureActive
+                  !systemEnabled && !micEnabled
+                    ? "Not listening — turn on the call audio or your mic"
+                    : !listening
                     ? "Starting to listen…"
                     : hasConversation
-                    ? "Next question…"
-                    : isMeeting
-                      ? "Waiting for someone to speak…"
-                      : "Waiting for the interviewer to speak…"
+                    ? isAssistant
+                      ? "Ask a follow-up…"
+                      : "Next question…"
+                    : isAssistant
+                      ? "Ask anything…"
+                      : isMeeting
+                        ? "Waiting for someone to speak…"
+                        : "Waiting for the interviewer to speak…"
                 }
                 rows={1}
               />
@@ -1552,6 +1892,14 @@ export function InterviewOverlay() {
             >
               <ChevronRightIcon />
             </button>
+            {secondsLeft !== null && (
+              <span
+                className={`overlay-time-left${lowTime ? " low" : ""}`}
+                data-tooltip="Time left on your plan"
+              >
+                {formatCountdown(secondsLeft)} left
+              </span>
+            )}
             <div className="overlay-action-bar-spacer" />
             <button
               type="button"
@@ -1566,9 +1914,7 @@ export function InterviewOverlay() {
 
           <div className="overlay-chat" ref={scrollRef}>
             {!activeTurn ? (
-              <p className="overlay-empty">
-                {isMeeting ? "Waiting for someone to speak…" : "Waiting for the interviewer to speak…"}
-              </p>
+              <p className="overlay-empty">{waitingText}</p>
             ) : (
               <div className="chat-turn">
                 <div className="chat-card-label question">
@@ -1608,8 +1954,8 @@ export function InterviewOverlay() {
                     )}
                   </div>
                   {activeTurn.answer ? (
-                    <div className="chat-text chat-markdown">
-                      <ReactMarkdown components={{ code: MarkdownCode }}>{activeTurn.answer}</ReactMarkdown>
+                    <div className={`chat-text chat-markdown${markdownClass}`}>
+                      <ReactMarkdown remarkPlugins={markdownPlugins} components={{ code: MarkdownCode }}>{activeTurn.answer}</ReactMarkdown>
                     </div>
                   ) : activeTurn.failed ? (
                     <p className="chat-text muted">Couldn't get an answer.</p>

@@ -51,3 +51,21 @@ export const MEETING_CONTEXT_SECTIONS: DocumentContextSection[] = [
   },
   { key: "previous_notes", documentType: "PREVIOUS_MEETING_NOTES", label: "Previous meeting notes" },
 ];
+
+// Assistant Mode's own document types — isolated from both lists above, so
+// nothing from an interview or meeting reaches the assistant or vice versa.
+export const ASSISTANT_CONTEXT_SECTIONS: DocumentContextSection[] = [
+  {
+    key: INSTRUCTIONS_SECTION_KEY,
+    documentType: "ASSISTANT_INSTRUCTIONS",
+    label: "Custom instructions",
+    textOnly: true,
+    placeholder: "How should the assistant answer? e.g. Keep it short, explain like I'm new to this, reply in Hindi",
+  },
+  {
+    key: "files",
+    documentType: "ASSISTANT_CONTEXT",
+    label: "Files & notes",
+    description: "Anything you want help with — documents, screenshots, notes, pasted text.",
+  },
+];

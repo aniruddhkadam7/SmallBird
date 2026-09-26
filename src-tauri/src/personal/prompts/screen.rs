@@ -32,6 +32,9 @@ const INSTRUCTION: &str = "Look at the attached screenshot of what's currently o
 const MEETING_INSTRUCTION: &str = "Look at the attached screenshot of what's currently on my screen during this meeting — it might show slides, a document, a dashboard, a chat message, a question someone posted, or code. Work out what matters in it for this meeting and tell me what I should say about it, in the same spoken-sentence STYLE and FORMAT rules as anything else in this meeting. If it asks a question, answer it; if it's a slide or report, give me the key point worth raising. If it's code, handle it per FORMAT 7. If nothing on screen looks relevant to the meeting (e.g. it's an unrelated app), say briefly what you actually see instead of forcing an answer.";
 
 pub fn build_messages(request: &AskRequest, image_png_base64: String) -> Vec<ChatMessage> {
+    if request.assistant.is_some() {
+        return super::assistant::build_screen_messages(request, &image_png_base64);
+    }
     let mut messages = vec![ChatMessage::system(ask::system_prompt(request))];
 
     if let Some(background) = ask::build_background_message(request) {
@@ -45,6 +48,7 @@ pub fn build_messages(request: &AskRequest, image_png_base64: String) -> Vec<Cha
     }
 
     let instruction = if request.meeting.is_some() { MEETING_INSTRUCTION } else { INSTRUCTION };
+    let instruction = format!("{instruction}\n\n{}", super::LANGUAGE_RULE);
     messages.push(ChatMessage::user_with_image(instruction, image_png_base64));
     messages
 }
@@ -72,6 +76,8 @@ mod tests {
             custom_instructions: None,
             deep: false,
             images: Vec::new(),
+            speaker_labeled: false,
+            assistant: None,
         }
     }
 

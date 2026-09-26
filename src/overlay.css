@@ -230,6 +230,45 @@ body.overlay-window #root {
   box-shadow: 0 0 3px rgba(239, 68, 68, 0.9);
 }
 
+/* Your-voice icon (My Mic): green where the listening icon is red, and its
+   waves pulse while you talk. */
+.overlay-status-dot.voice {
+  background: #22c55e;
+  box-shadow: 0 0 3px rgba(34, 197, 94, 0.9);
+}
+
+.overlay-source-icon.off {
+  opacity: 0.55;
+}
+
+.overlay-source-icon.off:hover {
+  opacity: 1;
+}
+
+.overlay-voice-icon .voice-wave {
+  opacity: 0.35;
+  transition: opacity 0.15s ease;
+}
+
+.overlay-voice-icon.speaking .voice-wave {
+  opacity: 1;
+  animation: overlay-voice-wave 0.8s ease-in-out infinite;
+}
+
+.overlay-voice-icon.speaking .voice-wave-outer {
+  animation-delay: 0.2s;
+}
+
+@keyframes overlay-voice-wave {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 /* Row A — the primary-action pill toolbar (Answer / Screenshot / Chat / End),
    matching the reference layout's top bar. */
 .overlay-action-bar {
@@ -457,9 +496,22 @@ body.overlay-window #root {
    buttons next to it) and small enough to sit inline between them. */
 .overlay-time-left {
   flex: 0 0 auto;
-  font-size: 11px;
+  margin-left: 6px;
+  font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Under five minutes left. */
+.overlay-time-left.low {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.overlay-mini-time {
+  margin-left: 0;
+  font-size: 11px;
 }
 
 .overlay-header-actions {
@@ -943,6 +995,96 @@ body.overlay-window #root {
   white-space: inherit;
 }
 
+/* ---------- Answers, formatted like a chat app's (ChatGPT/Gemini) -----------
+   Real heading sizes, room between sections, tables, quotes and dividers —
+   in every mode. */
+.chat-markdown.rich-markdown {
+  gap: 7px;
+  line-height: 1.55;
+}
+
+.rich-markdown h1,
+.rich-markdown h2,
+.rich-markdown h3,
+.rich-markdown h4 {
+  margin: 6px 0 0;
+  line-height: 1.3;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.rich-markdown > :first-child {
+  margin-top: 0;
+}
+
+.rich-markdown h1 {
+  font-size: 1.3em;
+}
+
+.rich-markdown h2 {
+  font-size: 1.15em;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.rich-markdown h3 {
+  font-size: 1.05em;
+}
+
+.rich-markdown h4 {
+  font-size: 1em;
+  color: var(--muted);
+}
+
+.rich-markdown li + li {
+  margin-top: 4px;
+}
+
+.rich-markdown blockquote {
+  margin: 0;
+  padding: 2px 0 2px 10px;
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+}
+
+.rich-markdown hr {
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--hairline);
+  margin: 4px 0;
+}
+
+/* Tables scroll sideways inside a narrow overlay instead of squashing. */
+.rich-markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.93em;
+}
+
+.rich-markdown th,
+.rich-markdown td {
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  text-align: left;
+  vertical-align: top;
+}
+
+.rich-markdown th {
+  background: rgba(255, 255, 255, 0.08);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.rich-markdown tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.rich-markdown del {
+  opacity: 0.7;
+}
+
 /* ---------- transcript/chat compose bar ---------- */
 
 .overlay-question-input {
@@ -1282,15 +1424,213 @@ body.overlay-window #root {
   container-name: overlay;
 }
 
+/* Minimized: the small box in the bottom-right corner. */
+.overlay-mini-root {
+  padding: 0;
+}
+
+.overlay-mini {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: var(--panel-answer);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.overlay-mini-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  flex: 0 0 auto;
+  background: var(--panel-header);
+}
+
+/* Thin: a slim top strip and tight text, so the box takes as little of the
+   screen as it can. */
+.overlay-mini-header {
+  gap: 4px;
+  padding: 3px 6px;
+}
+
+.overlay-mini-header .overlay-status-icon,
+.overlay-mini-header .overlay-icon-button {
+  width: 20px;
+  height: 20px;
+}
+
+.overlay-mini-header svg {
+  width: 12px;
+  height: 12px;
+}
+
+.overlay-mini-header .overlay-pill-button {
+  height: 20px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+.overlay-mini-header .overlay-window-controls {
+  min-height: 20px;
+  gap: 2px;
+}
+
+.overlay-mini-status {
+  font-size: 12px;
+}
+
+.overlay-mini-body {
+  padding: 5px 10px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.overlay-mini-live {
+  margin-bottom: 6px;
+  padding: 4px 7px;
+}
+
+.overlay-mini-live-text {
+  font-size: 12px;
+}
+
+.overlay-mini-question {
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+/* Screenshot as an icon in the box, with its count as a small badge. */
+.overlay-mini-shot {
+  position: relative;
+}
+
+.overlay-mini-shot .pill-count {
+  position: absolute;
+  top: -5px;
+  right: -6px;
+  margin: 0;
+}
+
+.overlay-mini-body[hidden] {
+  display: none;
+}
+
+.overlay-mini-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 12px 10px;
+  font-size: 13px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.overlay-mini-header .overlay-pill-button {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.overlay-mini-live {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--panel-transcript);
+}
+
+.overlay-mini-label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.overlay-mini-live-text {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.overlay-mini-question {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.overlay-mini-answer > :first-child {
+  margin-top: 0;
+}
+
+.overlay-mini-muted {
+  margin: 0;
+  color: var(--muted);
+}
+
+.overlay-mini-source {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.overlay-mini-source.off {
+  opacity: 0.55;
+}
+
+.overlay-mini-status {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.overlay-mini-status.ready {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.overlay-mini-open {
+  flex: 0 0 auto;
+}
+
 /* Wraps as a last resort: if the pills still don't fit after the
    breakpoints below drop labels and extras, they flow onto a second line
    inside the bar instead of pushing End off the edge. End and the icon
    controls never shrink (they used to be squeezed down to 14px). */
 .overlay-action-bar {
   min-width: 0;
-  flex-wrap: wrap;
-  row-gap: 4px;
+  flex-wrap: nowrap;
+  align-items: flex-start;
   border-radius: 16px;
+}
+
+/* Everything in the bar except the window controls — this part wraps onto
+   a second line when the overlay is narrow, so the controls never have to. */
+.overlay-action-bar-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  row-gap: 4px;
 }
 
 .overlay-action-bar .overlay-pill-button.end,
@@ -1302,6 +1642,27 @@ body.overlay-window #root {
 
 .overlay-action-bar .overlay-pill-button.end {
   margin-left: auto;
+}
+
+/* Minimize / maximize / close, grouped like a browser's window controls and
+   pinned to the top-right corner. */
+.overlay-window-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  margin-left: auto;
+  /* Same height as the pills beside it, so the row lines up. */
+  min-height: 24px;
+}
+
+.overlay-icon-button.overlay-window-close {
+  background: rgba(239, 68, 68, 0.9);
+  color: #fff;
+}
+
+.overlay-icon-button.overlay-window-close:hover:not(:disabled) {
+  background: #ef4444;
 }
 
 .overlay-action-bar-spacer {
@@ -1336,13 +1697,9 @@ body.overlay-window #root {
    plus ~57px for the time-left counter. So the counter goes first (below
    700px), full labels stay down to 620px, and only then do Deep Answer /
    Auto Answer shorten to "Deep" / "Auto" (text, never icons). */
-@container overlay (max-width: 700px) {
-  .overlay-time-left {
-    display: none;
-  }
-}
 
-@container overlay (max-width: 620px) {
+
+@container overlay (max-width: 650px) {
   .overlay-pill-button .pill-long {
     display: none;
   }
@@ -1357,7 +1714,8 @@ body.overlay-window #root {
   .overlay-move-affordance {
     display: none;
   }
-  .overlay-action-bar {
+  .overlay-action-bar,
+  .overlay-action-bar-main {
     gap: 4px;
   }
   .overlay-pill-button {

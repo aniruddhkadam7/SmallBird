@@ -44,6 +44,18 @@ pub fn resize_overlay(app: &AppHandle, fraction: f64) -> Result<(), String> {
     overlay_window::resize_overlay(app, OVERLAY_WINDOW_LABEL, fraction)
 }
 
+pub fn minimize_overlay(app: &AppHandle, strip: bool) -> Result<(), String> {
+    overlay_window::minimize_overlay(app, OVERLAY_WINDOW_LABEL, strip)
+}
+
+pub fn restore_overlay(app: &AppHandle) -> Result<(), String> {
+    overlay_window::restore_overlay(app, OVERLAY_WINDOW_LABEL)
+}
+
+pub fn toggle_maximize_overlay(app: &AppHandle) -> Result<bool, String> {
+    overlay_window::toggle_maximize_overlay(app, OVERLAY_WINDOW_LABEL)
+}
+
 pub fn is_capture_excluded(app: &AppHandle) -> bool {
     overlay_window::is_capture_excluded(app, OVERLAY_WINDOW_LABEL)
 }

@@ -58,6 +58,7 @@ This answer is read on screen during a live interview, so it needs real Markdown
 - Never stack more than 2-3 sentences of prose back to back with nothing breaking it up: once you'd be writing a 3rd/4th connected sentence, start a new paragraph (blank line) or switch to a numbered list / bullets instead.
 - Any answer with more than one distinct step, reason, stage, or point MUST use a real Markdown numbered list (\"1. \", \"2. \") or bullets (\"- \") for those points — not one paragraph that mentions them all in a row. If you catch yourself writing \"first... then... also... finally...\" inside one paragraph, stop and make it a list instead.
 - Every bullet or numbered step must still read as a full, natural sentence a person would actually say out loud — never a bare fragment, and never a bolded label followed by a fragment (e.g. \"**Problem:** ...\").
+- LONG, MULTI-PART ANSWERS ONLY (a system design, a full walkthrough, several distinct areas): put a short `###` heading (two to five words) above each part so it scans at a glance, like a well-formatted chat answer. When comparing two or more things across the same points, a compact Markdown table is fine. Never add headings or tables to a short or single-point answer — those stay plain spoken sentences.
 - Sound conversational and confident, the way someone talks when they actually know the material. Contractions are fine (\"I'd\", \"it's\", \"didn't\"). It's fine to build one idea into the next inside a paragraph rather than forcing everything into a list — use a list only when there's a genuine sequence or set of separate points.
 - Don't lean on \"I\" — no \"I would…\", \"I will…\", \"I think…\", \"I'd say…\" at the start of the answer or of sentence after sentence. Open with the substance itself — the thing, the fact, the approach (\"**Redis** works well here because…\", \"The main risk is…\", \"That comes down to two things:\"). Use \"I\"/\"we\" only where it genuinely belongs (the candidate's own experience from the background, or a direct \"have you…\" question), and at most once or twice in an answer; no list item should start with \"I\".
 - No filler, no throat-clearing, no \"so basically\" repeated over and over, no meta-commentary (\"Great question\"), no preamble, no restating the question back before answering.
@@ -255,7 +256,7 @@ fn is_meeting_list_question(request: &AskRequest) -> bool {
     if request.meeting.is_none() {
         return false;
     }
-    let lowered = request.question.to_lowercase();
+    let lowered = asked_text(request).to_lowercase();
     MEETING_LIST_MARKERS.iter().any(|m| lowered.contains(m))
 }
 
@@ -508,8 +509,42 @@ pub(crate) fn system_prompt(request: &AskRequest) -> &'static str {
     }
 }
 
+/// Line prefixes the overlay uses for a speaker-labeled question.
+const THEM_PREFIX: &str = "Them:";
+const YOU_PREFIX: &str = "You:";
+
+/// What the other side said, for classifying the question's format/length/
+/// intent: with speaker labels, only the "Them:" lines — the user's own
+/// words are context, not the question. Falls back to the whole text.
+fn asked_text(request: &AskRequest) -> String {
+    if !request.speaker_labeled {
+        return request.question.clone();
+    }
+    let them: Vec<&str> = request
+        .question
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix(THEM_PREFIX).map(str::trim))
+        .collect();
+    if them.is_empty() {
+        request.question.clone()
+    } else {
+        them.join(" ")
+    }
+}
+
+/// How a speaker-labeled question is presented: who "Them" and "You" are,
+/// and what to answer.
+fn labeled_conversation_block(request: &AskRequest) -> String {
+    let them = if request.meeting.is_some() { "the other people in the meeting" } else { "the interviewer" };
+    format!(
+        "The live conversation since your last answer, each line labeled by who said it — \"{THEM_PREFIX}\" is {them}, \"{YOU_PREFIX}\" is the user (the person you are answering as), speaking into their own microphone:\n{}\n\nWork out what {them} are asking or expecting from the user right now, and answer that. \"{YOU_PREFIX}\" lines are what the user has already said out loud — build on them and never repeat them; if the user has already started answering, continue and complete their point rather than starting over. Never answer a \"{YOU_PREFIX}\" line as if it were the question, and never write the labels in your answer.",
+        request.question
+    )
+}
+
 fn build_user_prompt(request: &AskRequest) -> String {
     let mut parts: Vec<String> = Vec::new();
+    let asked = asked_text(request);
 
     let speaker = if request.meeting.is_some() { "Someone in the meeting says" } else { "The interviewer asks" };
     if !request.images.is_empty() && request.question == super::screen::SCREEN_QUESTION_LABEL {
@@ -517,7 +552,11 @@ fn build_user_prompt(request: &AskRequest) -> String {
         let shots = if request.images.len() == 1 { "screenshot".to_string() } else { format!("{} screenshots (in the order taken)", request.images.len()) };
         parts.push(format!("{}\n(Attached: {shots}.)", super::screen::instruction(request.meeting.is_some())));
     } else {
-        parts.push(format!("{speaker}:\n{}", request.question));
+        if request.speaker_labeled {
+            parts.push(labeled_conversation_block(request));
+        } else {
+            parts.push(format!("{speaker}:\n{}", request.question));
+        }
         if !request.images.is_empty() {
             parts.push(format!(
                 "The user also attached {} screenshot(s) of their screen, in the order taken — use what they show (code, slides, a document, a question on screen) to answer this.",
@@ -532,13 +571,15 @@ fn build_user_prompt(request: &AskRequest) -> String {
     // how to shape the answer. See `prompts::conversation` for why this
     // exists — the model's own inference from raw replayed history alone
     // was not reliable enough for short, bare-noun follow-ups.
-    let intent = classify_intent(&request.question, !request.conversation_history.is_empty());
+    parts.push(super::LANGUAGE_RULE.to_string());
+
+    let intent = classify_intent(&asked, !request.conversation_history.is_empty());
     if let Some(block) = resolution_block_for(intent, request.conversation_state.as_ref(), request.conversation_history.last(), request.meeting.is_some()) {
         parts.push(block);
     }
 
     let list_question = is_meeting_list_question(request);
-    let format_line = match (list_question, classify_format(&request.question)) {
+    let format_line = match (list_question, classify_format(&asked)) {
         (true, _) => format!("{MEETING_LIST_FORMAT}\n\n"),
         (false, Some(hint)) => format!("{hint}\n\n"),
         (false, None) => "Pick the matching FORMAT from the system prompt above.\n\n".to_string(),
@@ -546,7 +587,7 @@ fn build_user_prompt(request: &AskRequest) -> String {
     let (length_hint, _budget) = if list_question {
         (MEETING_LIST_LENGTH, MEETING_LIST_MAX_TOKENS)
     } else {
-        classify_length(&request.question)
+        classify_length(&asked)
     };
 
     parts.push(format!(
@@ -571,6 +612,9 @@ fn build_user_prompt(request: &AskRequest) -> String {
 /// not flattened text) -> the current question with its supporting-context
 /// and length/format instructions.
 pub fn build_messages(request: &AskRequest) -> Vec<ChatMessage> {
+    if request.assistant.is_some() {
+        return super::assistant::build_messages(request);
+    }
     let mut messages = vec![ChatMessage::system(system_prompt(request))];
 
     if let Some(background) = build_background_message(request) {
@@ -595,6 +639,9 @@ pub fn build_messages(request: &AskRequest) -> Vec<ChatMessage> {
 /// only shrink it further, never inflate a SHORT/MEDIUM question or clip a
 /// LONG one down.
 pub fn max_tokens_for_question(request: &AskRequest) -> u32 {
+    if request.assistant.is_some() {
+        return super::assistant::MAX_TOKENS;
+    }
     // Screenshots often hold a whole coding problem or slide — never budget
     // below what a full answer to one needs.
     if !request.images.is_empty() {
@@ -607,7 +654,7 @@ fn max_tokens_for_text(request: &AskRequest) -> u32 {
     if is_meeting_list_question(request) {
         return MEETING_LIST_MAX_TOKENS;
     }
-    let (_prompt_text, mut question_budget) = classify_length(&request.question);
+    let (_prompt_text, mut question_budget) = classify_length(&asked_text(request));
     if request.meeting.is_some() {
         question_budget = question_budget.max(MEETING_MIN_TOKENS);
     }
@@ -622,6 +669,24 @@ fn max_tokens_for_text(request: &AskRequest) -> u32 {
 mod tests {
     use super::*;
     use crate::backend::ConversationTurn;
+
+    #[test]
+    fn speaker_labeled_question_explains_who_is_who_and_classifies_on_them() {
+        let mut request = base_request("Them: What is RAG?\nYou: So RAG is basically retrieval plus generation.");
+        request.speaker_labeled = true;
+        let prompt = build_user_prompt(&request);
+        assert!(prompt.contains("\"Them:\" is the interviewer"));
+        assert!(prompt.contains("build on them and never repeat them"));
+        assert!(!prompt.starts_with("The interviewer asks:"));
+        assert_eq!(asked_text(&request), "What is RAG?");
+    }
+
+    #[test]
+    fn unlabeled_question_is_unchanged() {
+        let request = base_request("What is RAG?");
+        assert!(build_user_prompt(&request).starts_with("The interviewer asks:\nWhat is RAG?"));
+        assert_eq!(asked_text(&request), "What is RAG?");
+    }
 
     fn base_request(question: &str) -> AskRequest {
         AskRequest {
@@ -642,6 +707,8 @@ mod tests {
             custom_instructions: None,
             deep: false,
             images: Vec::new(),
+            speaker_labeled: false,
+            assistant: None,
         }
     }
 

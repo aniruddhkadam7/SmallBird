@@ -281,7 +281,9 @@ impl DirectLlmClient {
 /// act on — named tools and facts must be right — so they run cooler, which
 /// measurably reduces confidently-invented names.
 fn ask_temperature(request: &AskRequest) -> f32 {
-    if request.meeting.is_some() {
+    if request.assistant.is_some() {
+        super::prompts::assistant::TEMPERATURE
+    } else if request.meeting.is_some() {
         0.35
     } else {
         0.65

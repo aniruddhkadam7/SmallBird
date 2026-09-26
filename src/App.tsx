@@ -31,7 +31,12 @@ import {
   IconSettings,
 } from "./Icons";
 import { IconAnthropic, IconDeepSeek, IconOpenAI } from "./ProviderIcons";
-import { INSTRUCTIONS_SECTION_KEY, INTERVIEW_CONTEXT_SECTIONS, MEETING_CONTEXT_SECTIONS } from "./headerPopups";
+import {
+  ASSISTANT_CONTEXT_SECTIONS,
+  INSTRUCTIONS_SECTION_KEY,
+  INTERVIEW_CONTEXT_SECTIONS,
+  MEETING_CONTEXT_SECTIONS,
+} from "./headerPopups";
 import { loadLlmProvider, saveLlmProvider, type LlmProvider } from "./llmProviderSetting";
 import { loadSessionMode, saveSessionMode, type SessionMode } from "./sessionMode";
 import { getAuthSession, type AuthSessionInfo } from "./auth";
@@ -44,7 +49,10 @@ type Popover = "MODE" | "MODEL" | "CONTEXT" | "SETTINGS" | "ACCOUNT" | "START_SE
 const SESSION_MODES: { value: SessionMode; label: string; description: string }[] = [
   { value: "interview", label: "Interview", description: "Answers as you, the candidate" },
   { value: "meeting", label: "Meeting", description: "Suggests what to say in a meeting" },
+  { value: "assistant", label: "Assistant", description: "Your personal assistant — ask anything" },
 ];
+
+const MODE_LABELS: Record<SessionMode, string> = { interview: "Interview", meeting: "Meeting", assistant: "Assistant" };
 
 // Only "openai" and "anthropic" have a real backend implementation (see
 // backend/supabase/functions/llm-proxy's PROVIDER_URLS). "gemini" was
@@ -114,6 +122,14 @@ function App() {
 
   const [sessionMode, setSessionMode] = useState<SessionMode>(() => loadSessionMode());
   const isMeeting = sessionMode === "meeting";
+  const isAssistant = sessionMode === "assistant";
+
+  // What a new session hears, per mode: Interview/Meeting listen to the call
+  // (your mic off until you turn it on); Assistant listens to your mic (the
+  // call audio off). The backend records exactly these from the key press.
+  useEffect(() => {
+    invoke("set_source_defaults", { system: !isAssistant, mic: isAssistant }).catch(() => {});
+  }, [isAssistant]);
 
   const [interviewContext, setInterviewContext] = useState<DocumentContextState>(() =>
     withSavedInstructions(emptyDocumentContextState(INTERVIEW_CONTEXT_SECTIONS), "interview"),
@@ -123,9 +139,17 @@ function App() {
   const [meetingContext, setMeetingContext] = useState<DocumentContextState>(() =>
     withSavedInstructions(emptyDocumentContextState(MEETING_CONTEXT_SECTIONS), "meeting"),
   );
-  const contextSections = isMeeting ? MEETING_CONTEXT_SECTIONS : INTERVIEW_CONTEXT_SECTIONS;
-  const contextState = isMeeting ? meetingContext : interviewContext;
-  const setContextState = isMeeting ? setMeetingContext : setInterviewContext;
+  // Assistant Mode's own context, isolated from both of the above.
+  const [assistantContext, setAssistantContext] = useState<DocumentContextState>(() =>
+    withSavedInstructions(emptyDocumentContextState(ASSISTANT_CONTEXT_SECTIONS), "assistant"),
+  );
+  const contextSections = isAssistant
+    ? ASSISTANT_CONTEXT_SECTIONS
+    : isMeeting
+      ? MEETING_CONTEXT_SECTIONS
+      : INTERVIEW_CONTEXT_SECTIONS;
+  const contextState = isAssistant ? assistantContext : isMeeting ? meetingContext : interviewContext;
+  const setContextState = isAssistant ? setAssistantContext : isMeeting ? setMeetingContext : setInterviewContext;
   const attachedMeetingSections = countFilledSections(
     MEETING_CONTEXT_SECTIONS.filter((s) => s.key !== INSTRUCTIONS_SECTION_KEY),
     meetingContext,
@@ -135,8 +159,10 @@ function App() {
   // like an agenda — remember each mode's across app restarts.
   const interviewInstructions = interviewContext[INSTRUCTIONS_SECTION_KEY]?.text ?? "";
   const meetingInstructions = meetingContext[INSTRUCTIONS_SECTION_KEY]?.text ?? "";
+  const assistantInstructions = assistantContext[INSTRUCTIONS_SECTION_KEY]?.text ?? "";
   useEffect(() => saveInstructions("interview", interviewInstructions), [interviewInstructions]);
   useEffect(() => saveInstructions("meeting", meetingInstructions), [meetingInstructions]);
+  useEffect(() => saveInstructions("assistant", assistantInstructions), [assistantInstructions]);
 
   // "updating" replaces the entire window with a small "Updating…" screen
   // (see the early return in the JSX below) — no banner, no button, no
@@ -344,8 +370,23 @@ function App() {
   // (offer to end that session and continue here) rather than a dead end.
   const [activeElsewhereMessage, setActiveElsewhereMessage] = useState<string | null>(null);
 
+  // A mode's own context panel — so a mode shortcut uploads that mode's
+  // files/instructions, not those of whichever mode was selected before.
+  const contextFor = useCallback(
+    (mode: SessionMode) =>
+      mode === "assistant"
+        ? ([ASSISTANT_CONTEXT_SECTIONS, assistantContext, setAssistantContext] as const)
+        : mode === "meeting"
+          ? ([MEETING_CONTEXT_SECTIONS, meetingContext, setMeetingContext] as const)
+          : ([INTERVIEW_CONTEXT_SECTIONS, interviewContext, setInterviewContext] as const),
+    [assistantContext, meetingContext, interviewContext],
+  );
+
   const startInterview = useCallback(
-    async (force = false, showOverlay = true) => {
+    async (force = false, showOverlay = true, mode?: SessionMode) => {
+      const [sections, sectionState, setSectionState] = mode
+        ? contextFor(mode)
+        : ([contextSections, contextState, setContextState] as const);
       // A Test Audio run still in flight holds the capture device and its own
       // STT session — release both before the real interview claims them.
       await audioTest.cancel();
@@ -368,7 +409,7 @@ function App() {
       // picked up on the first question after it finishes.
       // Run in parallel with the backend-session request below — they're
       // independent, and the session request is the slow part of starting.
-      const uploadPromise = uploadDocumentContext(contextSections, contextState);
+      const uploadPromise = uploadDocumentContext(sections, sectionState);
 
       // Mints the session's Deepgram key and starts the metered
       // interview_sessions row server-side. Any rejection here (not logged
@@ -384,7 +425,7 @@ function App() {
           uploadPromise,
           invoke<{ rejection: string | null; activeElsewhere: boolean }>("start_backend_session", { sttMode: "local", force }),
         ]);
-        setContextState(mergeTextUploads(uploaded));
+        setSectionState(mergeTextUploads(uploaded));
         sessionResult = result;
       } catch (e) {
         // Offline / backend unreachable: nothing started server-side, but
@@ -426,7 +467,7 @@ function App() {
       }
       return true;
     },
-    [contextSections, contextState, setContextState, audioTest.cancel],
+    [contextSections, contextState, setContextState, contextFor, audioTest.cancel],
   );
 
   const handleStart = useCallback(async () => {
@@ -484,6 +525,13 @@ function App() {
     }
     await handleStart();
   }, [isMeeting, startRole, startCompany, startMeetingTopic, startParticipants, handleStart]);
+
+  // Assistant Mode has nothing to set up — Start begins right away.
+  const handleAssistantStart = useCallback(async () => {
+    const current = loadOverlaySettings();
+    saveOverlaySettings({ ...current, mode: "assistant", role: "", company: "", meetingTopic: "", participants: "" });
+    await handleStart();
+  }, [handleStart]);
 
   // "Skip" on the details prompt — must also clear any role/company saved
   // from a *previous* interview. Without this, skipping just reused
@@ -567,12 +615,25 @@ function App() {
   // (it reads "Starting…" until capture reports Recording). Only this
   // explicit press starts anything; pressing the shortcut again closes the
   // overlay, which ends the session.
-  const startFromShortcut = useCallback(async () => {
+  const startFromShortcut = useCallback(async (requestedMode?: SessionMode) => {
+    const mode = requestedMode ?? sessionMode;
     if (sessionStateRef.current !== "IDLE") {
       invoke("shortcut_session_settled").catch(() => {});
       return;
     }
-    if (authSession?.loggedIn === false) {
+    // Claimed right away (the state below only reaches the ref on the next
+    // render), so a second start request arriving meanwhile can't also start.
+    sessionStateRef.current = "STARTING";
+    // Sign-in may not be restored yet right after launch — ask again rather
+    // than trusting a startup check that ran before it was.
+    let signedIn = authSession?.loggedIn === true;
+    if (!signedIn) {
+      const fresh = await getAuthSession().catch(() => null);
+      if (fresh) setAuthSession(fresh);
+      signedIn = fresh?.loggedIn === true;
+    }
+    if (!signedIn) {
+      sessionStateRef.current = "IDLE";
       invoke("shortcut_session_settled").catch(() => {});
       await invoke("hide_interview_overlay").catch(() => {});
       invoke("restore_from_bubble").catch(() => {});
@@ -580,7 +641,7 @@ function App() {
       return;
     }
     const current = loadOverlaySettings();
-    saveOverlaySettings({ ...current, mode: sessionMode });
+    saveOverlaySettings({ ...current, mode });
     setError(null);
     setActiveElsewhereMessage(null);
     setOpenPopover(null);
@@ -590,7 +651,7 @@ function App() {
     try {
       // The overlay is already showing — shortcuts.rs shows it on the key
       // press itself, before this event even arrives.
-      const started = await startInterview(false, false);
+      const started = await startInterview(false, false, mode);
       if (shortcutStartCancelledRef.current) {
         // Closed while starting — undo whatever did start.
         await invoke("stop_audio_capture").catch(() => {});
@@ -622,8 +683,15 @@ function App() {
   const startFromShortcutRef = useRef(startFromShortcut);
   startFromShortcutRef.current = startFromShortcut;
   useEffect(() => {
-    const unlisten = listen("shortcut:start-session", () => {
-      void startFromShortcutRef.current();
+    // Payload: the mode a mode shortcut asked for, or null for "the
+    // selected mode". A mode shortcut also switches the header to that mode.
+    const unlisten = listen<SessionMode | null>("shortcut:start-session", (event) => {
+      const mode = event.payload ?? undefined;
+      if (mode) {
+        setSessionMode(mode);
+        saveSessionMode(mode);
+      }
+      void startFromShortcutRef.current(mode);
     });
     return () => {
       unlisten.then((f) => f());
@@ -752,9 +820,9 @@ function App() {
               disabled={sessionState !== "IDLE"}
               aria-haspopup="menu"
               aria-expanded={openPopover === "MODE"}
-              title="Interview or meeting — changes what Start asks for and how the AI answers"
+              title="Interview, meeting or personal assistant — changes what Start asks for and how the AI answers"
             >
-              <span>{isMeeting ? "Meeting" : "Interview"}</span>
+              <span>{MODE_LABELS[sessionMode]}</span>
               <IconChevronDown />
             </button>
             {openPopover === "MODE" && (
@@ -806,7 +874,7 @@ function App() {
             <div className="dropdown-anchor">
               <Button
                 variant="primary"
-                onClick={() => togglePopover("START_SETUP")}
+                onClick={() => (isAssistant ? handleAssistantStart() : togglePopover("START_SETUP"))}
                 disabled={sessionState === "STARTING" || authSession?.loggedIn === false}
                 title={authSession?.loggedIn === false ? "Log in from the Account panel to start" : undefined}
                 aria-haspopup="dialog"
@@ -1013,7 +1081,9 @@ function App() {
         ) : (
           <div className="popover" role="dialog" aria-label="Context">
             <div className="popover-header">
-              <span className="setup-section-label">{isMeeting ? "Meeting context" : "Interview context"}</span>
+              <span className="setup-section-label">
+                {isAssistant ? "Assistant context" : isMeeting ? "Meeting context" : "Interview context"}
+              </span>
               <button className="modal-close-btn" onClick={closePopover} aria-label="Close">
                 ✕
               </button>

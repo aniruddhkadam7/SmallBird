@@ -116,6 +116,11 @@ pub fn show_overlay_window(app: &AppHandle, label: &str, title: &str) -> Result<
         // listener registered yet on the very first reuse, which is fine —
         // there's nothing stale to clear at that point anyway.
         let _ = existing.emit("overlay:reset-session", ());
+        // A new session always opens full size, even if the last one was
+        // left minimized (the reset above clears the frontend's side of it).
+        if let Err(err) = restore_overlay(app, label) {
+            log::warn!("show_overlay_window '{label}': couldn't restore minimized size: {err}");
+        }
         center_overlay_on_screen(&existing, false);
         // Reassert exclusion BEFORE show()/set_focus() — doing it after
         // leaves a brief window where a live screen share could capture an
@@ -170,10 +175,113 @@ pub fn show_overlay_window(app: &AppHandle, label: &str, title: &str) -> Result<
 /// and main window are separate webviews with no shared React state, so the
 /// main window's own session status has no other way to learn the overlay
 /// closed unless it was the one that called this.
+/// The minimized overlay: a small box in the bottom-right corner that still
+/// shows the current answer (see `minimize_overlay`). Logical pixels.
+const MINI_WIDTH: f64 = 340.0;
+const MINI_HEIGHT: f64 = 260.0;
+/// Folded down to just the box's top strip (its own minimize button).
+const MINI_STRIP_HEIGHT: f64 = 28.0;
+const MINI_MARGIN: f64 = 16.0;
+
+/// Where the full overlay was (outer position, inner size, whether it was
+/// maximized) before it was minimized, so restoring puts it back exactly.
+/// `None` while it's full.
+static FULL_BOUNDS: std::sync::Mutex<Option<(tauri::PhysicalPosition<i32>, tauri::PhysicalSize<u32>, bool)>> =
+    std::sync::Mutex::new(None);
+
+/// The overlay's maximize button: fills the screen it's on (above the
+/// taskbar), or goes back to its previous size. Returns whether it's now
+/// maximized.
+pub fn toggle_maximize_overlay(app: &AppHandle, label: &str) -> Result<bool, String> {
+    let Some(window) = app.get_webview_window(label) else {
+        return Ok(false);
+    };
+    if window.is_maximized().unwrap_or(false) {
+        window.unmaximize().map_err(|e| e.to_string())?;
+        Ok(false)
+    } else {
+        window.maximize().map_err(|e| e.to_string())?;
+        Ok(true)
+    }
+}
+
+/// Shrinks the overlay to a small box in the bottom-right corner of the
+/// screen it's on (above the taskbar) — or, with `strip`, just the box's top
+/// strip. Same window — the session, the conversation and capture
+/// protection all carry on untouched.
+pub fn minimize_overlay(app: &AppHandle, label: &str, strip: bool) -> Result<(), String> {
+    use crate::crash_guard::LockExt;
+    let Some(window) = app.get_webview_window(label) else {
+        return Ok(());
+    };
+    {
+        let mut saved = FULL_BOUNDS.lock_safe();
+        if saved.is_none() {
+            // A maximized window has to come back to its normal bounds first
+            // — those are what get saved, and it's re-maximized on restore.
+            let was_maximized = window.is_maximized().unwrap_or(false);
+            if was_maximized {
+                window.unmaximize().map_err(|e| e.to_string())?;
+            }
+            let position = window.outer_position().map_err(|e| e.to_string())?;
+            let size = window.inner_size().map_err(|e| e.to_string())?;
+            *saved = Some((position, size, was_maximized));
+        }
+    }
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten())
+        .ok_or("no monitor found")?;
+    let scale = monitor.scale_factor();
+    let area = monitor.work_area();
+    let mini_height = if strip { MINI_STRIP_HEIGHT } else { MINI_HEIGHT };
+    window
+        .set_min_size(Some(LogicalSize::new(MINI_WIDTH, mini_height)))
+        .map_err(|e| e.to_string())?;
+    window.set_size(LogicalSize::new(MINI_WIDTH, mini_height)).map_err(|e| e.to_string())?;
+    let (width, height, margin) = ((MINI_WIDTH * scale) as i32, (mini_height * scale) as i32, (MINI_MARGIN * scale) as i32);
+    let x = area.position.x + area.size.width as i32 - width - margin;
+    let y = area.position.y + area.size.height as i32 - height - margin;
+    window
+        .set_position(tauri::PhysicalPosition::new(x, y))
+        .map_err(|e| e.to_string())
+}
+
+/// Puts a minimized overlay back where and how big it was. No-op if it
+/// isn't minimized.
+pub fn restore_overlay(app: &AppHandle, label: &str) -> Result<(), String> {
+    use crate::crash_guard::LockExt;
+    let Some((position, size, was_maximized)) = FULL_BOUNDS.lock_safe().take() else {
+        return Ok(());
+    };
+    let Some(window) = app.get_webview_window(label) else {
+        return Ok(());
+    };
+    window
+        .set_min_size(Some(LogicalSize::new(OVERLAY_MIN_WIDTH, 320.0)))
+        .map_err(|e| e.to_string())?;
+    window.set_size(size).map_err(|e| e.to_string())?;
+    window.set_position(position).map_err(|e| e.to_string())?;
+    if was_maximized {
+        window.maximize().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 pub fn close_overlay_window(app: &AppHandle, label: &str) -> Result<(), String> {
     log::info!("close_overlay_window '{label}': on main thread, hiding");
     if let Some(window) = app.get_webview_window(label) {
         window.hide().map_err(|e| e.to_string())?;
+        // Ending a session while minimized or maximized: the next one
+        // opens at its normal size.
+        if let Err(err) = restore_overlay(app, label) {
+            log::warn!("close_overlay_window '{label}': couldn't restore minimized size: {err}");
+        }
+        if window.is_maximized().unwrap_or(false) {
+            let _ = window.unmaximize();
+        }
         // Must follow the hide, not precede it — see `release_after_hide`.
         // Without this the overlay's excluded region stays carved out of a
         // live screen share as a black rectangle after the interview ends.

@@ -217,6 +217,23 @@ pub struct AskRequest {
     /// order) — sent as images on the question's message.
     #[serde(skip)]
     pub images: Vec<String>,
+    /// The question is a speaker-labeled stretch of conversation ("Them:" /
+    /// "You:" lines) because the user's microphone is on — see
+    /// `prompts::ask::build_user_prompt`.
+    #[serde(skip)]
+    pub speaker_labeled: bool,
+    /// Assistant Mode (`None` in Interview/Meeting Mode): the user's own
+    /// general-purpose assistant — see `prompts::assistant`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assistant: Option<AssistantContext>,
+}
+
+/// What the user shared with Assistant Mode: the full text of the files and
+/// notes from its Context panel.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct AssistantContext {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
 /// Everything the user gave Meeting Mode about the meeting: the typed

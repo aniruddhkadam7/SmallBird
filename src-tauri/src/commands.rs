@@ -163,12 +163,33 @@ pub fn begin_audio_prebuffer_inner(app: &tauri::AppHandle) -> Result<(), String>
         let _ = stop_audio_capture(app.clone(), app.state::<AppState>());
     }
 
-    let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
-    let stop = StopSignal::new();
-    let thread = SystemAudioCapture::start(audio_tx, stop.clone())?;
+    // The call audio unless it's off for this session (Assistant Mode).
+    let system = if state.system_wanted.load(std::sync::atomic::Ordering::Relaxed) {
+        Some(start_capture_buffer(AudioSource::SystemAudio)?)
+    } else {
+        None
+    };
+    // With the Mic on, the user's voice is recorded from the press too. A
+    // mic that can't open never blocks the session itself.
+    let mic = if state.mic_wanted.load(std::sync::atomic::Ordering::Relaxed) {
+        start_capture_buffer(AudioSource::Microphone)
+            .inspect_err(|err| {
+                log::warn!("audio prebuffer: microphone couldn't start: {err}");
+                let _ = app.emit("audio:mic-error", err.clone());
+            })
+            .ok()
+    } else {
+        None
+    };
+    if system.is_none() && mic.is_none() {
+        return Ok(());
+    }
     let id = PREBUFFER_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    *state.prebuffer.lock_safe() = Some(crate::state::AudioPrebuffer { id, audio_rx, stop, thread });
+    *state.prebuffer.lock_safe() = Some(crate::state::AudioPrebuffer { id, system, mic });
     log::info!("audio prebuffer {id}: recording from the key press until the session is ready");
+    // Lets the overlay show it is listening right away, not only once the
+    // session has finished connecting.
+    let _ = app.emit("audio:prebuffer", true);
 
     let watchdog_app = app.clone();
     std::thread::spawn(move || {
@@ -192,9 +213,31 @@ fn discard_audio_prebuffer(app: &tauri::AppHandle, only_id: Option<u64>) -> bool
         }
     };
     let Some(prebuffer) = taken else { return false };
-    prebuffer.stop.stop();
-    let _ = prebuffer.thread.join();
+    if let Some(system) = prebuffer.system {
+        stop_capture_buffer(system);
+    }
+    if let Some(mic) = prebuffer.mic {
+        stop_capture_buffer(mic);
+    }
+    let _ = app.emit("audio:prebuffer", false);
     true
+}
+
+/// Starts recording one source into a local buffer (nothing is sent
+/// anywhere until a speech-to-text connection takes it over).
+fn start_capture_buffer(source: AudioSource) -> Result<crate::state::CaptureBuffer, String> {
+    let (audio_tx, audio_rx) = crossbeam_channel::unbounded();
+    let stop = StopSignal::new();
+    let thread = match source {
+        AudioSource::SystemAudio => SystemAudioCapture::start(audio_tx, stop.clone())?,
+        AudioSource::Microphone => crate::audio::MicrophoneCapture::start(audio_tx, stop.clone())?,
+    };
+    Ok(crate::state::CaptureBuffer { audio_rx, stop, thread })
+}
+
+fn stop_capture_buffer(buffer: crate::state::CaptureBuffer) {
+    buffer.stop.stop();
+    let _ = buffer.thread.join();
 }
 
 #[tauri::command]
@@ -204,6 +247,309 @@ pub async fn begin_audio_prebuffer(app: tauri::AppHandle) -> Result<(), String> 
         .map_err(|e| e.to_string())?
 }
 
+/// Applies one speech-to-text event (from either source) to the transcript,
+/// journals finished sentences to disk, and tells both windows.
+fn record_stt_event(app: &tauri::AppHandle, event: crate::stt::SttEvent) {
+    let state = app.state::<AppState>();
+    let (segment, session_id, session_started_at_ms) = {
+        let mut manager = state.transcript.lock_safe();
+        let segment = manager.apply_event(event);
+        let session = manager.session();
+        (segment, session.id.clone(), session.started_at_ms)
+    };
+    if let Some(segment) = segment {
+        // Written to disk before anything else touches it, so a crash right
+        // after can't lose this sentence.
+        if let Some(text) = segment.final_text.as_deref() {
+            crate::history::journal_record(app, &session_id, session_started_at_ms, segment.source, text, segment.timestamp);
+        }
+        let _ = app.emit("transcript:update", &segment);
+    }
+}
+
+/// Serializes turning either audio source on/off, so a quick on-off-on can
+/// never leave two connections running for one source, or one running that
+/// the user turned off.
+static SOURCE_OP: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn source_label(source: AudioSource) -> &'static str {
+    match source {
+        AudioSource::SystemAudio => "call audio",
+        AudioSource::Microphone => "microphone",
+    }
+}
+
+/// Whether the user wants this source heard (the overlay's two icons).
+fn source_wanted(state: &AppState, source: AudioSource) -> bool {
+    let flag = match source {
+        AudioSource::SystemAudio => &state.system_wanted,
+        AudioSource::Microphone => &state.mic_wanted,
+    };
+    flag.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn source_running(session: &crate::state::CaptureSession, source: AudioSource) -> bool {
+    match source {
+        AudioSource::SystemAudio => session.system_audio_thread.is_some(),
+        AudioSource::Microphone => session.mic.is_some(),
+    }
+}
+
+fn source_state_event(source: AudioSource) -> &'static str {
+    match source {
+        AudioSource::SystemAudio => "audio:system-state",
+        AudioSource::Microphone => "audio:mic-state",
+    }
+}
+
+/// Starts one audio source alongside the running session: its own capture
+/// thread and its own Deepgram connection (same session key), so its
+/// sentences arrive tagged with who said them — the call audio ("them") or
+/// the user's microphone ("you"). Used when the user turns a source on
+/// mid-session, and for the microphone when a session starts with it on.
+/// Shares the session's pause signal.
+fn start_source_inner(
+    app: &tauri::AppHandle,
+    source: AudioSource,
+    buffered: Option<crate::state::CaptureBuffer>,
+) -> Result<(), String> {
+    let _serial = SOURCE_OP.lock_safe();
+    let state = app.state::<AppState>();
+    let discard = |buffered: Option<crate::state::CaptureBuffer>| {
+        if let Some(buffer) = buffered {
+            stop_capture_buffer(buffer);
+        }
+    };
+    if !source_wanted(&state, source) {
+        discard(buffered);
+        return Ok(());
+    }
+    // Starting counts: when a session starts with the Mic on, this runs right
+    // as the session registers, a moment before its state reads Recording.
+    // The pause signal (checked below) only exists once it has registered.
+    let pause = {
+        let session = state.capture.lock_safe();
+        if source_running(&session, source) {
+            drop(session);
+            discard(buffered);
+            return Ok(());
+        }
+        if !matches!(session.recording_state, RecordingState::Starting | RecordingState::Recording | RecordingState::Paused) {
+            drop(session);
+            discard(buffered);
+            return Err("Start a session first".into());
+        }
+        match session.pause_signal.clone() {
+            Some(pause) => pause,
+            None => {
+                drop(session);
+                discard(buffered);
+                return Err("Start a session first".into());
+            }
+        }
+    };
+    let Some(api_key) = state.stt_session.lock_safe().as_ref().map(|session| session.deepgram_key.clone()) else {
+        discard(buffered);
+        return Err("No active session".into());
+    };
+
+    // Recording starts before the connection (which takes about a second):
+    // what's said meanwhile queues here and is sent first.
+    let crate::state::CaptureBuffer { audio_rx, stop, thread: capture_thread } = match buffered {
+        Some(buffer) => buffer,
+        None => start_capture_buffer(source)?,
+    };
+    let (stt_tx, stt_rx) = std::sync::mpsc::channel();
+    let stt_client = match SttClient::spawn(source, stt_tx, api_key, Some(app.clone())) {
+        Ok(client) => client,
+        Err(err) => {
+            stop.stop();
+            let _ = capture_thread.join();
+            return Err(err);
+        }
+    };
+
+    let pipeline_app = app.clone();
+    let pipeline_thread = std::thread::Builder::new()
+        .name(format!("{}-stt-pipeline", source_label(source).replace(' ', "-")))
+        .spawn(move || {
+            let events_app = pipeline_app.clone();
+            let events_thread = std::thread::Builder::new()
+                .name("source-stt-events".into())
+                .spawn(move || {
+                    for event in stt_rx.iter() {
+                        record_stt_event(&events_app, event);
+                    }
+                })
+                .ok();
+            crate::audio::run_stt_pipeline(audio_rx, stt_client, pause, move |chunk| {
+                let _ = pipeline_app.emit(
+                    "audio:level",
+                    AudioLevelEvent {
+                        source: chunk.source,
+                        rms_level: chunk.rms_level,
+                    },
+                );
+            });
+            if let Some(handle) = events_thread {
+                let _ = handle.join();
+            }
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut session = state.capture.lock_safe();
+    // The session may have ended while the connection was being set up.
+    if !matches!(session.recording_state, RecordingState::Starting | RecordingState::Recording | RecordingState::Paused)
+        || source_running(&session, source)
+    {
+        drop(session);
+        stop.stop();
+        let _ = capture_thread.join();
+        let _ = pipeline_thread.join();
+        return Err("The session ended".into());
+    }
+    match source {
+        AudioSource::SystemAudio => {
+            session.stop_signal = Some(stop);
+            session.system_audio_thread = Some(capture_thread);
+            session.pipeline_thread = Some(pipeline_thread);
+        }
+        AudioSource::Microphone => {
+            session.mic = Some(crate::state::MicSession { stop, capture_thread, pipeline_thread });
+        }
+    }
+    drop(session);
+    log::info!("{}: on", source_label(source));
+    let _ = app.emit(source_state_event(source), true);
+    Ok(())
+}
+
+/// Stops one audio source (if running), finalizing anything mid-sentence.
+/// The session keeps running — the other source, the timer, the answers.
+fn stop_source_inner(app: &tauri::AppHandle, source: AudioSource) {
+    let parts = {
+        let state = app.state::<AppState>();
+        let mut session = state.capture.lock_safe();
+        match source {
+            AudioSource::SystemAudio => match (session.stop_signal.take(), session.system_audio_thread.take(), session.pipeline_thread.take()) {
+                (Some(stop), Some(capture), pipeline) => Some((stop, capture, pipeline)),
+                (stop, capture, pipeline) => {
+                    // Nothing (fully) running: put back whatever was there.
+                    session.stop_signal = stop;
+                    session.system_audio_thread = capture;
+                    session.pipeline_thread = pipeline;
+                    None
+                }
+            },
+            AudioSource::Microphone => session.mic.take().map(|mic| (mic.stop, mic.capture_thread, Some(mic.pipeline_thread))),
+        }
+    };
+    if let Some((stop, capture_thread, pipeline_thread)) = parts {
+        stop.stop();
+        let _ = capture_thread.join();
+        if let Some(handle) = pipeline_thread {
+            let _ = handle.join();
+        }
+        log::info!("{}: off", source_label(source));
+        let _ = app.emit(source_state_event(source), false);
+    }
+}
+
+/// Turns one source on/off. Also sent by the overlay when it loads. Returns
+/// whether the source is running now (`false` between sessions).
+async fn set_source_enabled(app: tauri::AppHandle, source: AudioSource, enabled: bool) -> Result<bool, String> {
+    let flag = match source {
+        AudioSource::SystemAudio => &app.state::<AppState>().system_wanted,
+        AudioSource::Microphone => &app.state::<AppState>().mic_wanted,
+    };
+    flag.store(enabled, std::sync::atomic::Ordering::Relaxed);
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let live = matches!(state.capture.lock_safe().recording_state, RecordingState::Recording | RecordingState::Paused);
+        if enabled {
+            if live {
+                return start_source_inner(&app, source, None).map(|()| true);
+            }
+            // A session is starting (recording since the key press): the
+            // mic records from now too; the session picks it up when ready.
+            // (The call audio is always recorded from the key press.)
+            if source == AudioSource::Microphone {
+                if let Some(prebuffer) = state.prebuffer.lock_safe().as_mut() {
+                    if prebuffer.mic.is_none() {
+                        prebuffer.mic = Some(start_capture_buffer(AudioSource::Microphone)?);
+                    }
+                }
+            }
+            Ok(false)
+        } else {
+            let _serial = SOURCE_OP.lock_safe();
+            stop_source_inner(&app, source);
+            if source == AudioSource::Microphone {
+                let buffered = state.prebuffer.lock_safe().as_mut().and_then(|p| p.mic.take());
+                if let Some(buffer) = buffered {
+                    stop_capture_buffer(buffer);
+                }
+            }
+            Ok(false)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The overlay's your-voice icon: also hear the user's own microphone.
+#[tauri::command]
+pub async fn set_microphone_enabled(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+    set_source_enabled(app, AudioSource::Microphone, enabled).await
+}
+
+/// The overlay's call-audio icon: hear what the PC plays (the other side).
+#[tauri::command]
+pub async fn set_system_audio_enabled(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+    set_source_enabled(app, AudioSource::SystemAudio, enabled).await
+}
+
+/// Connects the user's microphone for a session that just started, off the
+/// calling thread so Start never waits on it. It has been recording since the
+/// key press if the Mic was already on.
+fn spawn_mic_start(app: &tauri::AppHandle, mic_buffer: Option<crate::state::CaptureBuffer>) {
+    let state = app.state::<AppState>();
+    if mic_buffer.is_none() && !state.mic_wanted.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let mic_app = app.clone();
+    std::thread::spawn(move || {
+        if let Err(err) = start_source_inner(&mic_app, AudioSource::Microphone, mic_buffer) {
+            log::warn!("microphone: couldn't start with the session: {err}");
+            let _ = mic_app.emit("audio:mic-error", err);
+        }
+    });
+}
+
+/// Which sources a new session starts with in the current mode (the main
+/// window sends this whenever the mode changes). Takes effect right away
+/// between sessions; a live session keeps what it has.
+#[tauri::command]
+pub fn set_source_defaults(state: State<'_, AppState>, system: bool, mic: bool) {
+    apply_source_defaults(&state, system, mic);
+}
+
+/// See `set_source_defaults`; also used by the mode shortcuts.
+pub fn apply_source_defaults(state: &AppState, system: bool, mic: bool) {
+    use std::sync::atomic::Ordering::Relaxed;
+    state.system_default.store(system, Relaxed);
+    state.mic_default.store(mic, Relaxed);
+    let busy = state.prebuffer.lock_safe().is_some()
+        || !matches!(
+            state.capture.lock_safe().recording_state,
+            RecordingState::Idle | RecordingState::Stopped
+        );
+    if !busy {
+        state.system_wanted.store(system, Relaxed);
+        state.mic_wanted.store(mic, Relaxed);
+    }
+}
+
 fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> Result<(), String> {
     {
         let mut transcript = state.transcript.lock_safe();
@@ -211,14 +557,6 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
     }
 
     let (stt_tx, stt_rx) = std::sync::mpsc::channel();
-    // Audio already being recorded since the key press (see
-    // `begin_audio_prebuffer_inner`) — this session takes it over, so its
-    // stop signal becomes the session's.
-    let prebuffer = state.prebuffer.lock_safe().take();
-    let stop = prebuffer.as_ref().map(|p| p.stop.clone()).unwrap_or_else(StopSignal::new);
-    let pause = PauseSignal::new();
-
-    let session_start = crate::hardware::telemetry::Stopwatch::start();
 
     // The Deepgram key comes from `start_backend_session` (called by the
     // frontend right before this), which mints a short-lived, scoped key and
@@ -230,6 +568,30 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
             .map(|session| session.deepgram_key.clone())
             .ok_or_else(|| "No active backend session — please try again".to_string())?
     };
+
+    // Audio already being recorded since the key press (see
+    // `begin_audio_prebuffer_inner`) — this session takes it over, so its
+    // stop signal becomes the session's. Its microphone part (if any) is
+    // handed to the mic's own connection once the session is running.
+    let mut prebuffer = state.prebuffer.lock_safe().take();
+    let mic_buffer = prebuffer.as_mut().and_then(|p| p.mic.take());
+    let system_buffer = prebuffer.and_then(|p| p.system);
+
+    // Call audio off for this session (Assistant Mode's default): no call
+    // capture and no call connection at all — only the mic, if it's on.
+    if !state.system_wanted.load(std::sync::atomic::Ordering::Relaxed) {
+        if let Some(system) = system_buffer {
+            stop_capture_buffer(system);
+        }
+        state.capture.lock_safe().pause_signal = Some(PauseSignal::new());
+        spawn_mic_start(app, mic_buffer);
+        return Ok(());
+    }
+
+    let stop = system_buffer.as_ref().map(|b| b.stop.clone()).unwrap_or_else(StopSignal::new);
+    let pause = PauseSignal::new();
+
+    let session_start = crate::hardware::telemetry::Stopwatch::start();
 
     // The Deepgram connection is established BEFORE audio capture starts —
     // deliberately reversed from the naive order. `SttClient::spawn` blocks
@@ -249,9 +611,11 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
         Err(err) => {
             // No pipeline exists yet; a prebuffer recording since the key
             // press must not be left running.
-            if let Some(p) = prebuffer {
-                p.stop.stop();
-                let _ = p.thread.join();
+            if let Some(system) = system_buffer {
+                stop_capture_buffer(system);
+            }
+            if let Some(mic) = mic_buffer {
+                stop_capture_buffer(mic);
             }
             return Err(err);
         }
@@ -293,9 +657,9 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
     // reasoning for connecting before capturing — avoiding a backlog burst —
     // was about a local model that couldn't keep up; here the backlog is the
     // speech the user would otherwise have lost.
-    let (audio_rx, audio_thread) = if let Some(p) = prebuffer {
+    let (audio_rx, audio_thread) = if let Some(system) = system_buffer {
         drop(audio_tx);
-        (p.audio_rx, p.thread)
+        (system.audio_rx, system.thread)
     } else {
         match SystemAudioCapture::start(audio_tx, stop.clone()) {
             Ok(handle) => (audio_rx, handle),
@@ -409,28 +773,7 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
                             );
                         }
 
-                        let state = stt_events_app.state::<AppState>();
-                        let (segment, session_id, session_started_at_ms) = {
-                            let mut manager = state.transcript.lock_safe();
-                            let segment = manager.apply_event(event);
-                            let session = manager.session();
-                            (segment, session.id.clone(), session.started_at_ms)
-                        };
-                        if let Some(segment) = segment {
-                            // Written to disk before anything else touches it,
-                            // so a crash right after can't lose this sentence.
-                            if let Some(text) = segment.final_text.as_deref() {
-                                crate::history::journal_record(
-                                    &stt_events_app,
-                                    &session_id,
-                                    session_started_at_ms,
-                                    segment.source,
-                                    text,
-                                    segment.timestamp,
-                                );
-                            }
-                            let _ = stt_events_app.emit("transcript:update", &segment);
-                        }
+                        record_stt_event(&stt_events_app, event);
                     }
                 })
                 .ok();
@@ -485,11 +828,26 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
         })
         .map_err(|e| e.to_string())?;
 
-    let mut session = state.capture.lock_safe();
-    session.stop_signal = Some(stop);
-    session.pause_signal = Some(pause);
-    session.system_audio_thread = Some(audio_thread);
-    session.pipeline_thread = Some(pipeline_thread);
+    {
+        let mut session = state.capture.lock_safe();
+        session.stop_signal = Some(stop);
+        session.pause_signal = Some(pause);
+        session.system_audio_thread = Some(audio_thread);
+        session.pipeline_thread = Some(pipeline_thread);
+    }
+
+    // The user's microphone gets its own connection, set up off this thread
+    // so the session's Start never waits on it. It has been recording since
+    // the key press if the Mic was already on.
+    spawn_mic_start(app, mic_buffer);
+    // The user turned the call audio off while the session was starting.
+    if !state.system_wanted.load(std::sync::atomic::Ordering::Relaxed) {
+        let system_app = app.clone();
+        std::thread::spawn(move || {
+            let _serial = SOURCE_OP.lock_safe();
+            stop_source_inner(&system_app, AudioSource::SystemAudio);
+        });
+    }
     Ok(())
 }
 
@@ -572,6 +930,15 @@ pub fn stop_audio_capture(app: tauri::AppHandle, state: State<'_, AppState>) -> 
     // press without ever becoming a session — stop that too.
     if discard_audio_prebuffer(&app, None) {
         log::info!("stop_audio_capture: discarded an unattached prebuffer");
+    }
+    // The microphone rides on this session's key and pause signal — it ends
+    // with it. The next session starts with the current mode's defaults.
+    stop_source_inner(&app, AudioSource::Microphone);
+    {
+        use std::sync::atomic::Ordering::Relaxed;
+        let state = app.state::<AppState>();
+        state.mic_wanted.store(state.mic_default.load(Relaxed), Relaxed);
+        state.system_wanted.store(state.system_default.load(Relaxed), Relaxed);
     }
     // Take the handles out and drop the lock *before* joining threads below —
     // joining can block for as long as the Deepgram connection takes to flush
