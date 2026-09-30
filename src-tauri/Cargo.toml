@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "0.1.27"
+version = "0.1.28"
 description = "Smallbird — AI interview copilot"
 authors = ["you"]
 edition = "2021"

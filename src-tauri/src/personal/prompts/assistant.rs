@@ -187,11 +187,12 @@ mod tests {
     }
 
     #[test]
-    fn interview_and_meeting_prompts_allow_headings_for_long_answers_only() {
-        for prompt in [super::super::ask::SYSTEM_PROMPT, super::super::meeting::SYSTEM_PROMPT] {
-            assert!(prompt.contains("LONG, MULTI-PART ANSWERS ONLY"));
-            assert!(prompt.contains("Never add headings or tables to a short"));
-        }
+    fn meeting_prompt_allows_headings_for_long_answers_only() {
+        // Interview answers are spoken, so they get no headings (see
+        // ask::tests::interview_answers_never_announce_their_structure).
+        let prompt = super::super::meeting::SYSTEM_PROMPT;
+        assert!(prompt.contains("LONG, MULTI-PART ANSWERS ONLY"));
+        assert!(prompt.contains("Never add headings or tables to a short"));
     }
 
     #[test]
