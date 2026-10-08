@@ -289,7 +289,47 @@ pub async fn open_dashboard(app: AppHandle, state: State<'_, AppState>) -> Resul
 /// click away.
 #[tauri::command]
 pub async fn open_upgrade(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    // Nobody should pay while the service is down — show the maintenance
+    // message instead of the pricing page.
+    if let Some(message) = fetch_maintenance_message().await {
+        return Err(message);
+    }
     open_website_page(&app, &state, "pricing").await
+}
+
+/// For the main window's maintenance banner: the admin's message while
+/// maintenance mode is on, otherwise `None`.
+#[tauri::command]
+pub async fn get_maintenance_message() -> Option<String> {
+    fetch_maintenance_message().await
+}
+
+/// `Some(message)` while admin maintenance mode is on. `None` when it's off
+/// or the status check can't be reached — an unreachable status endpoint
+/// must never be what blocks the button.
+async fn fetch_maintenance_message() -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct AppStatus {
+        maintenance: bool,
+        message: Option<String>,
+    }
+
+    let response = reqwest::Client::new()
+        .post(format!("{SUPABASE_URL}/functions/v1/app-status"))
+        .header("apikey", SUPABASE_ANON_KEY)
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let status = response.json::<AppStatus>().await.ok()?;
+    status.maintenance.then(|| {
+        status
+            .message
+            .unwrap_or_else(|| "SmallBird is currently under maintenance. Please check back shortly.".to_string())
+    })
 }
 
 /// Opens `{WEBSITE_ORIGIN}/{page}` in the browser, signed in when possible.

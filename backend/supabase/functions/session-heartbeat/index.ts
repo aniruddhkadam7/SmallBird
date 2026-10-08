@@ -25,7 +25,7 @@ Deno.serve(withCors(async (req) => {
   }
 
   try {
-    const entitlement = await requireEntitlement(req);
+    const entitlement = await requireEntitlement(req, { allowDuringMaintenance: true });
     const { sessionId } = await req.json();
     if (typeof sessionId !== "string") {
       return new Response(JSON.stringify({ error: "Invalid sessionId" }), {

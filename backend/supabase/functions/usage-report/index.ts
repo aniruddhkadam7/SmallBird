@@ -21,7 +21,7 @@ Deno.serve(withCors(async (req) => {
   }
 
   try {
-    const entitlement = await requireEntitlement(req);
+    const entitlement = await requireEntitlement(req, { allowDuringMaintenance: true });
     const { sessionId } = await req.json();
 
     if (typeof sessionId !== "string" || !/^[0-9a-f-]{36}$/i.test(sessionId)) {

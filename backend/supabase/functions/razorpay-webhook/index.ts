@@ -52,10 +52,41 @@ async function alreadyProcessed(eventType: string, entityId: string): Promise<bo
   return error?.code === "23505";
 }
 
-async function getPlanMinutes(planId: string): Promise<number> {
-  const { data, error } = await admin.from("plans").select("included_minutes").eq("id", planId).single();
+async function getPlan(planId: string): Promise<{ minutes: number; pricePaise: number }> {
+  const { data, error } = await admin
+    .from("plans")
+    .select("included_minutes, price_inr_paise, is_active")
+    .eq("id", planId)
+    .single();
   if (error || !data) throw new Error(`Unknown plan_id: ${planId}`);
-  return data.included_minutes;
+  if (!data.is_active) throw new Error(`Plan ${planId} is inactive — refusing to credit minutes for a retired plan`);
+  return { minutes: data.included_minutes, pricePaise: data.price_inr_paise };
+}
+
+// notes.plan_id only says which plan the checkout *claimed*; the amount is
+// what was actually paid. A stale Razorpay plan (e.g. an old ₹499 Pro) still
+// carrying notes.plan_id "pro" must not be credited at the current plan's
+// minutes — hold it for a manual decision instead.
+async function amountMatchesPlan(
+  planId: string,
+  pricePaise: number,
+  paidPaise: number,
+  userId: string,
+  ref: string,
+): Promise<boolean> {
+  if (paidPaise === pricePaise) return true;
+  console.error("razorpay-webhook: amount/plan mismatch", { planId, pricePaise, paidPaise, userId, ref });
+  const email = await lookupUserEmail(userId);
+  await notifyOwner(
+    `⚠️ Payment amount mismatch — ${formatRupees(paidPaise)} for ${planId}`,
+    `<p>A payment did not match the plan's current price, so <strong>no minutes were credited</strong>. Credit this user manually.</p><ul>
+      <li>Plan: ${planId} (price ${formatRupees(pricePaise)})</li>
+      <li>Paid: ${formatRupees(paidPaise)}</li>
+      <li>Customer: ${email ?? userId}</li>
+      <li>Reference: ${ref}</li>
+    </ul>`,
+  );
+  return false;
 }
 
 async function lookupUserEmail(userId: string): Promise<string | null> {
@@ -119,12 +150,13 @@ Deno.serve(async (req) => {
           console.error("order.paid missing notes.user_id/plan_id", order.id);
           break;
         }
+        const plan = await getPlan(planId);
+        if (!(await amountMatchesPlan(planId, plan.pricePaise, order.amount_paid, userId, order.id))) break;
         if (await alreadyProcessed(eventType, order.id)) break;
 
-        const minutes = await getPlanMinutes(planId);
         await admin.rpc("increment_entitlement_minutes", {
           p_user_id: userId,
-          p_minutes: minutes,
+          p_minutes: plan.minutes,
           p_source: "PURCHASE",
           p_reference_id: order.id,
         });
@@ -172,9 +204,10 @@ Deno.serve(async (req) => {
           console.error("subscription.charged missing notes.user_id/plan_id", subscription.id);
           break;
         }
+        const plan = await getPlan(planId);
+        if (!(await amountMatchesPlan(planId, plan.pricePaise, payment.amount, userId, payment.id))) break;
         if (await alreadyProcessed(eventType, payment.id)) break;
 
-        const minutes = await getPlanMinutes(planId);
         // onConflict: "user_id" targets the unique constraint added in
         // 0014_lock_down_entitlement_rpcs.sql — without it, every renewal
         // charge inserted a brand-new subscriptions row instead of updating
@@ -191,7 +224,7 @@ Deno.serve(async (req) => {
         await admin.from("entitlements").update({ plan_id: planId }).eq("user_id", userId);
         await admin.rpc("increment_entitlement_minutes", {
           p_user_id: userId,
-          p_minutes: minutes,
+          p_minutes: plan.minutes,
           p_source: "PURCHASE",
           p_reference_id: payment.id,
         });

@@ -24,6 +24,9 @@ verify_jwt = true
 [functions.razorpay-webhook]
 verify_jwt = false
 
+[functions.app-status]
+verify_jwt = false
+
 [functions.request-otp]
 verify_jwt = false
 

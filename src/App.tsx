@@ -120,6 +120,19 @@ function App() {
   const [openPopover, setOpenPopover] = useState<Popover>(null);
   const [error, setError] = useState<string | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
+
+  // Admin maintenance mode: the server already refuses new sessions; this
+  // tells the user why up front instead of only after they press Start.
+  const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null);
+  useEffect(() => {
+    const check = () =>
+      invoke<string | null>("get_maintenance_message")
+        .then(setMaintenanceMessage)
+        .catch(() => {});
+    check();
+    const timer = window.setInterval(check, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const audioTest = useAudioTest();
 
   const [sessionMode, setSessionMode] = useState<SessionMode>(() => loadSessionMode());
@@ -1178,6 +1191,12 @@ function App() {
           </div>
         )}
       </ExpandPanel>
+
+      {maintenanceMessage && (
+        <p className="error compact-header-error" role="alert">
+          {maintenanceMessage}
+        </p>
+      )}
 
       {activeElsewhereMessage ? (
         <div className="error compact-header-error" style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>

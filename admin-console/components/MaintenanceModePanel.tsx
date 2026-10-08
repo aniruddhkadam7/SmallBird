@@ -69,21 +69,27 @@ export function MaintenanceModePanel({ maintenanceMode, maintenanceMessage, onSu
   }
 
   return (
-    <section className="card border-2 border-warn/30 bg-warn/5">
+    <section className={`card border-2 ${isOn ? "border-danger bg-danger/5" : "border-border"}`}>
+      {isOn && (
+        <div className="-mx-1 -mt-1 mb-4 flex items-center gap-2 rounded-md bg-danger px-3 py-2 text-white">
+          <span aria-hidden>⛔</span>
+          <p className="text-sm font-bold uppercase tracking-wide">Maintenance mode is ON — SmallBird is down for users</p>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-ink">Maintenance mode</h2>
           <p className="mt-0.5 text-xs text-muted">
-            When enabled, all new session starts and AI calls are blocked immediately. Active sessions
-            are not affected — they continue until they end naturally.
+            When enabled, users can&apos;t start sessions, get AI answers, or open the upgrade page — they see the
+            message below instead. Sessions already running still end and get billed normally.
           </p>
         </div>
         <span
-          className={`ml-4 shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
-            isOn ? "bg-danger/10 text-danger" : "bg-ok/10 text-ok"
+          className={`ml-4 shrink-0 rounded-full px-4 py-1.5 text-sm font-bold ${
+            isOn ? "bg-danger text-white" : "bg-ok/10 text-ok"
           }`}
         >
-          {isOn ? "ON" : "OFF"}
+          {isOn ? "● ON" : "OFF"}
         </span>
       </div>
 
@@ -121,7 +127,7 @@ export function MaintenanceModePanel({ maintenanceMode, maintenanceMessage, onSu
             type="button"
             disabled={loading}
             onClick={() => setConfirming(true)}
-            className={`w-full ${isOn ? "btn-primary bg-ok text-white hover:opacity-90" : "btn-primary bg-danger text-white hover:opacity-90"}`}
+            className={`btn w-full text-white shadow-sm hover:opacity-90 ${isOn ? "bg-ok" : "bg-danger"}`}
           >
             {isOn ? "Turn off maintenance mode" : "Turn ON maintenance mode"}
           </button>
@@ -133,7 +139,7 @@ export function MaintenanceModePanel({ maintenanceMode, maintenanceMessage, onSu
             <p className="mt-1 text-xs text-muted">
               {isOn
                 ? "Users will be able to start new sessions again immediately."
-                : "All new session starts and AI calls will be blocked immediately for all users."}
+                : "New sessions, AI answers and the upgrade page will be blocked immediately for all users."}
             </p>
             <div className="mt-3 flex gap-2">
               <button type="button" disabled={loading} onClick={toggleMaintenance} className="btn-primary flex-1">

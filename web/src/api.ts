@@ -71,6 +71,21 @@ export interface Entitlement {
   remainingMinutes: number;
 }
 
+/** The admin's maintenance message while maintenance mode is on, else null. Never throws. */
+export async function getMaintenanceMessage(): Promise<string | null> {
+  try {
+    const res = await fetch(`${FUNCTIONS_URL}/app-status`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_ANON_KEY },
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { maintenance?: boolean; message?: string | null };
+    return body.maintenance ? (body.message ?? "SmallBird is currently under maintenance. Please check back shortly.") : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getEntitlement(): Promise<Entitlement> {
   const token = await getAccessToken();
   const res = await network(

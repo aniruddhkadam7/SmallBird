@@ -43,10 +43,6 @@ const PLAN_LABELS: Record<string, string> = {
   pro: "Pro",
   "pro-plus": "Pro+",
   max: "Max",
-  // retired ids kept so old purchases still display a readable label
-  "interview-pass": "Interview Pass",
-  "pro-monthly": "Pro Monthly",
-  "pro-annual": "Pro Annual",
 };
 
 function formatMinutes(minutes: number): string {

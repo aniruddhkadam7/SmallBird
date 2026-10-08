@@ -14,7 +14,7 @@ export interface Entitlement {
 }
 
 export class EntitlementError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public code?: string) {
     super(message);
   }
 }
@@ -40,7 +40,14 @@ export function userIdFromVerifiedJwt(jwt: string): string {
   }
 }
 
-export async function requireEntitlement(req: Request): Promise<Entitlement> {
+/// `allowDuringMaintenance` is only for the calls that close out and bill a
+/// session already running (heartbeat, usage-report) — blocking those would
+/// leave sessions unbilled. Everything that starts or powers a session
+/// (stt-token, llm-proxy) is refused while maintenance mode is on.
+export async function requireEntitlement(
+  req: Request,
+  { allowDuringMaintenance = false }: { allowDuringMaintenance?: boolean } = {},
+): Promise<Entitlement> {
   const authHeader = req.headers.get("Authorization") ?? "";
   const jwt = authHeader.replace(/^Bearer\s+/i, "");
   if (!jwt) throw new EntitlementError(401, "Missing Authorization header");
@@ -73,9 +80,9 @@ export async function requireEntitlement(req: Request): Promise<Entitlement> {
   const settingsMap = Object.fromEntries(
     (maintenanceResult.data ?? []).map((r: { key: string; value: string }) => [r.key, r.value]),
   );
-  if (settingsMap["maintenance_mode"] === "true") {
+  if (settingsMap["maintenance_mode"] === "true" && !allowDuringMaintenance) {
     const msg = settingsMap["maintenance_message"] ?? "SmallBird is currently under maintenance. Please check back shortly.";
-    throw new EntitlementError(503, msg);
+    throw new EntitlementError(503, msg, "MAINTENANCE");
   }
 
   // Ban check
@@ -103,7 +110,7 @@ export async function requireEntitlement(req: Request): Promise<Entitlement> {
 
 export function entitlementErrorResponse(err: unknown): Response {
   if (err instanceof EntitlementError) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: err.message, ...(err.code ? { code: err.code } : {}) }), {
       status: err.status,
       headers: { "content-type": "application/json" },
     });

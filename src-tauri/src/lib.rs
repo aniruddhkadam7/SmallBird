@@ -289,6 +289,7 @@ pub fn run() {
             interview_mode::commands::toggle_interview_overlay,
             interview_mode::commands::open_dashboard,
             interview_mode::commands::open_upgrade,
+            interview_mode::commands::get_maintenance_message,
             interview_mode::commands::ask_interview_question,
             interview_mode::commands::analyze_screen_question,
             interview_mode::commands::set_overlay_always_on_top,

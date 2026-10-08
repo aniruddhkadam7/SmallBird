@@ -1,5 +1,5 @@
 import { useEffect, useState, type ChangeEvent } from "react";
-import { getEntitlement, type Entitlement } from "./api";
+import { getEntitlement, getMaintenanceMessage, type Entitlement } from "./api";
 import type { Profile } from "./answer";
 
 const PROFILE_KEY = "smallbird:web-profile";
@@ -33,11 +33,13 @@ interface Props {
 export default function Setup({ email, profile, onProfile, onContinue, onSignOut }: Props) {
   const [entitlement, setEntitlement] = useState<Entitlement | null>(null);
   const [entitlementError, setEntitlementError] = useState("");
+  const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null);
 
   useEffect(() => {
     getEntitlement().then(setEntitlement, (err: unknown) =>
       setEntitlementError(err instanceof Error ? err.message : "Couldn't load your plan."),
     );
+    getMaintenanceMessage().then(setMaintenanceMessage);
   }, []);
 
   function update(patch: Partial<Profile>) {
@@ -67,6 +69,7 @@ export default function Setup({ email, profile, onProfile, onContinue, onSignOut
         {email}
         {entitlement && ` · ${Math.floor(entitlement.remainingMinutes)} min left`}
       </p>
+      {maintenanceMessage && <p className="error">{maintenanceMessage}</p>}
       {entitlementError && <p className="error">{entitlementError}</p>}
       {outOfMinutes && <p className="error">You're out of minutes. Add more at smallbird.in to start an interview.</p>}
 
@@ -92,7 +95,7 @@ export default function Setup({ email, profile, onProfile, onContinue, onSignOut
         <input type="file" accept=".txt,.md,text/plain,text/markdown" onChange={loadTextFile} />
       </label>
 
-      <button className="primary" onClick={onContinue} disabled={outOfMinutes}>
+      <button className="primary" onClick={onContinue} disabled={outOfMinutes || maintenanceMessage !== null}>
         Test microphone
       </button>
     </main>
