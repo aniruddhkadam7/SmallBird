@@ -5,6 +5,7 @@ import { Unauthorized } from "@/components/Unauthorized";
 import { MfaEnrollment } from "@/components/MfaEnrollment";
 import { ChangePasswordPanel } from "@/components/ChangePasswordPanel";
 import { AppConfigPanel } from "@/components/AppConfigPanel";
+import { ModelConfigPanel } from "@/components/ModelConfigPanel";
 
 interface AdminRow {
   user_id: string;
@@ -36,6 +37,7 @@ export default function SettingsPage() {
 
   const admins = result?.admins ?? [];
   const apiKeys = appConfig?.apiKeys ?? [];
+  const appSettings = appConfig?.settings ?? {};
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -46,6 +48,8 @@ export default function SettingsPage() {
       <ChangePasswordPanel />
 
       <MfaEnrollment />
+
+      <ModelConfigPanel settings={appSettings} onSuccess={() => mutateConfig()} />
 
       {apiKeys.length > 0 && (
         <AppConfigPanel apiKeys={apiKeys} onSuccess={() => mutateConfig()} />

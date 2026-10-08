@@ -103,6 +103,80 @@ function usageTap(initialModel: string, onDone: (usage: Usage) => void): Transfo
   });
 }
 
+// ---- Model override helpers -------------------------------------------------
+
+interface ModelOverrides {
+  main: string;    // overrides gpt-6-sol (answers, deep, analysis, writing, images)
+  tracking: string; // overrides gpt-6-luna (background tracking)
+}
+
+// Simple module-level cache so we don't hit the DB on every single request.
+// Edge function instances are short-lived, so 60s is plenty.
+let overrideCache: { overrides: ModelOverrides; expiresAt: number } | null = null;
+
+async function fetchModelOverrides(admin: ReturnType<typeof createClient>): Promise<ModelOverrides> {
+  if (overrideCache && Date.now() < overrideCache.expiresAt) return overrideCache.overrides;
+  const { data } = await admin
+    .from("app_settings")
+    .select("key, value")
+    .in("key", ["llm_main_model", "llm_tracking_model"]);
+  const map: Record<string, string> = {};
+  for (const row of data ?? []) map[row.key] = row.value;
+  const overrides: ModelOverrides = {
+    main:     map["llm_main_model"]     ?? "gpt-6-sol",
+    tracking: map["llm_tracking_model"] ?? "gpt-6-luna",
+  };
+  overrideCache = { overrides, expiresAt: Date.now() + 60_000 };
+  return overrides;
+}
+
+/// Returns true if the model needs reasoning-style params (max_completion_tokens
+/// + reasoning_effort instead of max_tokens + temperature).
+function isReasoningModel(model: string): boolean {
+  return model.startsWith("gpt-6") || model.startsWith("gpt-5") ||
+    model.startsWith("o1") || model.startsWith("o3") || model.startsWith("o4");
+}
+
+/// Applies admin model overrides and translates API parameters when the model
+/// family changes (reasoning ↔ classic). Returns a new payload object.
+// deno-lint-ignore no-explicit-any
+function applyModelOverride(payload: any, overrides: ModelOverrides): any {
+  const originalModel: string = payload.model ?? "";
+  let newModel = originalModel;
+
+  if (originalModel === "gpt-6-sol")  newModel = overrides.main;
+  if (originalModel === "gpt-6-luna") newModel = overrides.tracking;
+
+  if (newModel === originalModel) return payload; // no override active
+
+  const wasReasoning = isReasoningModel(originalModel);
+  const nowReasoning = isReasoningModel(newModel);
+
+  const updated = { ...payload, model: newModel };
+
+  if (wasReasoning && !nowReasoning) {
+    // Reasoning → classic: max_completion_tokens had a large reasoning buffer
+    // added by the Rust client (6000 for gpt-6, 300 for gpt-5). Strip that
+    // and convert to max_tokens with a sensible answer cap.
+    const buffer = originalModel.startsWith("gpt-6") ? 6000 : 300;
+    const answerBudget = Math.min(Math.max((payload.max_completion_tokens ?? 1500) - buffer, 200), 2000);
+    delete updated.max_completion_tokens;
+    delete updated.reasoning_effort;
+    updated.max_tokens = answerBudget;
+    if (updated.temperature === undefined) updated.temperature = 1;
+  } else if (!wasReasoning && nowReasoning) {
+    // Classic → reasoning: convert max_tokens → max_completion_tokens.
+    const base = payload.max_tokens ?? 600;
+    const buffer = newModel.startsWith("gpt-6") ? 6000 : 300;
+    delete updated.max_tokens;
+    delete updated.temperature;
+    updated.max_completion_tokens = base + buffer;
+    updated.reasoning_effort = "low";
+  }
+  // Same family (both reasoning or both classic): params are compatible as-is.
+  return updated;
+}
+
 Deno.serve(withCors(async (req) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
@@ -135,7 +209,7 @@ Deno.serve(withCors(async (req) => {
     if (!rawPayload || typeof rawPayload !== "object" || !isAllowedModel(rawPayload.model)) {
       return jsonError(`Unsupported model: ${String(rawPayload?.model ?? "")}`, 400);
     }
-    const payload = sanitizePayload(rawPayload);
+    const payload = applyModelOverride(sanitizePayload(rawPayload), await fetchModelOverrides(guardAdmin));
 
     const providerUrl = PROVIDER_URLS[provider];
     if (!providerUrl) {
