@@ -39,10 +39,9 @@ type Step = "LOADING" | "EMAIL" | "CODE" | "LOGGED_IN";
 
 const PLAN_LABELS: Record<string, string> = {
   free: "Free",
-  starter: "Starter",
-  pro: "Pro",
-  "pro-plus": "Pro+",
-  max: "Max",
+  starter: "Starter Pass",
+  pro: "Pro Pass",
+  "pro-plus": "Pro+ Pass",
 };
 
 function formatMinutes(minutes: number): string {

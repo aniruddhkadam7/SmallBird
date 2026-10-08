@@ -30,13 +30,12 @@ interface SubscriptionRow {
   current_period_end: string | null;
 }
 
-const PLAN_ORDER = ["free", "starter", "pro", "pro-plus", "max"];
+const PLAN_ORDER = ["free", "starter", "pro", "pro-plus"];
 const PLAN_LABEL: Record<string, string> = {
   free: "Free",
-  starter: "Starter",
-  pro: "Pro",
-  "pro-plus": "Pro+",
-  max: "Max",
+  starter: "Starter Pass",
+  pro: "Pro Pass",
+  "pro-plus": "Pro+ Pass",
 };
 
 const STATUS_BADGE: Record<string, string> = {
