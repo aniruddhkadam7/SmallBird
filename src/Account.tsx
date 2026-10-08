@@ -41,7 +41,8 @@ const PLAN_LABELS: Record<string, string> = {
   free: "Free",
   starter: "Starter",
   pro: "Pro",
-  "pro-plus": "Pro Plus",
+  "pro-plus": "Pro+",
+  max: "Max",
   // retired ids kept so old purchases still display a readable label
   "interview-pass": "Interview Pass",
   "pro-monthly": "Pro Monthly",
