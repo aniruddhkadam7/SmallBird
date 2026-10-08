@@ -11,6 +11,7 @@ import { entitlementErrorResponse, requireEntitlement, userIdFromVerifiedJwt } f
 import { withCors } from "../_shared/cors.ts";
 import { isAllowedModel, MAX_BODY_BYTES, sanitizePayload, withinRateLimit } from "../_shared/llmguard.ts";
 import { endSessionIfTimeUp, TIME_UP_MESSAGE } from "../_shared/timelimit.ts";
+import { applyModelOverride, fetchModelOverrides } from "../_shared/modelOverride.ts";
 
 const guardAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -64,7 +65,10 @@ Deno.serve(withCors(async (req) => {
     if (!rawPayload || typeof rawPayload !== "object" || !isAllowedModel(rawPayload.model)) {
       return jsonError(`Unsupported model: ${String(rawPayload?.model ?? "")}`, 400);
     }
-    const payload = sanitizePayload(rawPayload);
+    // Older app versions still call this function -- same rule as
+    // llm-proxy-v2: users only get the admin-selected (OpenAI) models.
+    if (provider !== "openai") return jsonError(`Unsupported provider: ${String(provider)}`, 400);
+    const payload = applyModelOverride(sanitizePayload(rawPayload), await fetchModelOverrides(guardAdmin));
 
     const providerUrl = PROVIDER_URLS[provider];
     if (!providerUrl) {
