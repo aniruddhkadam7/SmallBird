@@ -122,17 +122,41 @@ function App() {
   const [isMaximized, setIsMaximized] = useState(false);
 
   // Admin maintenance mode: the server already refuses new sessions; this
-  // tells the user why up front instead of only after they press Start.
+  // tells the user why up front and blocks Start (button and shortcuts)
+  // instead of only failing after they press it.
   const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null);
-  useEffect(() => {
-    const check = () =>
+  const maintenanceMessageRef = useRef<string | null>(null);
+  maintenanceMessageRef.current = maintenanceMessage;
+  const checkMaintenance = useCallback(
+    () =>
       invoke<string | null>("get_maintenance_message")
-        .then(setMaintenanceMessage)
-        .catch(() => {});
-    check();
-    const timer = window.setInterval(check, 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
+        .then((message) => {
+          setMaintenanceMessage(message);
+          return message;
+        })
+        .catch(() => maintenanceMessageRef.current),
+    [],
+  );
+  useEffect(() => {
+    checkMaintenance();
+    const timer = window.setInterval(checkMaintenance, 30_000);
+    // Re-check when the window comes back into focus, so a user returning to
+    // the app sees the current state without waiting for the next poll.
+    window.addEventListener("focus", checkMaintenance);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", checkMaintenance);
+    };
+  }, [checkMaintenance]);
+  // A failed start (or Upgrade) during maintenance is explained by the
+  // maintenance notice, not shown as an error.
+  const showStartError = useCallback(
+    async (e: unknown) => {
+      if (await checkMaintenance()) setError(null);
+      else setError(String(e));
+    },
+    [checkMaintenance],
+  );
   const audioTest = useAudioTest();
 
   const [sessionMode, setSessionMode] = useState<SessionMode>(() => loadSessionMode());
@@ -488,6 +512,10 @@ function App() {
   const handleStart = useCallback(async () => {
     setError(null);
     setActiveElsewhereMessage(null);
+    if (maintenanceMessageRef.current) {
+      closePopover();
+      return;
+    }
     setSessionState("STARTING");
     closePopover();
     setStartRole("");
@@ -498,10 +526,10 @@ function App() {
       const started = await startInterview();
       setSessionState(started ? "LISTENING" : "IDLE");
     } catch (e) {
-      setError(String(e));
+      await showStartError(e);
       setSessionState("IDLE");
     }
-  }, [startInterview, closePopover]);
+  }, [startInterview, closePopover, showStartError]);
 
   // Company/role for the "Start Interview" details prompt (START_SETUP
   // popover below) — always starts blank so each interview gets its own
@@ -607,11 +635,11 @@ function App() {
           setSessionState("IDLE");
         }
       } catch (e) {
-        setError(String(e));
+        await showStartError(e);
         setSessionState("IDLE");
       }
     },
-    [startInterview, closePopover],
+    [startInterview, closePopover, showStartError],
   );
 
   // "Skip" on the details prompt — must also clear any role/company saved
@@ -629,15 +657,16 @@ function App() {
   const handleForceStart = useCallback(async () => {
     setActiveElsewhereMessage(null);
     setError(null);
+    if (maintenanceMessageRef.current) return;
     setSessionState("STARTING");
     try {
       await startInterview(true);
       setSessionState("LISTENING");
     } catch (e) {
-      setError(String(e));
+      await showStartError(e);
       setSessionState("IDLE");
     }
-  }, [startInterview]);
+  }, [startInterview, showStartError]);
 
   // The backend force-ended this device's session because the same account
   // logged in and started a new one elsewhere (see start_backend_session's
@@ -721,6 +750,17 @@ function App() {
       setOpenPopover("ACCOUNT");
       return;
     }
+    // Under maintenance: don't start — bring the main window back, where
+    // the maintenance banner explains why.
+    if (maintenanceMessageRef.current) {
+      sessionStateRef.current = "IDLE";
+      invoke("shortcut_session_settled").catch(() => {});
+      await invoke("hide_interview_overlay").catch(() => {});
+      await invoke("stop_audio_capture").catch(() => {});
+      invoke("restore_from_bubble").catch(() => {});
+      setOpenPopover(null);
+      return;
+    }
     const current = loadOverlaySettings();
     saveOverlaySettings({ ...current, mode });
     setError(null);
@@ -749,7 +789,7 @@ function App() {
       }
       setSessionState("LISTENING");
     } catch (e) {
-      setError(String(e));
+      await showStartError(e);
       await invoke("hide_interview_overlay").catch(() => {});
       await invoke("stop_audio_capture").catch(() => {});
       await invoke("end_backend_session").catch(() => {});
@@ -759,7 +799,7 @@ function App() {
       shortcutStartingRef.current = false;
       invoke("shortcut_session_settled").catch(() => {});
     }
-  }, [authSession?.loggedIn, sessionMode, startInterview]);
+  }, [authSession?.loggedIn, sessionMode, startInterview, showStartError]);
 
   const startFromShortcutRef = useRef(startFromShortcut);
   startFromShortcutRef.current = startFromShortcut;
@@ -780,7 +820,19 @@ function App() {
   }, []);
 
   const startLabel =
-    sessionState === "STARTING" ? "Starting…" : sessionState === "LISTENING" ? "Listening" : "Start";
+    sessionState === "STARTING"
+      ? "Starting…"
+      : sessionState === "LISTENING"
+        ? "Listening"
+        : maintenanceMessage
+          ? "Under maintenance"
+          : "Start";
+
+  // Maintenance switched on while the start setup is open: close it, since
+  // there's nothing to start.
+  useEffect(() => {
+    if (maintenanceMessage && openPopover === "START_SETUP") setOpenPopover(null);
+  }, [maintenanceMessage, openPopover]);
 
   // A real OS minimize would leave no way back in: the main window is
   // `skip_taskbar` (tauri.conf.json), so there'd be no taskbar entry to
@@ -956,8 +1008,11 @@ function App() {
               <Button
                 variant="primary"
                 onClick={() => (isAssistant ? handleAssistantStart() : togglePopover("START_SETUP"))}
-                disabled={sessionState === "STARTING" || authSession?.loggedIn === false}
-                title={authSession?.loggedIn === false ? "Log in from the Account panel to start" : undefined}
+                disabled={sessionState === "STARTING" || authSession?.loggedIn === false || maintenanceMessage !== null}
+                title={
+                  maintenanceMessage ??
+                  (authSession?.loggedIn === false ? "Log in from the Account panel to start" : undefined)
+                }
                 aria-haspopup="dialog"
                 aria-expanded={openPopover === "START_SETUP"}
               >
@@ -1193,9 +1248,18 @@ function App() {
       </ExpandPanel>
 
       {maintenanceMessage && (
-        <p className="error compact-header-error" role="alert">
-          {maintenanceMessage}
-        </p>
+        <div className="maintenance-notice" role="status">
+          <svg className="maintenance-notice-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+          </svg>
+          <div className="maintenance-notice-text">
+            <span className="maintenance-notice-title">We'll be back soon</span>
+            <span>{maintenanceMessage}</span>
+            <span className="maintenance-notice-note">
+              You can start a session again as soon as we're done. No need to restart the app.
+            </span>
+          </div>
+        </div>
       )}
 
       {activeElsewhereMessage ? (
@@ -1210,10 +1274,11 @@ function App() {
         </div>
       ) : (
         error &&
+        !maintenanceMessage &&
         (isOutOfMinutesMessage(error) ? (
           <div className="error compact-header-error error-with-action">
             <span>{error.replace(/^Error:\s*/, "")}</span>
-            <Button variant="primary" size="sm" className="upgrade-btn" onClick={() => invoke("open_upgrade").catch((e) => setError(String(e)))}>
+            <Button variant="primary" size="sm" className="upgrade-btn" onClick={() => invoke("open_upgrade").catch(showStartError)}>
               Upgrade
             </Button>
           </div>
