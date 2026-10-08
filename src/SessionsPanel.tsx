@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "./ui";
 import type { SessionMode } from "./sessionMode";
+import { customModeValue, findCustomMode, loadCustomModes } from "./customModes";
 
 /// One saved session, as `history.rs`'s list_interview_history returns it.
 export interface HistoryTurn {
@@ -24,7 +25,8 @@ export interface HistoryEntry {
 
 /// A session's mode and details, recovered from how it was labelled when
 /// saved (see InterviewOverlay's transcriptLabels): "Assistant", "Meeting" /
-/// "Meeting: <topic>", or an interview's role/company.
+/// "Meeting: <topic>", "Mode: <custom mode name>" (Assistant if that mode
+/// no longer exists), or an interview's role/company.
 export function sessionDetails(entry: HistoryEntry): {
   mode: SessionMode;
   role: string;
@@ -33,19 +35,28 @@ export function sessionDetails(entry: HistoryEntry): {
 } {
   const role = entry.role?.trim() ?? "";
   if (role === "Assistant") return { mode: "assistant", role: "", company: "", meetingTopic: "" };
+  if (role.startsWith("Mode: ")) {
+    const name = role.slice("Mode: ".length).trim();
+    const custom = loadCustomModes().find((m) => m.name === name);
+    return { mode: custom ? customModeValue(custom.id) : "assistant", role: "", company: "", meetingTopic: "" };
+  }
   if (role === "Meeting" || role.startsWith("Meeting:")) {
     return { mode: "meeting", role: "", company: "", meetingTopic: role.replace(/^Meeting:?\s*/, "") };
   }
   return { mode: "interview", role, company: entry.company?.trim() ?? "", meetingTopic: "" };
 }
 
-const MODE_LABEL: Record<SessionMode, string> = { interview: "Interview", meeting: "Meeting", assistant: "Assistant" };
+const MODE_LABEL: Record<string, string> = { interview: "Interview", meeting: "Meeting", assistant: "Assistant" };
+
+function modeLabel(mode: SessionMode): string {
+  return MODE_LABEL[mode] ?? findCustomMode(mode)?.name ?? "Custom";
+}
 
 function sessionTitle(entry: HistoryEntry): string {
   const first = entry.turns.find((t) => t.question.trim())?.question.trim();
   if (first) return first.length > 80 ? `${first.slice(0, 80)}…` : first;
   const { mode, role, meetingTopic } = sessionDetails(entry);
-  return meetingTopic || role || `${MODE_LABEL[mode]} session`;
+  return meetingTopic || role || `${modeLabel(mode)} session`;
 }
 
 function when(ms: number): string {
@@ -126,7 +137,9 @@ export function SessionsPanel({ onContinue, sessionRunning }: Props) {
                 <button type="button" className="sessions-item-head" onClick={() => setOpenId(open ? null : entry.id)} aria-expanded={open}>
                   <span className="sessions-item-title">{sessionTitle(entry)}</span>
                   <span className="sessions-item-meta">
-                    <span className={`sessions-mode sessions-mode-${mode}`}>{MODE_LABEL[mode]}</span>
+                    <span className={`sessions-mode sessions-mode-${mode.startsWith("custom:") ? "custom" : mode}`}>
+                      {modeLabel(mode)}
+                    </span>
                     <span>{when(entry.ended_at_ms)}</span>
                     <span>
                       {entry.turns.length} {entry.turns.length === 1 ? "question" : "questions"}

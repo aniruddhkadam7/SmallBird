@@ -249,6 +249,22 @@ fn toggle_session(app: &AppHandle, mode: Option<&str>) -> Result<(), String> {
         log::info!("shortcut: closing overlay (ends the session)");
         return crate::interview_mode::close_overlay_window(app);
     }
+    // Under maintenance no new session can start: never open the overlay or
+    // record anything — bring the main window forward, which explains why.
+    if crate::interview_mode::commands::maintenance_active() {
+        log::info!("shortcut: session start blocked (maintenance mode)");
+        let main_app = app.clone();
+        return app
+            .run_on_main_thread(move || {
+                if let Err(err) = crate::bubble_window::restore_from_bubble(&main_app) {
+                    log::warn!("shortcut: couldn't show the main window: {err}");
+                }
+                if let Err(err) = main_app.emit("maintenance:start-blocked", ()) {
+                    log::warn!("shortcut: failed to tell the main window about maintenance: {err}");
+                }
+            })
+            .map_err(|e| format!("failed to show the main window: {e}"));
+    }
     START_PENDING_SINCE_MS.store(now_ms(), Ordering::Relaxed);
     log::info!("shortcut: session start requested ({})", mode.unwrap_or("selected mode"));
     // The mode decides what's heard (Assistant: the user's mic; the others:

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -39,6 +39,18 @@ import {
 } from "./headerPopups";
 import { loadLlmProvider, saveLlmProvider, type LlmProvider } from "./llmProviderSetting";
 import { loadSessionMode, saveSessionMode, type SessionMode } from "./sessionMode";
+import {
+  customContextSections,
+  customModeId,
+  customModeValue,
+  findCustomMode,
+  listensToMic,
+  loadCustomModes,
+  newCustomModeId,
+  saveCustomModes,
+  type CustomMode,
+} from "./customModes";
+import { CustomModeEditor } from "./CustomModeEditor";
 import { isOutOfMinutesMessage } from "./outOfMinutes";
 import { sessionDetails, type HistoryEntry } from "./SessionsPanel";
 import { getAuthSession, getEntitlement, type AuthSessionInfo } from "./auth";
@@ -46,7 +58,7 @@ import { checkForUpdate, installUpdate } from "./autoUpdate";
 import { AudioTestStatus, useAudioTest } from "./AudioTest";
 
 type SessionState = "IDLE" | "STARTING" | "LISTENING";
-type Popover = "MODE" | "MODEL" | "CONTEXT" | "SETTINGS" | "ACCOUNT" | "START_SETUP" | null;
+type Popover = "MODE" | "MODEL" | "CONTEXT" | "SETTINGS" | "ACCOUNT" | "START_SETUP" | "MAINTENANCE" | "CUSTOM_MODE" | null;
 
 const SESSION_MODES: { value: SessionMode; label: string; description: string }[] = [
   { value: "interview", label: "Interview", description: "Answers as you, the candidate" },
@@ -54,7 +66,11 @@ const SESSION_MODES: { value: SessionMode; label: string; description: string }[
   { value: "assistant", label: "Assistant", description: "Your personal assistant — ask anything" },
 ];
 
-const MODE_LABELS: Record<SessionMode, string> = { interview: "Interview", meeting: "Meeting", assistant: "Assistant" };
+const MODE_LABELS: Record<string, string> = { interview: "Interview", meeting: "Meeting", assistant: "Assistant" };
+
+function modeLabel(mode: SessionMode, customModes: CustomMode[]): string {
+  return MODE_LABELS[mode] ?? findCustomMode(mode, customModes)?.name ?? "Custom";
+}
 
 // Only "openai" and "anthropic" have a real backend implementation (see
 // backend/supabase/functions/llm-proxy's PROVIDER_URLS). "gemini" was
@@ -91,6 +107,18 @@ function withSavedInstructions(state: DocumentContextState, mode: SessionMode): 
   const section = state[INSTRUCTIONS_SECTION_KEY];
   if (!saved || !section) return state;
   return { ...state, [INSTRUCTIONS_SECTION_KEY]: { ...section, text: saved } };
+}
+
+function initialCustomContext(id: string): DocumentContextState {
+  return withSavedInstructions(emptyDocumentContextState(customContextSections(id)), customModeValue(id));
+}
+
+function forgetInstructions(mode: SessionMode): void {
+  try {
+    window.localStorage.removeItem(instructionsStorageKey(mode));
+  } catch {
+    // Nothing to clean up.
+  }
 }
 
 // Deterministic hash-to-hue so the same email always gets the same avatar
@@ -152,8 +180,12 @@ function App() {
   // maintenance notice, not shown as an error.
   const showStartError = useCallback(
     async (e: unknown) => {
-      if (await checkMaintenance()) setError(null);
-      else setError(String(e));
+      if (await checkMaintenance()) {
+        setError(null);
+        setOpenPopover("MAINTENANCE");
+      } else {
+        setError(String(e));
+      }
     },
     [checkMaintenance],
   );
@@ -163,12 +195,23 @@ function App() {
   const isMeeting = sessionMode === "meeting";
   const isAssistant = sessionMode === "assistant";
 
+  // Modes the user created (customModes.ts) — listed after the built-in ones.
+  const [customModes, setCustomModes] = useState<CustomMode[]>(() => loadCustomModes());
+  useEffect(() => saveCustomModes(customModes), [customModes]);
+  const selectedCustomMode = findCustomMode(sessionMode, customModes);
+  // Assistant and custom modes have nothing to set up — Start begins right away.
+  const startsImmediately = isAssistant || selectedCustomMode !== null;
+  // The mode being created/edited in the CUSTOM_MODE panel.
+  const [editingMode, setEditingMode] = useState<{ mode: CustomMode; isNew: boolean } | null>(null);
+
   // What a new session hears, per mode: Interview/Meeting listen to the call
   // (your mic off until you turn it on); Assistant listens to your mic (the
-  // call audio off). The backend records exactly these from the key press.
+  // call audio off); a custom mode, whichever it was set to. The backend
+  // records exactly these from the key press.
+  const micDefault = listensToMic(sessionMode, customModes);
   useEffect(() => {
-    invoke("set_source_defaults", { system: !isAssistant, mic: isAssistant }).catch(() => {});
-  }, [isAssistant]);
+    invoke("set_source_defaults", { system: !micDefault, mic: micDefault }).catch(() => {});
+  }, [micDefault]);
 
   const [interviewContext, setInterviewContext] = useState<DocumentContextState>(() =>
     withSavedInstructions(emptyDocumentContextState(INTERVIEW_CONTEXT_SECTIONS), "interview"),
@@ -182,13 +225,44 @@ function App() {
   const [assistantContext, setAssistantContext] = useState<DocumentContextState>(() =>
     withSavedInstructions(emptyDocumentContextState(ASSISTANT_CONTEXT_SECTIONS), "assistant"),
   );
-  const contextSections = isAssistant
-    ? ASSISTANT_CONTEXT_SECTIONS
-    : isMeeting
-      ? MEETING_CONTEXT_SECTIONS
-      : INTERVIEW_CONTEXT_SECTIONS;
-  const contextState = isAssistant ? assistantContext : isMeeting ? meetingContext : interviewContext;
-  const setContextState = isAssistant ? setAssistantContext : isMeeting ? setMeetingContext : setInterviewContext;
+  // Each custom mode's own context, keyed by its id — isolated like the above.
+  const [customContexts, setCustomContexts] = useState<Record<string, DocumentContextState>>(() =>
+    Object.fromEntries(loadCustomModes().map((m) => [m.id, initialCustomContext(m.id)])),
+  );
+  const customContextOf = useCallback(
+    (id: string) => customContexts[id] ?? initialCustomContext(id),
+    [customContexts],
+  );
+  const customContextSetter = useCallback(
+    (id: string): Dispatch<SetStateAction<DocumentContextState>> =>
+      (action) =>
+        setCustomContexts((prev) => {
+          const current = prev[id] ?? initialCustomContext(id);
+          return { ...prev, [id]: typeof action === "function" ? action(current) : action };
+        }),
+    [],
+  );
+  const contextSections = selectedCustomMode
+    ? customContextSections(selectedCustomMode.id)
+    : isAssistant
+      ? ASSISTANT_CONTEXT_SECTIONS
+      : isMeeting
+        ? MEETING_CONTEXT_SECTIONS
+        : INTERVIEW_CONTEXT_SECTIONS;
+  const contextState = selectedCustomMode
+    ? customContextOf(selectedCustomMode.id)
+    : isAssistant
+      ? assistantContext
+      : isMeeting
+        ? meetingContext
+        : interviewContext;
+  const setContextState = selectedCustomMode
+    ? customContextSetter(selectedCustomMode.id)
+    : isAssistant
+      ? setAssistantContext
+      : isMeeting
+        ? setMeetingContext
+        : setInterviewContext;
   const attachedMeetingSections = countFilledSections(
     MEETING_CONTEXT_SECTIONS.filter((s) => s.key !== INSTRUCTIONS_SECTION_KEY),
     meetingContext,
@@ -202,6 +276,11 @@ function App() {
   useEffect(() => saveInstructions("interview", interviewInstructions), [interviewInstructions]);
   useEffect(() => saveInstructions("meeting", meetingInstructions), [meetingInstructions]);
   useEffect(() => saveInstructions("assistant", assistantInstructions), [assistantInstructions]);
+  useEffect(() => {
+    for (const [id, state] of Object.entries(customContexts)) {
+      saveInstructions(customModeValue(id), state[INSTRUCTIONS_SECTION_KEY]?.text ?? "");
+    }
+  }, [customContexts]);
 
   // "updating" replaces the entire window with a small "Updating…" screen
   // (see the early return in the JSX below) — no banner, no button, no
@@ -396,7 +475,10 @@ function App() {
   }, []);
 
   const closePopover = useCallback(() => setOpenPopover(null), []);
-  const expandedPanel = openPopover === "CONTEXT" || openPopover === "SETTINGS" ? openPopover : null;
+  const expandedPanel =
+    openPopover === "CONTEXT" || openPopover === "SETTINGS" || (openPopover === "CUSTOM_MODE" && editingMode)
+      ? openPopover
+      : null;
 
   // The Test Audio result lives in the Interview details popover — closing it
   // ends any run in progress (releasing capture) and clears the old result.
@@ -412,13 +494,17 @@ function App() {
   // A mode's own context panel — so a mode shortcut uploads that mode's
   // files/instructions, not those of whichever mode was selected before.
   const contextFor = useCallback(
-    (mode: SessionMode) =>
-      mode === "assistant"
-        ? ([ASSISTANT_CONTEXT_SECTIONS, assistantContext, setAssistantContext] as const)
-        : mode === "meeting"
-          ? ([MEETING_CONTEXT_SECTIONS, meetingContext, setMeetingContext] as const)
-          : ([INTERVIEW_CONTEXT_SECTIONS, interviewContext, setInterviewContext] as const),
-    [assistantContext, meetingContext, interviewContext],
+    (mode: SessionMode) => {
+      const customId = customModeId(mode);
+      return customId
+        ? ([customContextSections(customId), customContextOf(customId), customContextSetter(customId)] as const)
+        : mode === "assistant"
+          ? ([ASSISTANT_CONTEXT_SECTIONS, assistantContext, setAssistantContext] as const)
+          : mode === "meeting"
+            ? ([MEETING_CONTEXT_SECTIONS, meetingContext, setMeetingContext] as const)
+            : ([INTERVIEW_CONTEXT_SECTIONS, interviewContext, setInterviewContext] as const);
+    },
+    [assistantContext, meetingContext, interviewContext, customContextOf, customContextSetter],
   );
 
   const startInterview = useCallback(
@@ -513,7 +599,7 @@ function App() {
     setError(null);
     setActiveElsewhereMessage(null);
     if (maintenanceMessageRef.current) {
-      closePopover();
+      setOpenPopover("MAINTENANCE");
       return;
     }
     setSessionState("STARTING");
@@ -569,12 +655,83 @@ function App() {
     await handleStart();
   }, [isMeeting, startRole, startCompany, startMeetingTopic, startParticipants, handleStart]);
 
-  // Assistant Mode has nothing to set up — Start begins right away.
-  const handleAssistantStart = useCallback(async () => {
+  // Assistant and custom modes have nothing to set up — Start begins right away.
+  const handleImmediateStart = useCallback(async () => {
     const current = loadOverlaySettings();
-    saveOverlaySettings({ ...current, mode: "assistant", role: "", company: "", meetingTopic: "", participants: "" });
+    saveOverlaySettings({ ...current, mode: sessionMode, role: "", company: "", meetingTopic: "", participants: "" });
     await handleStart();
-  }, [handleStart]);
+  }, [handleStart, sessionMode]);
+
+  const openNewCustomMode = useCallback(() => {
+    setEditingMode({ mode: { id: newCustomModeId(), name: "", role: "", listenTo: "call" }, isNew: true });
+    setOpenPopover("CUSTOM_MODE");
+  }, []);
+
+  const openEditCustomMode = useCallback((mode: CustomMode) => {
+    setEditingMode({ mode, isNew: false });
+    setOpenPopover("CUSTOM_MODE");
+  }, []);
+
+  const selectMode = useCallback((mode: SessionMode) => {
+    setSessionMode(mode);
+    saveSessionMode(mode);
+    // Stored for the overlay right away: a shortcut start shows the overlay
+    // (which reads this) before the main window gets to save anything.
+    saveOverlaySettings({ ...loadOverlaySettings(), mode });
+  }, []);
+
+  // Drops a mode's context and everything it uploaded.
+  const discardCustomContext = useCallback((id: string) => {
+    setCustomContexts((prev) => {
+      const state = prev[id];
+      if (state) {
+        for (const section of Object.values(state)) {
+          if (section.textDocumentId) invoke("delete_document", { documentId: section.textDocumentId }).catch(() => {});
+          for (const a of section.attachments) {
+            if (a.documentId) invoke("delete_document", { documentId: a.documentId }).catch(() => {});
+          }
+        }
+      }
+      const { [id]: _removed, ...rest } = prev;
+      return rest;
+    });
+    forgetInstructions(customModeValue(id));
+  }, []);
+
+  const handleSaveCustomMode = useCallback(
+    (mode: CustomMode) => {
+      setCustomModes((prev) =>
+        prev.some((m) => m.id === mode.id) ? prev.map((m) => (m.id === mode.id ? mode : m)) : [...prev, mode],
+      );
+      // A new mode is selected right away — that's why it was made.
+      if (editingMode?.isNew) selectMode(customModeValue(mode.id));
+      setEditingMode(null);
+      setOpenPopover(null);
+    },
+    [editingMode?.isNew, selectMode],
+  );
+
+  const handleCancelCustomMode = useCallback(() => {
+    // A mode that was never created leaves nothing behind.
+    if (editingMode?.isNew) discardCustomContext(editingMode.mode.id);
+    setEditingMode(null);
+    setOpenPopover(null);
+  }, [editingMode, discardCustomContext]);
+
+  const handleDeleteCustomMode = useCallback(() => {
+    if (!editingMode) return;
+    const { id } = editingMode.mode;
+    setCustomModes((prev) => prev.filter((m) => m.id !== id));
+    discardCustomContext(id);
+    if (sessionMode === customModeValue(id)) selectMode("assistant");
+    setEditingMode(null);
+    setOpenPopover(null);
+  }, [editingMode, discardCustomContext, sessionMode, selectMode]);
+
+  // Closing the panel any other way (Esc, clicking away) counts as Cancel.
+  useEffect(() => {
+    if (openPopover !== "CUSTOM_MODE" && editingMode) handleCancelCustomMode();
+  }, [openPopover, editingMode, handleCancelCustomMode]);
 
   // An out-of-minutes message goes away by itself once there are minutes
   // again (e.g. right after buying more on the website): while it's showing,
@@ -621,7 +778,8 @@ function App() {
       saveOverlaySettings({ ...loadOverlaySettings(), mode, role, company, meetingTopic, participants: "" });
       // The mode's audio defaults before recording starts (the effect that
       // normally sends these runs only after the mode change renders).
-      await invoke("set_source_defaults", { system: mode !== "assistant", mic: mode === "assistant" }).catch(() => {});
+      const mic = listensToMic(mode);
+      await invoke("set_source_defaults", { system: !mic, mic }).catch(() => {});
       closePopover();
       setError(null);
       setActiveElsewhereMessage(null);
@@ -657,7 +815,10 @@ function App() {
   const handleForceStart = useCallback(async () => {
     setActiveElsewhereMessage(null);
     setError(null);
-    if (maintenanceMessageRef.current) return;
+    if (maintenanceMessageRef.current) {
+      setOpenPopover("MAINTENANCE");
+      return;
+    }
     setSessionState("STARTING");
     try {
       await startInterview(true);
@@ -750,15 +911,16 @@ function App() {
       setOpenPopover("ACCOUNT");
       return;
     }
-    // Under maintenance: don't start — bring the main window back, where
-    // the maintenance banner explains why.
+    // Under maintenance: don't start — bring the main window back with the
+    // maintenance popup. (The shortcut itself already refuses to open the
+    // overlay when it knows; this covers a state it hadn't seen yet.)
     if (maintenanceMessageRef.current) {
       sessionStateRef.current = "IDLE";
       invoke("shortcut_session_settled").catch(() => {});
       await invoke("hide_interview_overlay").catch(() => {});
       await invoke("stop_audio_capture").catch(() => {});
       invoke("restore_from_bubble").catch(() => {});
-      setOpenPopover(null);
+      setOpenPopover("MAINTENANCE");
       return;
     }
     const current = loadOverlaySettings();
@@ -828,11 +990,25 @@ function App() {
           ? "Under maintenance"
           : "Start";
 
-  // Maintenance switched on while the start setup is open: close it, since
-  // there's nothing to start.
+  // Maintenance switched on while the start setup is open: there's nothing
+  // to start, so show the maintenance popup in its place. And when it ends,
+  // the popup closes on its own.
   useEffect(() => {
-    if (maintenanceMessage && openPopover === "START_SETUP") setOpenPopover(null);
+    if (maintenanceMessage && openPopover === "START_SETUP") setOpenPopover("MAINTENANCE");
+    if (!maintenanceMessage && openPopover === "MAINTENANCE") setOpenPopover(null);
   }, [maintenanceMessage, openPopover]);
+
+  // The start shortcut was pressed during maintenance (shortcuts.rs refuses
+  // to open the overlay and brings this window forward instead).
+  useEffect(() => {
+    const unlisten = listen("maintenance:start-blocked", () => {
+      checkMaintenance();
+      setOpenPopover("MAINTENANCE");
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [checkMaintenance]);
 
   // A real OS minimize would leave no way back in: the main window is
   // `skip_taskbar` (tauri.conf.json), so there'd be no taskbar entry to
@@ -953,9 +1129,9 @@ function App() {
               disabled={sessionState !== "IDLE"}
               aria-haspopup="menu"
               aria-expanded={openPopover === "MODE"}
-              title="Interview, meeting or personal assistant — changes what Start asks for and how the AI answers"
+              title="Interview, meeting, personal assistant or your own custom mode — changes what Start asks for and how the AI answers"
             >
-              <span>{MODE_LABELS[sessionMode]}</span>
+              <span className="mode-button-label">{modeLabel(sessionMode, customModes)}</span>
               <IconChevronDown />
             </button>
             {openPopover === "MODE" && (
@@ -969,18 +1145,48 @@ function App() {
                       className={`dropdown-item${sessionMode === m.value ? " active" : ""}`}
                       title={m.description}
                       onClick={() => {
-                        setSessionMode(m.value);
-                        saveSessionMode(m.value);
-                        // Stored for the overlay right away: a shortcut start
-                        // shows the overlay (which reads this) before the main
-                        // window gets to save anything.
-                        saveOverlaySettings({ ...loadOverlaySettings(), mode: m.value });
+                        selectMode(m.value);
                         closePopover();
                       }}
                     >
                       <span>{m.label}</span>
                     </button>
                   ))}
+                  {customModes.length > 0 && <div className="dropdown-divider" role="separator" />}
+                  {customModes.map((m) => {
+                    const value = customModeValue(m.id);
+                    return (
+                      <div key={m.id} className="dropdown-item-row">
+                        <button
+                          role="menuitemradio"
+                          aria-checked={sessionMode === value}
+                          className={`dropdown-item${sessionMode === value ? " active" : ""}`}
+                          title={m.role || m.name}
+                          onClick={() => {
+                            selectMode(value);
+                            closePopover();
+                          }}
+                        >
+                          <span>{m.name}</span>
+                        </button>
+                        <button
+                          className="dropdown-item-edit"
+                          onClick={() => openEditCustomMode(m)}
+                          aria-label={`Edit ${m.name}`}
+                          title="Edit mode"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M12 20h9" />
+                            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                          </svg>
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <div className="dropdown-divider" role="separator" />
+                  <button role="menuitem" className="dropdown-item dropdown-item-create" onClick={openNewCustomMode}>
+                    + Create custom mode
+                  </button>
                 </div>
               </HeaderDropdown>
             )}
@@ -1007,14 +1213,20 @@ function App() {
             <div className="dropdown-anchor">
               <Button
                 variant="primary"
-                onClick={() => (isAssistant ? handleAssistantStart() : togglePopover("START_SETUP"))}
-                disabled={sessionState === "STARTING" || authSession?.loggedIn === false || maintenanceMessage !== null}
+                onClick={() =>
+                  maintenanceMessage
+                    ? togglePopover("MAINTENANCE")
+                    : startsImmediately
+                      ? handleImmediateStart()
+                      : togglePopover("START_SETUP")
+                }
+                disabled={sessionState === "STARTING" || authSession?.loggedIn === false}
                 title={
                   maintenanceMessage ??
                   (authSession?.loggedIn === false ? "Log in from the Account panel to start" : undefined)
                 }
                 aria-haspopup="dialog"
-                aria-expanded={openPopover === "START_SETUP"}
+                aria-expanded={openPopover === "START_SETUP" || openPopover === "MAINTENANCE"}
               >
                 {/* The STT model load behind Start can take a couple of
                     seconds (cold-starting the sidecar process + loading the
@@ -1030,6 +1242,34 @@ function App() {
                   startLabel
                 )}
               </Button>
+              {openPopover === "MAINTENANCE" && maintenanceMessage && (
+                <HeaderDropdown onClose={closePopover} className="header-dropdown-panel header-dropdown-start">
+                  <div className="popover-overlay">
+                    <div className="popover maintenance-popup" role="dialog" aria-labelledby="maintenance-popup-title">
+                      <div className="maintenance-popup-body">
+                        <div className="maintenance-popup-icon" aria-hidden="true">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                          </svg>
+                        </div>
+                        <h2 id="maintenance-popup-title" className="maintenance-popup-title">
+                          Scheduled maintenance in progress
+                        </h2>
+                        <p className="maintenance-popup-message">{maintenanceMessage}</p>
+                        <p className="maintenance-popup-note">
+                          New sessions are paused while we finish. You'll be able to start again as soon as we're
+                          done. There's no need to restart SmallBird.
+                        </p>
+                      </div>
+                      <div className="popover-footer">
+                        <Button variant="primary" onClick={closePopover} autoFocus>
+                          Got it
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </HeaderDropdown>
+              )}
               {openPopover === "START_SETUP" && (
                 <HeaderDropdown onClose={closePopover} className="header-dropdown-panel header-dropdown-wide header-dropdown-start">
                   <div className="popover-overlay">
@@ -1218,11 +1458,29 @@ function App() {
             onContinueSession={handleContinueSession}
             sessionRunning={sessionState !== "IDLE"}
           />
+        ) : expandedPanel === "CUSTOM_MODE" && editingMode ? (
+          <CustomModeEditor
+            key={editingMode.mode.id}
+            mode={editingMode.mode}
+            isNew={editingMode.isNew}
+            contextState={customContextOf(editingMode.mode.id)}
+            onContextChange={customContextSetter(editingMode.mode.id)}
+            isLive={sessionState !== "IDLE" && sessionMode === customModeValue(editingMode.mode.id)}
+            onSave={handleSaveCustomMode}
+            onCancel={handleCancelCustomMode}
+            onDelete={handleDeleteCustomMode}
+          />
         ) : (
           <div className="popover" role="dialog" aria-label="Context">
             <div className="popover-header">
               <span className="setup-section-label">
-                {isAssistant ? "Assistant context" : isMeeting ? "Meeting context" : "Interview context"}
+                {selectedCustomMode
+                  ? `${selectedCustomMode.name} context`
+                  : isAssistant
+                    ? "Assistant context"
+                    : isMeeting
+                      ? "Meeting context"
+                      : "Interview context"}
               </span>
               <button className="modal-close-btn" onClick={closePopover} aria-label="Close">
                 ✕

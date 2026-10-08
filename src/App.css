@@ -542,8 +542,11 @@ body.compact-transparent {
   gap: 0.7rem;
   margin: 0.5rem 0 0;
   padding: 0.8rem 0.95rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
   border-radius: var(--radius-md);
-  background: var(--accent-soft);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
   color: var(--text);
   font-size: 0.85rem;
   line-height: 1.4;
@@ -569,6 +572,51 @@ body.compact-transparent {
 .maintenance-notice-note {
   font-size: 0.78rem;
   color: var(--text-muted);
+}
+
+/* Shown when Start (or a start shortcut) is pressed during maintenance. */
+.maintenance-popup-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.4rem 1.5rem 1rem;
+  text-align: center;
+}
+
+.maintenance-popup-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.maintenance-popup-title {
+  margin: 0.25rem 0 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.maintenance-popup-message {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text);
+}
+
+.maintenance-popup-note {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.maintenance-popup .popover-footer {
+  justify-content: center;
 }
 
 .dropdown-anchor {
@@ -795,6 +843,123 @@ body.compact-transparent {
 
 .dropdown-item-icon:disabled:hover {
   background: none;
+}
+
+/* Mode dropdown: custom modes (customModes.ts) under a divider, each with
+   an edit button beside it, then "+ Create custom mode". */
+.dropdown-divider {
+  height: 1px;
+  margin: 0.3rem 0.4rem;
+  background: var(--border);
+}
+
+.dropdown-item-row {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.dropdown-item-row .dropdown-item {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdown-item-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.dropdown-item-edit:hover {
+  background: var(--surface-alt);
+  color: var(--accent);
+}
+
+.dropdown-item-create {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.mode-button-label {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Create / edit custom mode panel (CustomModeEditor.tsx), shown in the
+   expanding bar like Context and Settings. */
+.custom-mode-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 460px;
+  overflow-y: auto;
+}
+
+.custom-mode-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.6rem;
+  align-items: end;
+}
+
+.custom-mode-listen {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+}
+
+.custom-mode-listen-option {
+  padding: 0.38rem 0.7rem;
+  border: none;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.custom-mode-listen-option.active {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.12);
+}
+
+.expand-panel .setup-textarea.custom-mode-role,
+.custom-mode-role {
+  height: 84px;
+}
+
+.custom-mode-footer-spacer {
+  flex: 1;
+}
+
+.custom-mode-delete-confirm {
+  font-size: 0.8rem;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+@media (max-width: 520px) {
+  .custom-mode-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 .dropdown-item-badge {
@@ -2937,6 +3102,11 @@ body.compact-transparent {
 .sessions-mode-assistant {
   background: #ede9fe;
   color: #6d28d9;
+}
+
+.sessions-mode-custom {
+  background: #fef3c7;
+  color: #b45309;
 }
 
 .sessions-item-body {

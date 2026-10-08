@@ -234,6 +234,19 @@ pub struct AskRequest {
 pub struct AssistantContext {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+    /// `Some` for a user-created custom mode, which runs on Assistant Mode's
+    /// pipeline but with the user's own role in place of the assistant
+    /// persona — see `prompts::assistant::custom_system_prompt`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom: Option<CustomModeContext>,
+}
+
+/// A custom mode the user created: its name and how the AI should act in it.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct CustomModeContext {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
 }
 
 /// Everything the user gave Meeting Mode about the meeting: the typed

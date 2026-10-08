@@ -9,7 +9,7 @@
 //! resolution) ever applies here — and nothing here can change how those
 //! modes behave.
 
-use crate::backend::AskRequest;
+use crate::backend::{AskRequest, CustomModeContext};
 
 use super::ChatMessage;
 
@@ -41,6 +41,53 @@ STYLE
 - Plain, clear language.
 - Talk to the user as \"you\". You are their assistant — not them, and not speaking on their behalf to anyone else.
 - No filler, no flattery, no restating the question.";
+
+/// A custom mode's system prompt: the user's own role for the mode up
+/// front, then the same honesty and formatting ground rules as Assistant
+/// Mode — softened to defaults, since the user's role may ask for something
+/// else (one-line replies, speaking as them, another language).
+pub fn custom_system_prompt(custom: &CustomModeContext) -> String {
+    let name = custom.name.trim();
+    let name = if name.is_empty() { "Custom" } else { name };
+    let role = custom
+        .role
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("Help the user with whatever they need in \"{name}\"."));
+    format!(
+        "You are running privately on the user's own computer, in a mode they set up themselves called \"{name}\".
+
+YOUR ROLE AND HOW TO ACT — written by the user. It defines who you are, who you speak as, and how you behave in this mode. Follow it closely; where anything below conflicts with it, it wins:
+{role}
+
+WHAT YOU'LL RECEIVE
+
+- Questions are typed by the user, or come from live speech-to-text of their microphone and/or audio playing on their computer (a call, a video, other people). Speech-to-text can be rough or cut off — work out what was most likely meant.
+- When lines are labeled \"Them:\" / \"You:\", \"Them\" is the audio playing on the computer (other people) and \"You\" is the user. Don't write the labels in your answer.
+- You may also get screenshots of the user's screen — use what's on them.
+
+GROUND RULES
+
+- Use the user's standing instructions and the files/notes they shared for this mode whenever they're relevant.
+- Never invent facts, numbers, names, quotes, links, or sources. If something isn't known, say so plainly.
+- The useful part first. No filler, no flattery, no restating the question.
+
+FORMATTING — defaults, unless your role or the user's instructions say otherwise
+
+- A quick question gets a quick answer: one to three sentences, key fact in **bold**.
+- Longer answers use clean Markdown: short `##` headings, numbered lists for steps, bullets for options and key points, a table when comparing things, fenced code blocks for code.
+- No emojis unless the user uses them."
+    )
+}
+
+fn system_prompt(request: &AskRequest) -> String {
+    match request.assistant.as_ref().and_then(|a| a.custom.as_ref()) {
+        Some(custom) => custom_system_prompt(custom),
+        None => SYSTEM_PROMPT.to_string(),
+    }
+}
 
 /// What a screenshot-only question asks for.
 pub const SCREEN_INSTRUCTION: &str = "Look at the attached screenshot(s) of my screen and help me with what's there. If there's a question, answer it. If there's an error, explain the cause and how to fix it. If it's code, explain or solve it. If it's a document, page, or message, give me the key points and anything I should act on. If it's unclear what I need, give the most useful short read of what's on screen.";
@@ -101,7 +148,7 @@ fn user_prompt(request: &AskRequest) -> String {
 }
 
 pub fn build_messages(request: &AskRequest) -> Vec<ChatMessage> {
-    let mut messages = vec![ChatMessage::system(SYSTEM_PROMPT)];
+    let mut messages = vec![ChatMessage::system(system_prompt(request))];
     if let Some(background) = background_message(request) {
         messages.push(ChatMessage::cacheable_user(background));
         messages.push(ChatMessage::assistant(super::ask::BACKGROUND_ACK));
@@ -121,7 +168,7 @@ pub fn build_messages(request: &AskRequest) -> Vec<ChatMessage> {
 
 /// The Analyze-screen path (one fresh screenshot, no typed question).
 pub fn build_screen_messages(request: &AskRequest, image_png_base64: &str) -> Vec<ChatMessage> {
-    let mut messages = vec![ChatMessage::system(SYSTEM_PROMPT)];
+    let mut messages = vec![ChatMessage::system(system_prompt(request))];
     if let Some(background) = background_message(request) {
         messages.push(ChatMessage::cacheable_user(background));
         messages.push(ChatMessage::assistant(super::ask::BACKGROUND_ACK));
@@ -138,7 +185,7 @@ pub fn build_screen_messages(request: &AskRequest, image_png_base64: &str) -> Ve
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::{AssistantContext, ConversationTurn};
+    use crate::backend::{AssistantContext, ConversationTurn, CustomModeContext};
 
     fn request(question: &str) -> AskRequest {
         AskRequest {
@@ -177,7 +224,7 @@ mod tests {
     fn includes_instructions_notes_and_history() {
         let mut req = request("And the second step?");
         req.custom_instructions = Some("Answer in Hindi".into());
-        req.assistant = Some(AssistantContext { notes: Some("My router is a TP-Link Archer C6".into()) });
+        req.assistant = Some(AssistantContext { notes: Some("My router is a TP-Link Archer C6".into()), custom: None });
         req.conversation_history = vec![ConversationTurn { question: "Wifi keeps dropping".into(), answer: "1. Restart the router…".into() }];
         let messages = build_messages(&req);
         assert!(messages[1].content.contains("Answer in Hindi"));
@@ -207,6 +254,31 @@ mod tests {
         let last = build_messages(&request("DNS क्या है?")).last().unwrap().content.clone();
         assert!(last.starts_with("DNS क्या है?"));
         assert!(last.contains("Devanagari"));
+    }
+
+    #[test]
+    fn custom_mode_uses_the_users_role_as_its_system_prompt() {
+        let mut req = request("What's our refund window?");
+        req.custom_instructions = Some("Two sentences max".into());
+        req.assistant = Some(AssistantContext {
+            notes: Some("Refunds within 30 days".into()),
+            custom: Some(CustomModeContext {
+                name: "Support calls".into(),
+                role: Some("Act as me, a support agent for Acme. Reply in the first person.".into()),
+            }),
+        });
+        let messages = build_messages(&req);
+        assert!(messages[0].content.contains("\"Support calls\""));
+        assert!(messages[0].content.contains("Act as me, a support agent for Acme."));
+        assert!(!messages[0].content.contains("You are the user's personal assistant"));
+        assert!(messages[1].content.contains("Two sentences max"));
+        assert!(messages[1].content.contains("Refunds within 30 days"));
+    }
+
+    #[test]
+    fn custom_mode_without_a_role_still_names_the_mode() {
+        let custom = CustomModeContext { name: "Study buddy".into(), role: None };
+        assert!(custom_system_prompt(&custom).contains("Help the user with whatever they need in \"Study buddy\"."));
     }
 
     #[test]

@@ -8,7 +8,7 @@ mod types;
 
 pub use types::{
     AnalysisProgressEvent, AskRequest, AskResponse, ConversationStateSnapshot, ConversationTurn,
-    InterviewAnalysisRequest, AssistantContext, MeetingContext, NoteContext,
+    InterviewAnalysisRequest, AssistantContext, CustomModeContext, MeetingContext, NoteContext,
     NoteSummary, NotesAskRequest, NotesAskResponse, NotesSummaryRequest, OverallInterviewAnalysis,
     QuestionAnalysis, SetupAnalysisRequest, SetupAnalysisResponse,
     WireAudioSource, WireCandidateContext, WireQuestionAnswer, WireTranscript,

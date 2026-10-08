@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -38,6 +38,7 @@ import {
   ThumbsUpIcon,
 } from "./OverlayIcons";
 import { loadLlmProvider } from "./llmProviderSetting";
+import { findCustomMode, listensToMic } from "./customModes";
 import { getEntitlement } from "./auth";
 
 function formatCountdown(totalSeconds: number): string {
@@ -194,6 +195,10 @@ function transcriptLabels(settings: OverlaySettings): { role: string | null; com
   if (settings.mode === "assistant") {
     return { role: "Assistant", company: null };
   }
+  const customMode = findCustomMode(settings.mode);
+  if (customMode) {
+    return { role: `Mode: ${customMode.name}`, company: null };
+  }
   if (settings.mode === "meeting") {
     const topic = settings.meetingTopic.trim();
     return { role: topic ? `Meeting: ${topic}` : "Meeting", company: null };
@@ -245,8 +250,8 @@ export function InterviewOverlay() {
   // The two audio sources, each switched by its own icon. Every session
   // starts with its mode's defaults: the call audio on and the user's mic off
   // in Interview/Meeting; the mic on and the call audio off in Assistant.
-  const [systemEnabled, setSystemEnabled] = useState(() => loadOverlaySettings().mode !== "assistant");
-  const [micEnabled, setMicEnabled] = useState(() => loadOverlaySettings().mode === "assistant");
+  const [systemEnabled, setSystemEnabled] = useState(() => !listensToMic(loadOverlaySettings().mode));
+  const [micEnabled, setMicEnabled] = useState(() => listensToMic(loadOverlaySettings().mode));
   const systemOnRef = useRef(systemEnabled);
   // Minimized into the small box in the bottom-right corner (same window,
   // resized — see overlay_window.rs's minimize_overlay). The session keeps
@@ -281,15 +286,20 @@ export function InterviewOverlay() {
   settingsRef.current = settings;
   const isMeeting = settings.mode === "meeting";
   const isAssistant = settings.mode === "assistant";
+  // A mode the user created (customModes.ts): worded like Assistant when it
+  // listens to the user's mic, like Meeting when it listens to the call.
+  const customMode = useMemo(() => findCustomMode(settings.mode), [settings.mode]);
+  const asksLikeAssistant = isAssistant || customMode?.listenTo === "mic";
+  const hearsOthers = isMeeting || (customMode !== null && customMode.listenTo === "call");
   // Answers render like a chat app's in every mode — headings, tables,
   // lists (GFM for tables; styling in .rich-markdown).
   const markdownPlugins = [remarkGfm];
   const markdownClass = " rich-markdown";
-  const sessionNoun = isAssistant ? "session" : isMeeting ? "meeting" : "interview";
+  const sessionNoun = isAssistant || customMode ? "session" : isMeeting ? "meeting" : "interview";
   // What the empty overlay says before anything has been asked.
-  const waitingText = isAssistant
+  const waitingText = asksLikeAssistant
     ? "Ask me anything — type, speak, or take a screenshot"
-    : isMeeting
+    : hearsOthers
       ? "Waiting for someone to speak…"
       : "Waiting for the interviewer to speak…";
   // Remaining plan balance at the moment this session started, in seconds —
@@ -825,8 +835,8 @@ export function InterviewOverlay() {
       const mode = event.payload;
       if (!mode) return;
       setSettings((prev) => ({ ...prev, mode }));
-      setSystemEnabled(mode !== "assistant");
-      setMicEnabled(mode === "assistant");
+      setSystemEnabled(!listensToMic(mode));
+      setMicEnabled(listensToMic(mode));
     });
     return () => {
       unlisten.then((f) => f());
@@ -890,9 +900,9 @@ export function InterviewOverlay() {
       setMiniStrip(false);
       setUnseenAnswer(false);
       setMaximized(false);
-      const assistantSession = loadOverlaySettings().mode === "assistant";
-      setSystemEnabled(!assistantSession);
-      setMicEnabled(assistantSession);
+      const micSession = listensToMic(loadOverlaySettings().mode);
+      setSystemEnabled(!micSession);
+      setMicEnabled(micSession);
       // Capture was started just before this reset (App.tsx's
       // startInterview awaits it before showing the overlay) — re-read it
       // rather than trusting whatever this reused window last knew.
@@ -956,6 +966,8 @@ export function InterviewOverlay() {
       mode: settings.mode,
       meetingTopic: settings.meetingTopic.trim() || null,
       participants: settings.participants.trim() || null,
+      customModeName: customMode?.name ?? null,
+      customModeRole: customMode?.role.trim() || null,
       // DeepSeek isn't implemented backend-side yet (see
       // llmProviderSetting.ts) — the header dropdown keeps it disabled, so
       // only "anthropic"/"openai"/"gemini" ever actually reach here in
@@ -965,7 +977,7 @@ export function InterviewOverlay() {
           ? chosenProvider
           : null,
     };
-  }, [settings]);
+  }, [settings, customMode]);
 
   // Deep thinking (the Deep toggle / Ctrl+D) routes the answer to the slower,
   // stronger-reasoning model. With Deep on and nothing new in the question
@@ -1691,7 +1703,7 @@ export function InterviewOverlay() {
           onClick={() => setSettings((prev) => ({ ...prev, autoAI: !prev.autoAI }))}
           data-tooltip={
             settings.autoAI
-              ? `Auto Answer is on — questions send automatically when the ${isAssistant ? "speaking" : isMeeting ? "speaker" : "interviewer"} stops${isAssistant ? "" : " talking"}`
+              ? `Auto Answer is on — questions send automatically when the ${asksLikeAssistant ? "speaking" : hearsOthers ? "speaker" : "interviewer"} stops${asksLikeAssistant ? "" : " talking"}`
               : "Auto Answer is off — use Answer or Enter to send"
           }
         >
@@ -1800,7 +1812,7 @@ export function InterviewOverlay() {
       {showEndedSummary ? (
         <div className="overlay-confirm-close">
           <p className="overlay-confirm-close-title">
-            {isAssistant ? "Session ended" : isMeeting ? "Meeting ended" : "Interview ended"}
+            {isAssistant || customMode ? "Session ended" : isMeeting ? "Meeting ended" : "Interview ended"}
           </p>
           <p className="overlay-confirm-close-body">
             Your transcript has been saved — view it anytime from the dashboard.
@@ -1905,12 +1917,12 @@ export function InterviewOverlay() {
                     : !listening
                     ? "Starting to listen…"
                     : hasConversation
-                    ? isAssistant
+                    ? asksLikeAssistant
                       ? "Ask a follow-up…"
                       : "Next question…"
-                    : isAssistant
+                    : asksLikeAssistant
                       ? "Ask anything…"
-                      : isMeeting
+                      : hearsOthers
                         ? "Waiting for someone to speak…"
                         : "Waiting for the interviewer to speak…"
                 }

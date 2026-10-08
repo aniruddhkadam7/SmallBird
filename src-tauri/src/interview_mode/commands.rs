@@ -37,15 +37,23 @@ pub struct AskOptions {
     /// `None` keeps the server-configured default.
     #[serde(default)]
     pub llm_provider: Option<String>,
-    /// "interview" | "meeting" — the header's mode dropdown. Meeting mode
-    /// swaps the candidate persona and resume/JD context for the meeting's
-    /// own purpose, participants and uploaded meeting documents.
+    /// "interview" | "meeting" | "assistant" | "custom:<id>" — the header's
+    /// mode dropdown. Meeting mode swaps the candidate persona and resume/JD
+    /// context for the meeting's own purpose, participants and uploaded
+    /// meeting documents; a custom mode is one the user created (see the
+    /// frontend's customModes.ts).
     #[serde(default = "default_mode")]
     pub mode: String,
     #[serde(default)]
     pub meeting_topic: Option<String>,
     #[serde(default)]
     pub participants: Option<String>,
+    /// A custom mode's name and "how to act" role, sent alongside its
+    /// `custom:<id>` mode.
+    #[serde(default)]
+    pub custom_mode_name: Option<String>,
+    #[serde(default)]
+    pub custom_mode_role: Option<String>,
     /// The overlay's "Deep Answer" (button / Ctrl+D): slower, stronger
     /// reasoning model for questions that deserve it. Off for every normal
     /// Answer / Auto Answer.
@@ -107,6 +115,8 @@ impl Default for AskOptions {
             mode: default_mode(),
             meeting_topic: None,
             participants: None,
+            custom_mode_name: None,
+            custom_mode_role: None,
             deep: false,
             speaker_labeled: false,
         }
@@ -125,24 +135,34 @@ fn build_ask_request(
     conversation_state: ConversationStateSnapshot,
 ) -> AskRequest {
     let is_meeting = options.mode == "meeting";
-    let is_assistant = options.mode == "assistant";
+    // A custom mode runs on Assistant Mode's pipeline, with the user's own
+    // role in place of the assistant persona and its own document types
+    // (CUSTOM_*:<id>), so no two modes ever share uploads.
+    let custom_id = options.mode.strip_prefix("custom:").filter(|id| !id.is_empty());
+    let is_assistant = options.mode == "assistant" || custom_id.is_some();
     // Each mode keeps its own instructions (see the frontend's
     // headerPopups.ts), since "answer as a senior candidate" and "keep my
     // meeting replies to one line" rarely belong together.
     let custom_instructions = crate::documents::latest_ready_text(
         state,
-        if is_assistant {
-            "ASSISTANT_INSTRUCTIONS"
-        } else if is_meeting {
-            "MEETING_INSTRUCTIONS"
-        } else {
-            "INTERVIEW_INSTRUCTIONS"
+        &match custom_id {
+            Some(id) => format!("CUSTOM_INSTRUCTIONS:{id}"),
+            None if is_assistant => "ASSISTANT_INSTRUCTIONS".to_string(),
+            None if is_meeting => "MEETING_INSTRUCTIONS".to_string(),
+            None => "INTERVIEW_INSTRUCTIONS".to_string(),
         },
     );
     // Assistant Mode reads only its own document types, so nothing from an
     // interview or meeting (resume, agenda, ...) reaches it, or vice versa.
     let assistant = is_assistant.then(|| crate::backend::AssistantContext {
-        notes: crate::documents::latest_ready_text(state, "ASSISTANT_CONTEXT"),
+        notes: crate::documents::latest_ready_text(
+            state,
+            &custom_id.map_or_else(|| "ASSISTANT_CONTEXT".to_string(), |id| format!("CUSTOM_CONTEXT:{id}")),
+        ),
+        custom: custom_id.map(|_| crate::backend::CustomModeContext {
+            name: options.custom_mode_name.clone().unwrap_or_default(),
+            role: options.custom_mode_role.clone(),
+        }),
     });
     let meeting = is_meeting.then(|| MeetingContext {
         topic: options.meeting_topic.clone(),
@@ -304,9 +324,18 @@ pub async fn get_maintenance_message() -> Option<String> {
     fetch_maintenance_message().await
 }
 
+/// The last maintenance state the status check saw (the main window polls
+/// it). Read by the start shortcut, which must decide on the key press —
+/// before showing the overlay — without a network round trip.
+static MAINTENANCE_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn maintenance_active() -> bool {
+    MAINTENANCE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// `Some(message)` while admin maintenance mode is on. `None` when it's off
 /// or the status check can't be reached — an unreachable status endpoint
-/// must never be what blocks the button.
+/// must never be what blocks the button (the last known state is kept).
 async fn fetch_maintenance_message() -> Option<String> {
     #[derive(serde::Deserialize)]
     struct AppStatus {
@@ -325,6 +354,7 @@ async fn fetch_maintenance_message() -> Option<String> {
         return None;
     }
     let status = response.json::<AppStatus>().await.ok()?;
+    MAINTENANCE_ACTIVE.store(status.maintenance, std::sync::atomic::Ordering::Relaxed);
     status.maintenance.then(|| {
         status
             .message
@@ -832,5 +862,16 @@ mod tests {
         assert_eq!(options.mode, "meeting");
         assert_eq!(options.meeting_topic.as_deref(), Some("Q3 roadmap"));
         assert_eq!(options.participants.as_deref(), Some("Priya"));
+    }
+
+    #[test]
+    fn ask_options_deserialize_custom_mode_fields() {
+        let options: AskOptions = serde_json::from_str(
+            r#"{"mode":"custom:abc123","customModeName":"Sales calls","customModeRole":"Act as me, an account executive"}"#,
+        )
+        .unwrap();
+        assert_eq!(options.mode, "custom:abc123");
+        assert_eq!(options.custom_mode_name.as_deref(), Some("Sales calls"));
+        assert_eq!(options.custom_mode_role.as_deref(), Some("Act as me, an account executive"));
     }
 }

@@ -81,7 +81,10 @@ export type DocumentType =
   | "INTERVIEW_INSTRUCTIONS"
   | "MEETING_INSTRUCTIONS"
   | "ASSISTANT_INSTRUCTIONS"
-  | "ASSISTANT_CONTEXT";
+  | "ASSISTANT_CONTEXT"
+  // A custom mode's own types, keyed by its id (see customModes.ts).
+  | `CUSTOM_INSTRUCTIONS:${string}`
+  | `CUSTOM_CONTEXT:${string}`;
 
 export type DocumentStatus = "READY" | "EMPTY" | "ERROR";
 
