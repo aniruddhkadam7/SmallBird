@@ -127,7 +127,7 @@ export default function BestAiInterviewAssistantPage() {
           {
             href: "/pricing",
             label: "Pricing",
-            description: "Free plan, one-time passes, and monthly plans.",
+            description: "Free plan and one-time passes from ₹299.",
           },
         ]}
       />

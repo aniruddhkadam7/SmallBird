@@ -2,15 +2,15 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { PAID_PLAN_IDS, SUBSCRIPTION_PLAN_IDS, type PlanId } from "@/lib/plans"
+import { PAID_PLAN_IDS, type PlanId } from "@/lib/plans"
 
 export type { PlanId }
 
 export const PLAN_LABELS: Record<PlanId, string> = {
   free: "Free",
-  starter: "Starter",
-  pro: "Pro",
-  "pro-plus": "Pro+",
+  starter: "Starter Pass",
+  pro: "Pro Pass",
+  "pro-plus": "Pro+ Pass",
 }
 
 export type FlowStep = "signup" | "verify" | "payment" | "processing" | "done"
@@ -247,8 +247,7 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
     try {
       await loadRazorpayScript()
 
-      const endpoint = SUBSCRIPTION_PLAN_IDS.has(plan) ? "/api/razorpay/create-subscription" : "/api/razorpay/create-order"
-      const response = await fetch(endpoint, {
+      const response = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ planId: plan }),
@@ -256,13 +255,14 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? "Could not start checkout")
 
-      const isSubscription = SUBSCRIPTION_PLAN_IDS.has(plan)
       const checkout = new window.Razorpay!({
         key: data.keyId,
         name: "Smallbird",
         image: `${window.location.origin}/smallbird-logo.png`,
         description: PLAN_LABELS[plan],
-        ...(isSubscription ? { subscription_id: data.subscriptionId } : { order_id: data.orderId, amount: data.amount, currency: data.currency }),
+        order_id: data.orderId,
+        amount: data.amount,
+        currency: data.currency,
         prefill: email ? { email } : undefined,
         handler: () => {
           // Razorpay confirms payment client-side here, but the actual
