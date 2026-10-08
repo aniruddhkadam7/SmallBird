@@ -10,7 +10,7 @@ import { LiquidButton } from "@/components/ui/liquid-glass-button"
 // Razorpay checkout the marketing site's pricing section triggers; since
 // the dashboard is only ever reached signed in, it jumps straight to the
 // payment step rather than asking to sign up first.
-const UPGRADE_PLAN_IDS: PlanId[] = ["starter", "pro", "pro-plus", "max"]
+const UPGRADE_PLAN_IDS: PlanId[] = ["starter", "pro", "pro-plus"]
 
 export function PlansView() {
   const { startFlow } = usePurchaseFlow()

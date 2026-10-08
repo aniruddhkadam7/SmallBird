@@ -4,7 +4,7 @@
 // `plans` table was seeded with different ids than the website used).
 // These `id` values must match `public.plans.id` exactly.
 
-export type PlanId = "free" | "starter" | "pro" | "pro-plus" | "max";
+export type PlanId = "free" | "starter" | "pro" | "pro-plus";
 
 export type BillingKind = "free" | "one_time" | "monthly" | "yearly";
 
@@ -77,19 +77,6 @@ export const PLANS: Plan[] = [
     billingKind: "monthly",
     recommended: true,
   },
-  {
-    id: "max",
-    name: "Max",
-    emoji: "💎",
-    price: "₹2,599",
-    priceInPaise: 259900,
-    cadence: "/ month",
-    billingNote: "8 hours/month",
-    description: "For heavy interview usage.",
-    features: ["8 hours/month", "Interview Mode", "Screen Analysis", "Coding Answers", "Full context library", "Priority support (support@smallbird.in)"],
-    cta: "Get Max",
-    billingKind: "monthly",
-  },
 ];
 
 export function getPlan(id: PlanId): Plan {
@@ -98,5 +85,5 @@ export function getPlan(id: PlanId): Plan {
   return plan;
 }
 
-export const PAID_PLAN_IDS = new Set<PlanId>(["starter", "pro", "pro-plus", "max"]);
-export const SUBSCRIPTION_PLAN_IDS = new Set<PlanId>(["pro", "pro-plus", "max"]);
+export const PAID_PLAN_IDS = new Set<PlanId>(["starter", "pro", "pro-plus"]);
+export const SUBSCRIPTION_PLAN_IDS = new Set<PlanId>(["pro", "pro-plus"]);

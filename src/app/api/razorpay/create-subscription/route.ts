@@ -7,12 +7,10 @@ import type { PlanId } from "@/lib/plans"
 // Razorpay setup checklist) — distinct from our own public.plans.id.
 // plan_TlUIuWNuGmjcEy = Pro ₹749/month
 // plan_TlUIv4wCo8Z8gG = Pro+ ₹1399/month
-// plan_TlUIvMQTuGRrWe = Max ₹2599/month
 // Env vars take precedence so these can be overridden without a code change.
 const RAZORPAY_PLAN_ID_BY_PLAN: Partial<Record<PlanId, string | undefined>> = {
   pro: process.env.RAZORPAY_PLAN_ID_PRO ?? "plan_TlUIuWNuGmjcEy",
   "pro-plus": process.env.RAZORPAY_PLAN_ID_PRO_PLUS ?? "plan_TlUIv4wCo8Z8gG",
-  max: process.env.RAZORPAY_PLAN_ID_MAX ?? "plan_TlUIvMQTuGRrWe",
 }
 
 // Razorpay subscriptions require a total_count of billing cycles up front —
@@ -22,7 +20,6 @@ const RAZORPAY_PLAN_ID_BY_PLAN: Partial<Record<PlanId, string | undefined>> = {
 const TOTAL_COUNT_BY_PLAN: Partial<Record<PlanId, number>> = {
   pro: 120,
   "pro-plus": 120,
-  max: 120,
 }
 
 export async function POST(request: Request) {
