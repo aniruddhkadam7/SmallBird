@@ -48,7 +48,7 @@ export function SoftwareApplicationJsonLd() {
       "@type": "AggregateOffer",
       priceCurrency: "INR",
       lowPrice: "0",
-      highPrice: "799",
+      highPrice: "999",
       offerCount: "4",
     },
   }

@@ -54,7 +54,7 @@ const faqs = [
   {
     question: "How much does Smallbird cost?",
     answer:
-      "Smallbird has a free plan (10 minutes a month) and paid plans starting at ₹199 for a one-time interview pass. See full pricing for details.",
+      "Smallbird has a free plan (10 minutes a month) and paid plans starting at ₹399 for a one-time interview pass. See full pricing for details.",
   },
   {
     question: "Is Smallbird available for Mac?",
