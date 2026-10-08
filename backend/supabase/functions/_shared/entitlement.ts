@@ -51,11 +51,39 @@ export async function requireEntitlement(req: Request): Promise<Entitlement> {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const admin = createClient(url, serviceKey);
 
-  const { data: ent, error: entErr } = await admin
-    .from("entitlements")
-    .select("plan_id, remaining_minutes, period_end, plans(max_concurrent_sessions)")
-    .eq("user_id", userId)
-    .single();
+  // Run entitlement, ban, and maintenance checks in parallel
+  const [entResult, profileResult, maintenanceResult] = await Promise.all([
+    admin
+      .from("entitlements")
+      .select("plan_id, remaining_minutes, period_end, plans(max_concurrent_sessions)")
+      .eq("user_id", userId)
+      .single(),
+    admin
+      .from("profiles")
+      .select("is_banned, ban_reason")
+      .eq("id", userId)
+      .maybeSingle(),
+    admin
+      .from("app_settings")
+      .select("key, value")
+      .in("key", ["maintenance_mode", "maintenance_message"]),
+  ]);
+
+  // Maintenance takes priority over everything else
+  const settingsMap = Object.fromEntries(
+    (maintenanceResult.data ?? []).map((r: { key: string; value: string }) => [r.key, r.value]),
+  );
+  if (settingsMap["maintenance_mode"] === "true") {
+    const msg = settingsMap["maintenance_message"] ?? "SmallBird is currently under maintenance. Please check back shortly.";
+    throw new EntitlementError(503, msg);
+  }
+
+  // Ban check
+  if (profileResult.data?.is_banned) {
+    throw new EntitlementError(403, "Your account has been suspended. Please contact support.");
+  }
+
+  const { data: ent, error: entErr } = entResult;
   if (entErr || !ent) throw new EntitlementError(403, "No entitlement record for this user");
 
   if (ent.period_end && new Date(ent.period_end) < new Date()) {

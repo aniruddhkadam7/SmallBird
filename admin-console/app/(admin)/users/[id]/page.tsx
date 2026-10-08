@@ -7,6 +7,7 @@ import { Unauthorized } from "@/components/Unauthorized";
 import { ManageMinutesPanel } from "@/components/ManageMinutesPanel";
 import { GrantPassPanel } from "@/components/GrantPassPanel";
 import { TranscriptModal } from "@/components/TranscriptModal";
+import { BanUserPanel } from "@/components/BanUserPanel";
 import { formatDuration } from "@/lib/format";
 
 interface LedgerRow {
@@ -59,7 +60,7 @@ interface TranscriptRow {
 }
 
 interface UserDetail {
-  profile: { userId: string; email: string; displayName: string | null; createdAt: string; lastSignInAt: string | null };
+  profile: { userId: string; email: string; displayName: string | null; createdAt: string; lastSignInAt: string | null; isBanned: boolean; banReason: string | null; bannedAt: string | null; bannedByEmail: string | null };
   entitlement: { planId: string; remainingMinutes: number; periodStart: string; periodEnd: string | null; updatedAt: string };
   ledger: LedgerRow[];
   purchases: PurchaseRow[];
@@ -94,7 +95,10 @@ export default function UserDetailPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-lg font-semibold text-ink">{detail.profile.email}</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-lg font-semibold text-ink">{detail.profile.email}</h1>
+          {detail.profile.isBanned && <span className="badge badge-danger">Banned</span>}
+        </div>
         <p className="text-sm text-muted">
           {detail.profile.displayName ?? "No display name"} &middot; joined{" "}
           {new Date(detail.profile.createdAt).toLocaleString()}
@@ -272,6 +276,14 @@ export default function UserDetailPage() {
         </div>
 
         <div className="space-y-6">
+          <BanUserPanel
+            userId={detail.profile.userId}
+            isBanned={detail.profile.isBanned}
+            banReason={detail.profile.banReason}
+            bannedAt={detail.profile.bannedAt}
+            bannedByEmail={detail.profile.bannedByEmail}
+            onSuccess={() => mutate()}
+          />
           <ManageMinutesPanel
             userId={detail.profile.userId}
             currentBalance={Number(detail.entitlement.remainingMinutes)}

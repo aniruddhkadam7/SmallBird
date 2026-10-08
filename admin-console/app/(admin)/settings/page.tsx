@@ -4,6 +4,7 @@ import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
 import { MfaEnrollment } from "@/components/MfaEnrollment";
 import { ChangePasswordPanel } from "@/components/ChangePasswordPanel";
+import { AppConfigPanel } from "@/components/AppConfigPanel";
 
 interface AdminRow {
   user_id: string;
@@ -12,15 +13,32 @@ interface AdminRow {
   created_at: string;
 }
 
+interface ApiKeyRow {
+  keyName: string;
+  label: string;
+  description: string;
+  isSet: boolean;
+  keyHint: string | null;
+  updatedAt: string | null;
+  updatedByEmail: string | null;
+}
+
+interface AppConfigResponse {
+  settings: Record<string, unknown>;
+  apiKeys: ApiKeyRow[];
+}
+
 export default function SettingsPage() {
   const { data: result, error } = useAdminQuery<{ admins: AdminRow[] }>("admin-list-admins");
+  const { data: appConfig, mutate: mutateConfig } = useAdminQuery<AppConfigResponse>("admin-get-app-settings");
 
   if (error instanceof AdminApiError && error.status === 403) return <Unauthorized />;
 
   const admins = result?.admins ?? [];
+  const apiKeys = appConfig?.apiKeys ?? [];
 
   return (
-    <div className="max-w-xl space-y-6">
+    <div className="max-w-2xl space-y-6">
       <div>
         <h1 className="text-lg font-semibold text-ink">Settings</h1>
       </div>
@@ -28,6 +46,10 @@ export default function SettingsPage() {
       <ChangePasswordPanel />
 
       <MfaEnrollment />
+
+      {apiKeys.length > 0 && (
+        <AppConfigPanel apiKeys={apiKeys} onSuccess={() => mutateConfig()} />
+      )}
 
       <section className="card">
         <h2 className="text-sm font-semibold text-ink">Admin allowlist</h2>

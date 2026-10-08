@@ -2,6 +2,7 @@
 
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
+import { MaintenanceModePanel } from "@/components/MaintenanceModePanel";
 
 interface SystemHealth {
   sessionsStuckActive: number;
@@ -12,6 +13,23 @@ interface SystemHealth {
   lastEntitlementLedgerWriteAt: string | null;
   lastInterviewSessionAt: string | null;
   sessionsMissingDuration7d: number;
+}
+
+interface SettingMeta {
+  value: string;
+  description: string;
+  updatedAt: string | null;
+  updatedByEmail: string | null;
+}
+
+interface AppSettings {
+  maintenance_mode: SettingMeta;
+  maintenance_message: SettingMeta;
+}
+
+interface AppSettingsResponse {
+  settings: AppSettings;
+  apiKeys: unknown[];
 }
 
 function Stat({ label, value, tone }: { label: string; value: string | number; tone?: "danger" | "warn" | "ok" }) {
@@ -31,12 +49,24 @@ function Stat({ label, value, tone }: { label: string; value: string | number; t
 
 export default function SystemHealthPage() {
   const { data: health, error } = useAdminQuery<SystemHealth>("admin-system-health");
+  const { data: appConfig, mutate: mutateConfig } = useAdminQuery<AppSettingsResponse>("admin-get-app-settings");
 
   if (error instanceof AdminApiError && error.status === 403) return <Unauthorized />;
   if (!health) return null;
 
+  const maintenanceMode = appConfig?.settings?.maintenance_mode;
+  const maintenanceMessage = appConfig?.settings?.maintenance_message;
+
   return (
     <div className="space-y-6">
+      {maintenanceMode && maintenanceMessage && (
+        <MaintenanceModePanel
+          maintenanceMode={maintenanceMode}
+          maintenanceMessage={maintenanceMessage}
+          onSuccess={() => mutateConfig()}
+        />
+      )}
+
       <div>
         <h1 className="text-lg font-semibold text-ink">System health</h1>
         <p className="text-sm text-muted">
