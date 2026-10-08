@@ -5,12 +5,14 @@ import type { PlanId } from "@/lib/plans"
 // Creates a Razorpay Subscription for a recurring plan (Pro/Pro Plus)
 // against a pre-created Razorpay-side Plan (see backend/README.md's
 // Razorpay setup checklist) — distinct from our own public.plans.id.
-// Razorpay Plan IDs — set via env vars; create new plans in Razorpay dashboard
-// (Subscriptions → Plans) if these are empty. Prices must match public.plans.
+// plan_TlUIuWNuGmjcEy = Pro ₹749/month
+// plan_TlUIv4wCo8Z8gG = Pro+ ₹1399/month
+// plan_TlUIvMQTuGRrWe = Max ₹2599/month
+// Env vars take precedence so these can be overridden without a code change.
 const RAZORPAY_PLAN_ID_BY_PLAN: Partial<Record<PlanId, string | undefined>> = {
-  pro: process.env.RAZORPAY_PLAN_ID_PRO,         // ₹749/month
-  "pro-plus": process.env.RAZORPAY_PLAN_ID_PRO_PLUS, // ₹1399/month
-  max: process.env.RAZORPAY_PLAN_ID_MAX,          // ₹2599/month
+  pro: process.env.RAZORPAY_PLAN_ID_PRO ?? "plan_TlUIuWNuGmjcEy",
+  "pro-plus": process.env.RAZORPAY_PLAN_ID_PRO_PLUS ?? "plan_TlUIv4wCo8Z8gG",
+  max: process.env.RAZORPAY_PLAN_ID_MAX ?? "plan_TlUIvMQTuGRrWe",
 }
 
 // Razorpay subscriptions require a total_count of billing cycles up front —
