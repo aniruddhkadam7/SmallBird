@@ -10,6 +10,13 @@ const nextConfig = {
   // lockfile -- pin the trace root to this directory so Next doesn't guess
   // wrong and pull unrelated files into the build.
   outputFileTracingRoot: __dirname,
+  // Pages folded into others -- keep old bookmarks working.
+  async redirects() {
+    return [
+      { source: "/subscriptions", destination: "/payments", permanent: false },
+      { source: "/data-integrity", destination: "/system-health", permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;

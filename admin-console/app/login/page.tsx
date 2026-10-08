@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { callAdminFunction, AdminApiError } from "@/lib/adminApi";
+import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function LoginPage() {
@@ -49,20 +50,33 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center px-4">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-12">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-0 h-[28rem] w-[28rem] -translate-x-1/2 -translate-y-1/3 rounded-full bg-accent/20 blur-3xl"
+      />
       <div className="absolute right-4 top-4">
         <ThemeToggle />
       </div>
-      <div className="w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center text-center">
-          {/* eslint-disable-next-line @next/next/no-img-element -- tiny static logo, no optimization needed */}
-          <img src="/smallbird-logo.png" alt="Smallbird" width={44} height={44} className="mb-3 h-11 w-11" />
-          <h1 className="text-xl font-semibold text-ink">Smallbird Admin</h1>
-          <p className="mt-1 text-sm text-muted">Internal console -- authorized staff only.</p>
+      <div className="relative w-full max-w-sm">
+        <div className="mb-7 flex flex-col items-center text-center">
+          <div className="relative mb-4 flex h-16 w-16 items-center justify-center">
+            <div aria-hidden className="absolute inset-0 rounded-2xl bg-accent/15 blur-lg" />
+            <Image
+              src="/smallbird-logo.png"
+              alt="Smallbird"
+              width={56}
+              height={56}
+              priority
+              className="relative h-14 w-14 drop-shadow-sm"
+            />
+          </div>
+          <h1 className="text-xl font-semibold tracking-tight text-ink">Smallbird Admin</h1>
+          <p className="mt-1.5 text-sm text-muted">Internal console &middot; authorized staff only</p>
         </div>
-        <form onSubmit={handleSubmit} className="card space-y-4">
+        <form onSubmit={handleSubmit} className="card space-y-4 sm:p-6">
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink" htmlFor="email">
+            <label className="mb-1.5 block text-sm font-medium text-ink" htmlFor="email">
               Email
             </label>
             <input
@@ -71,12 +85,13 @@ export default function LoginPage() {
               required
               autoComplete="username"
               className="input"
+              placeholder="you@smallbird.in"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink" htmlFor="password">
+            <label className="mb-1.5 block text-sm font-medium text-ink" htmlFor="password">
               Password
             </label>
             <input
@@ -85,15 +100,21 @@ export default function LoginPage() {
               required
               autoComplete="current-password"
               className="input"
+              placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
-          {error && <p className="text-sm text-danger">{error}</p>}
+          {error && (
+            <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger" role="alert">
+              {error}
+            </p>
+          )}
           <button type="submit" disabled={loading} className="btn-primary w-full">
             {loading ? "Signing in..." : "Sign in"}
           </button>
         </form>
+        <p className="mt-6 text-center text-xs text-muted">Every action here is written to the audit log.</p>
       </div>
     </div>
   );

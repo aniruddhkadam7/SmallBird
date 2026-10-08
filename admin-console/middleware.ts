@@ -64,5 +64,5 @@ export async function middleware(request: NextRequest) {
 export const config = {
   // Static images (the logo, app/icon.png favicon) must load on /login too,
   // so they skip the signed-out redirect.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|ico|webp)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|woff2?)$).*)"],
 };

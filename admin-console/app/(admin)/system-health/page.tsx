@@ -100,22 +100,23 @@ export default function SystemHealthPage() {
       <section>
         <h2 className="mb-2 text-sm font-semibold text-ink">Last activity</h2>
         <div className="card space-y-2 text-sm">
-          <div className="flex justify-between">
+          <div className="flex justify-between gap-3">
             <span className="text-muted">Last interview session started</span>
             <span>{health.lastInterviewSessionAt ? new Date(health.lastInterviewSessionAt).toLocaleString() : "never"}</span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between gap-3">
             <span className="text-muted">Last entitlement ledger write</span>
             <span>
               {health.lastEntitlementLedgerWriteAt ? new Date(health.lastEntitlementLedgerWriteAt).toLocaleString() : "never"}
             </span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between gap-3">
             <span className="text-muted">Last Razorpay webhook processed</span>
             <span>{health.lastWebhookEventAt ? new Date(health.lastWebhookEventAt).toLocaleString() : "never"}</span>
           </div>
         </div>
       </section>
+
     </div>
   );
 }

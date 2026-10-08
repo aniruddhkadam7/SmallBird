@@ -61,12 +61,11 @@ export function ManageMinutesPanel({
         : `${currentBalance.toFixed(1)} -> ${amountNum || 0}`;
 
   return (
-    <div className="card">
-      <h2 className="text-sm font-semibold text-ink">Manage minutes</h2>
-      <p className="mt-1 text-xs text-muted">Current balance: {currentBalance.toFixed(1)} min</p>
+    <div>
+      <p className="text-xs text-muted">Current balance: {currentBalance.toFixed(1)} min</p>
 
       <div className="mt-4 space-y-3">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {(["GRANT", "REMOVE", "SET"] as Action[]).map((a) => (
             <button
               key={a}
@@ -145,3 +144,4 @@ export function ManageMinutesPanel({
     </div>
   );
 }
+
