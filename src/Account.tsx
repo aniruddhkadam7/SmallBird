@@ -39,6 +39,10 @@ type Step = "LOADING" | "EMAIL" | "CODE" | "LOGGED_IN";
 
 const PLAN_LABELS: Record<string, string> = {
   free: "Free",
+  starter: "Starter",
+  pro: "Pro",
+  "pro-plus": "Pro Plus",
+  // retired ids kept so old purchases still display a readable label
   "interview-pass": "Interview Pass",
   "pro-monthly": "Pro Monthly",
   "pro-annual": "Pro Annual",
