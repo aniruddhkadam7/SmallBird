@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
+import { PageLoading } from "@/components/PageLoading";
 
 interface SessionRow {
   session_id: string;
@@ -65,7 +66,7 @@ export default function SessionsPage() {
   }, [result]);
 
   if (error instanceof AdminApiError && error.status === 403) return <Unauthorized />;
-  if (!result) return null;
+  if (!result) return <PageLoading error={error} />;
 
   return (
     <div className="space-y-4">

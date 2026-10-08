@@ -11,8 +11,8 @@ import {
   Cpu,
   ShieldAlert,
   Activity,
-  ClipboardCheck,
   ScrollText,
+  KeyRound,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -26,11 +26,11 @@ const BUILT: { href: string; label: string; icon: LucideIcon }[] = [
   // direct links from Sessions/Users, just not linked from here.
   { href: "/sessions", label: "Sessions", icon: Video },
   { href: "/payments", label: "Payments", icon: Receipt },
-  { href: "/ai-usage", label: "AI Usage", icon: Cpu },
+  { href: "/ai-usage", label: "AI Usage & Models", icon: Cpu },
   { href: "/abuse", label: "Abuse / Risk", icon: ShieldAlert },
   { href: "/system-health", label: "System Health", icon: Activity },
-  { href: "/data-integrity", label: "Data Integrity", icon: ClipboardCheck },
   { href: "/audit-logs", label: "Audit Logs", icon: ScrollText },
+  { href: "/api-keys", label: "API Keys", icon: KeyRound },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

@@ -30,9 +30,14 @@ export async function middleware(request: NextRequest) {
     },
   );
 
+  // getSession() reads (and if needed refreshes) the cookie session locally;
+  // getUser() would add a round-trip to Supabase Auth on every navigation and
+  // prefetch, which made tab switches noticeably slow. That's fine here since
+  // this check is only a redirect convenience (see above).
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const signedIn = !!session;
 
   const isLoginPage = request.nextUrl.pathname.startsWith("/login");
   // The recovery link's session hash (#access_token=...) only gets applied
@@ -41,13 +46,13 @@ export async function middleware(request: NextRequest) {
   // with no session, same as /login.
   const isResetPasswordPage = request.nextUrl.pathname.startsWith("/reset-password");
 
-  if (!user && !isLoginPage && !isResetPasswordPage) {
+  if (!signedIn && !isLoginPage && !isResetPasswordPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
-  if (user && isLoginPage) {
+  if (signedIn && isLoginPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);
@@ -57,5 +62,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Static images (the logo, app/icon.png favicon) must load on /login too,
+  // so they skip the signed-out redirect.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|ico|webp)$).*)"],
 };

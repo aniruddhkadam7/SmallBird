@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
+import { PageLoading } from "@/components/PageLoading";
 import { formatDuration } from "@/lib/format";
 
 interface Turn {
@@ -32,7 +33,7 @@ export default function TranscriptDetailPage() {
 
   if (error instanceof AdminApiError && error.status === 403) return <Unauthorized />;
   if (error instanceof AdminApiError && error.status === 404) return <p className="text-sm text-muted">Transcript not found.</p>;
-  if (!transcript) return null;
+  if (!transcript) return <PageLoading error={error} />;
 
   return (
     <div className="max-w-3xl space-y-4">

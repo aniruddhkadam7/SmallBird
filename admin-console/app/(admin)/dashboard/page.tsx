@@ -2,6 +2,7 @@
 
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
+import { PageLoading } from "@/components/PageLoading";
 
 interface DashboardStats {
   totalUsers: number;
@@ -39,11 +40,10 @@ function Stat({ label, value, tone }: { label: string; value: string | number; t
 }
 
 export default function DashboardPage() {
-  const { data: stats, error, isLoading } = useAdminQuery<DashboardStats>("admin-dashboard-stats");
+  const { data: stats, error } = useAdminQuery<DashboardStats>("admin-dashboard-stats");
 
   if (error instanceof AdminApiError && error.status === 403) return <Unauthorized />;
-  if (!stats && isLoading) return null; // (admin)/loading.tsx skeleton covers this
-  if (!stats) return null;
+  if (!stats) return <PageLoading error={error} />;
 
   return (
     <div className="space-y-6">

@@ -82,7 +82,18 @@ body {
 }
 
 .table-wrap {
-  @apply overflow-x-auto rounded-xl border border-border bg-surface shadow-card;
+  @apply max-w-full overflow-x-auto overscroll-x-contain rounded-xl border border-border bg-surface shadow-card;
+}
+
+/* On phones, keep each row on one line and let the table scroll sideways
+   inside .table-wrap -- wrapped cells made rows jump to uneven heights. */
+@media (max-width: 1023px) {
+  tbody td {
+    @apply whitespace-nowrap px-3 py-2.5;
+  }
+  thead th {
+    @apply px-3;
+  }
 }
 
 table {

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
+import { PageLoading } from "@/components/PageLoading";
 
 interface AbuseFlag {
   severity: "RED" | "YELLOW";
@@ -17,7 +18,7 @@ export default function AbusePage() {
   const { data: result, error } = useAdminQuery<{ flags: AbuseFlag[] }>("admin-abuse-flags");
 
   if (error instanceof AdminApiError && error.status === 403) return <Unauthorized />;
-  if (!result) return null;
+  if (!result) return <PageLoading error={error} />;
 
   const flags = result.flags;
   const redCount = flags.filter((f) => f.severity === "RED").length;

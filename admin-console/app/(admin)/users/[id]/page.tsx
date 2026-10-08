@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
+import { PageLoading } from "@/components/PageLoading";
 import { ManageMinutesPanel } from "@/components/ManageMinutesPanel";
 import { GrantPassPanel } from "@/components/GrantPassPanel";
 import { TranscriptModal } from "@/components/TranscriptModal";
@@ -90,7 +91,7 @@ export default function UserDetailPage() {
 
   if (error instanceof AdminApiError && error.status === 403) return <Unauthorized />;
   if (error instanceof AdminApiError && error.status === 404) return <p className="text-sm text-muted">User not found.</p>;
-  if (!detail) return null;
+  if (!detail) return <PageLoading error={error} />;
 
   return (
     <div className="space-y-6">

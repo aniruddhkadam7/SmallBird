@@ -2,18 +2,18 @@ import { requireSession } from "@/lib/requireSession";
 import { Nav } from "@/components/Nav";
 import { SignOutButton } from "@/components/SignOutButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
-
+import { AdminShell } from "@/components/AdminShell";
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
   const initial = (session.user.email ?? "?").charAt(0).toUpperCase();
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="flex w-64 flex-shrink-0 flex-col border-r border-border bg-surface">
+    <AdminShell
+      sidebar={
+        <>
         <div className="flex items-center gap-2.5 border-b border-border px-4 py-4">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-sm font-bold text-white">
-            S
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element -- tiny static logo, no optimization needed */}
+          <img src="/smallbird-logo.png" alt="Smallbird" width={32} height={32} className="h-8 w-8 shrink-0" />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-ink">Smallbird Admin</p>
             <p className="text-[11px] text-muted">Internal console</p>
@@ -32,8 +32,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <div className="border-t border-border p-3">
           <SignOutButton />
         </div>
-      </aside>
-      <main className="flex-1 overflow-y-auto bg-subtle p-6">{children}</main>
-    </div>
+        </>
+      }
+    >
+      {children}
+    </AdminShell>
   );
 }

@@ -75,17 +75,11 @@ There's no self-service admin signup. To grant someone access:
 - **Abuse / Risk** -- heuristic flags (entitlement-ceiling violations,
   negative balances, repeated force-terminations, unusually long sessions,
   abnormal token usage). Never acts automatically -- surface only.
-- **Data Integrity** -- live checks (missing entitlement rows, paid plan with
-  no purchase record, duplicate subscriptions, sessions missing duration,
-  ledger/balance mismatches).
 - **System Health** -- operational signals derived from data already in the
   schema (stuck-active sessions, failed-session rates, webhook/ledger/session
   recency). No raw error log yet -- see the page's own note on what a deeper
   integration (a `system_errors` table, or Supabase's platform log API) would
   add.
-- **Data Integrity** -- live checks (missing entitlement rows, paid plan with
-  no purchase record, duplicate subscriptions, sessions missing duration,
-  ledger/balance mismatches).
 - **Audit Logs** -- every admin action, who did it, before/after values.
 - **Settings** -- optional TOTP two-factor enrollment (Supabase Auth's
   built-in MFA, no extra infrastructure), and a read-only list of who's on

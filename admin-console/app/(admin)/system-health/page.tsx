@@ -2,6 +2,7 @@
 
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
+import { PageLoading } from "@/components/PageLoading";
 import { MaintenanceModePanel } from "@/components/MaintenanceModePanel";
 
 interface SystemHealth {
@@ -52,7 +53,7 @@ export default function SystemHealthPage() {
   const { data: appConfig, mutate: mutateConfig } = useAdminQuery<AppSettingsResponse>("admin-get-app-settings");
 
   if (error instanceof AdminApiError && error.status === 403) return <Unauthorized />;
-  if (!health) return null;
+  if (!health) return <PageLoading error={error} />;
 
   const maintenanceMode = appConfig?.settings?.maintenance_mode;
   const maintenanceMessage = appConfig?.settings?.maintenance_message;

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
+import { PageLoading } from "@/components/PageLoading";
 
 interface UserRow {
   user_id: string;
@@ -45,7 +46,7 @@ export default function UsersPage() {
   });
 
   if (error instanceof AdminApiError && error.status === 403) return <Unauthorized />;
-  if (!result) return null;
+  if (!result) return <PageLoading error={error} />;
 
   const totalPages = Math.max(Math.ceil(result.totalCount / PAGE_SIZE), 1);
 

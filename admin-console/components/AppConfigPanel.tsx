@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { callAdminFunction, AdminApiError } from "@/lib/adminApi";
+import { VendorLogo } from "@/components/VendorLogo";
 
-interface ApiKeyRow {
+export interface ApiKeyRow {
   keyName: string;
   label: string;
   description: string;
@@ -12,6 +13,11 @@ interface ApiKeyRow {
   keyHint: string | null;
   updatedAt: string | null;
   updatedByEmail: string | null;
+  // From admin-get-app-settings: the env secret the edge functions read.
+  // Absent until that function is redeployed.
+  envName?: string | null;
+  envSet?: boolean;
+  envHint?: string | null;
 }
 
 interface Props {
@@ -26,6 +32,42 @@ async function getToken() {
   } = await supabase.auth.getSession();
   if (!session) throw new Error("Session expired — please sign in again.");
   return session.access_token;
+}
+
+/// The key the edge functions are using right now. They read only the env
+/// secret today (api_key_store overrides aren't wired into llm-proxy,
+/// stt-token or razorpay-webhook yet), so the env key is shown as in use and
+/// a DB override, if any, is shown as saved but not active.
+function InUseKey({ row }: { row: ApiKeyRow }) {
+  const envKnown = row.envSet !== undefined;
+  return (
+    <div className="space-y-1.5 rounded-md bg-subtle px-3 py-2 text-xs">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="w-16 shrink-0 font-medium text-muted">In use</span>
+        {!envKnown ? (
+          <span className="text-muted">env secret (redeploy admin-get-app-settings to show it)</span>
+        ) : row.envSet ? (
+          <>
+            <span className="font-mono text-ink">{row.envHint}</span>
+            <span className="badge badge-ok">env secret</span>
+            {row.envName && <span className="font-mono text-muted">{row.envName}</span>}
+          </>
+        ) : (
+          <>
+            <span className="badge badge-warn">not set</span>
+            {row.envName && <span className="text-muted">add {row.envName} to Supabase secrets</span>}
+          </>
+        )}
+      </div>
+      {row.isSet && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="w-16 shrink-0 font-medium text-muted">Saved</span>
+          <span className="font-mono text-ink">{row.keyHint}</span>
+          <span className="badge badge-muted">DB override (not used yet)</span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ApiKeyRow({ row, onSuccess }: { row: ApiKeyRow; onSuccess: () => void }) {
@@ -78,21 +120,16 @@ function ApiKeyRow({ row, onSuccess }: { row: ApiKeyRow; onSuccess: () => void }
   return (
     <div className="rounded-lg border border-border p-3 space-y-2">
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-ink">{row.label}</p>
-          <p className="text-xs text-muted">{row.description}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {row.isSet ? (
-            <>
-              <span className="font-mono text-xs text-muted">{row.keyHint}</span>
-              <span className="badge badge-ok">DB override</span>
-            </>
-          ) : (
-            <span className="badge badge-muted">env secret</span>
-          )}
+        <div className="flex min-w-0 items-start gap-3">
+          <VendorLogo keyName={row.keyName} />
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-ink">{row.label}</p>
+            <p className="text-xs text-muted">{row.description}</p>
+          </div>
         </div>
       </div>
+
+      <InUseKey row={row} />
 
       {row.updatedByEmail && (
         <p className="text-xs text-muted">
@@ -183,8 +220,9 @@ export function AppConfigPanel({ apiKeys, onSuccess }: Props) {
     <section className="card">
       <h2 className="text-sm font-semibold text-ink">API key management</h2>
       <p className="mt-1 text-xs text-muted">
-        DB overrides take precedence over Supabase env secrets. Use these to rotate keys without
-        redeploying edge functions. Leave unset to fall back to the deployed env secret.
+        &quot;In use&quot; is the Supabase env secret each edge function reads, shown masked. Keys saved here
+        are stored as DB overrides, but the edge functions don&apos;t read them yet -- rotate a live key by
+        updating its Supabase secret.
       </p>
       <div className="mt-4 space-y-3">
         {apiKeys.map((k) => (

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
+import { PageLoading } from "@/components/PageLoading";
 
 interface PaymentRow {
   ledger_id: number;
@@ -39,7 +40,7 @@ export default function PaymentsPage() {
   });
 
   if (error instanceof AdminApiError && error.status === 403) return <Unauthorized />;
-  if (!result) return null;
+  if (!result) return <PageLoading error={error} />;
 
   const totalPages = Math.max(Math.ceil(result.totalCount / PAGE_SIZE), 1);
 

@@ -55,9 +55,8 @@ export default function LoginPage() {
       </div>
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-accent text-lg font-bold text-white shadow-sm">
-            S
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element -- tiny static logo, no optimization needed */}
+          <img src="/smallbird-logo.png" alt="Smallbird" width={44} height={44} className="mb-3 h-11 w-11" />
           <h1 className="text-xl font-semibold text-ink">Smallbird Admin</h1>
           <p className="mt-1 text-sm text-muted">Internal console -- authorized staff only.</p>
         </div>
