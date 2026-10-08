@@ -58,7 +58,7 @@ import { checkForUpdate, installUpdate } from "./autoUpdate";
 import { AudioTestStatus, useAudioTest } from "./AudioTest";
 
 type SessionState = "IDLE" | "STARTING" | "LISTENING";
-type Popover = "MODE" | "MODEL" | "CONTEXT" | "SETTINGS" | "ACCOUNT" | "START_SETUP" | "MAINTENANCE" | "CUSTOM_MODE" | null;
+type Popover = "MODE" | "MODEL" | "CONTEXT" | "SETTINGS" | "ACCOUNT" | "START_SETUP" | "CUSTOM_MODE" | null;
 
 const SESSION_MODES: { value: SessionMode; label: string; description: string }[] = [
   { value: "interview", label: "Interview", description: "Answers as you, the candidate" },
@@ -149,46 +149,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
 
-  // Admin maintenance mode: the server already refuses new sessions; this
-  // tells the user why up front and blocks Start (button and shortcuts)
-  // instead of only failing after they press it.
-  const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null);
-  const maintenanceMessageRef = useRef<string | null>(null);
-  maintenanceMessageRef.current = maintenanceMessage;
-  const checkMaintenance = useCallback(
-    () =>
-      invoke<string | null>("get_maintenance_message")
-        .then((message) => {
-          setMaintenanceMessage(message);
-          return message;
-        })
-        .catch(() => maintenanceMessageRef.current),
-    [],
-  );
-  useEffect(() => {
-    checkMaintenance();
-    const timer = window.setInterval(checkMaintenance, 30_000);
-    // Re-check when the window comes back into focus, so a user returning to
-    // the app sees the current state without waiting for the next poll.
-    window.addEventListener("focus", checkMaintenance);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("focus", checkMaintenance);
-    };
-  }, [checkMaintenance]);
-  // A failed start (or Upgrade) during maintenance is explained by the
-  // maintenance notice, not shown as an error.
-  const showStartError = useCallback(
-    async (e: unknown) => {
-      if (await checkMaintenance()) {
-        setError(null);
-        setOpenPopover("MAINTENANCE");
-      } else {
-        setError(String(e));
-      }
-    },
-    [checkMaintenance],
-  );
+  const showStartError = useCallback(async (e: unknown) => setError(String(e)), []);
   const audioTest = useAudioTest();
 
   const [sessionMode, setSessionMode] = useState<SessionMode>(() => loadSessionMode());
@@ -598,10 +559,6 @@ function App() {
   const handleStart = useCallback(async () => {
     setError(null);
     setActiveElsewhereMessage(null);
-    if (maintenanceMessageRef.current) {
-      setOpenPopover("MAINTENANCE");
-      return;
-    }
     setSessionState("STARTING");
     closePopover();
     setStartRole("");
@@ -815,10 +772,6 @@ function App() {
   const handleForceStart = useCallback(async () => {
     setActiveElsewhereMessage(null);
     setError(null);
-    if (maintenanceMessageRef.current) {
-      setOpenPopover("MAINTENANCE");
-      return;
-    }
     setSessionState("STARTING");
     try {
       await startInterview(true);
@@ -911,18 +864,6 @@ function App() {
       setOpenPopover("ACCOUNT");
       return;
     }
-    // Under maintenance: don't start — bring the main window back with the
-    // maintenance popup. (The shortcut itself already refuses to open the
-    // overlay when it knows; this covers a state it hadn't seen yet.)
-    if (maintenanceMessageRef.current) {
-      sessionStateRef.current = "IDLE";
-      invoke("shortcut_session_settled").catch(() => {});
-      await invoke("hide_interview_overlay").catch(() => {});
-      await invoke("stop_audio_capture").catch(() => {});
-      invoke("restore_from_bubble").catch(() => {});
-      setOpenPopover("MAINTENANCE");
-      return;
-    }
     const current = loadOverlaySettings();
     saveOverlaySettings({ ...current, mode });
     setError(null);
@@ -986,29 +927,7 @@ function App() {
       ? "Starting…"
       : sessionState === "LISTENING"
         ? "Listening"
-        : maintenanceMessage
-          ? "Under maintenance"
-          : "Start";
-
-  // Maintenance switched on while the start setup is open: there's nothing
-  // to start, so show the maintenance popup in its place. And when it ends,
-  // the popup closes on its own.
-  useEffect(() => {
-    if (maintenanceMessage && openPopover === "START_SETUP") setOpenPopover("MAINTENANCE");
-    if (!maintenanceMessage && openPopover === "MAINTENANCE") setOpenPopover(null);
-  }, [maintenanceMessage, openPopover]);
-
-  // The start shortcut was pressed during maintenance (shortcuts.rs refuses
-  // to open the overlay and brings this window forward instead).
-  useEffect(() => {
-    const unlisten = listen("maintenance:start-blocked", () => {
-      checkMaintenance();
-      setOpenPopover("MAINTENANCE");
-    });
-    return () => {
-      unlisten.then((f) => f());
-    };
-  }, [checkMaintenance]);
+        : "Start";
 
   // A real OS minimize would leave no way back in: the main window is
   // `skip_taskbar` (tauri.conf.json), so there'd be no taskbar entry to
@@ -1213,20 +1132,11 @@ function App() {
             <div className="dropdown-anchor">
               <Button
                 variant="primary"
-                onClick={() =>
-                  maintenanceMessage
-                    ? togglePopover("MAINTENANCE")
-                    : startsImmediately
-                      ? handleImmediateStart()
-                      : togglePopover("START_SETUP")
-                }
+                onClick={() => (startsImmediately ? handleImmediateStart() : togglePopover("START_SETUP"))}
                 disabled={sessionState === "STARTING" || authSession?.loggedIn === false}
-                title={
-                  maintenanceMessage ??
-                  (authSession?.loggedIn === false ? "Log in from the Account panel to start" : undefined)
-                }
+                title={authSession?.loggedIn === false ? "Log in from the Account panel to start" : undefined}
                 aria-haspopup="dialog"
-                aria-expanded={openPopover === "START_SETUP" || openPopover === "MAINTENANCE"}
+                aria-expanded={openPopover === "START_SETUP"}
               >
                 {/* The STT model load behind Start can take a couple of
                     seconds (cold-starting the sidecar process + loading the
@@ -1242,34 +1152,6 @@ function App() {
                   startLabel
                 )}
               </Button>
-              {openPopover === "MAINTENANCE" && maintenanceMessage && (
-                <HeaderDropdown onClose={closePopover} className="header-dropdown-panel header-dropdown-start">
-                  <div className="popover-overlay">
-                    <div className="popover maintenance-popup" role="dialog" aria-labelledby="maintenance-popup-title">
-                      <div className="maintenance-popup-body">
-                        <div className="maintenance-popup-icon" aria-hidden="true">
-                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-                          </svg>
-                        </div>
-                        <h2 id="maintenance-popup-title" className="maintenance-popup-title">
-                          Scheduled maintenance in progress
-                        </h2>
-                        <p className="maintenance-popup-message">{maintenanceMessage}</p>
-                        <p className="maintenance-popup-note">
-                          New sessions are paused while we finish. You'll be able to start again as soon as we're
-                          done. There's no need to restart SmallBird.
-                        </p>
-                      </div>
-                      <div className="popover-footer">
-                        <Button variant="primary" onClick={closePopover} autoFocus>
-                          Got it
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </HeaderDropdown>
-              )}
               {openPopover === "START_SETUP" && (
                 <HeaderDropdown onClose={closePopover} className="header-dropdown-panel header-dropdown-wide header-dropdown-start">
                   <div className="popover-overlay">
@@ -1505,21 +1387,6 @@ function App() {
         )}
       </ExpandPanel>
 
-      {maintenanceMessage && (
-        <div className="maintenance-notice" role="status">
-          <svg className="maintenance-notice-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-          </svg>
-          <div className="maintenance-notice-text">
-            <span className="maintenance-notice-title">We'll be back soon</span>
-            <span>{maintenanceMessage}</span>
-            <span className="maintenance-notice-note">
-              You can start a session again as soon as we're done. No need to restart the app.
-            </span>
-          </div>
-        </div>
-      )}
-
       {activeElsewhereMessage ? (
         <div className="error compact-header-error" style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
           <span>{activeElsewhereMessage}</span>
@@ -1532,7 +1399,6 @@ function App() {
         </div>
       ) : (
         error &&
-        !maintenanceMessage &&
         (isOutOfMinutesMessage(error) ? (
           <div className="error compact-header-error error-with-action">
             <span>{error.replace(/^Error:\s*/, "")}</span>
