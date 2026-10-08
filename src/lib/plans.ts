@@ -4,7 +4,7 @@
 // `plans` table was seeded with different ids than the website used).
 // These `id` values must match `public.plans.id` exactly.
 
-export type PlanId = "free" | "starter" | "pro" | "pro-plus";
+export type PlanId = "free" | "starter" | "pro" | "pro-plus" | "max";
 
 export type BillingKind = "free" | "one_time" | "monthly" | "yearly";
 
@@ -40,7 +40,7 @@ export const PLANS: Plan[] = [
   {
     id: "starter",
     name: "Starter",
-    emoji: "🎯",
+    emoji: "🟢",
     price: "₹399",
     priceInPaise: 39900,
     cadence: "one-time",
@@ -53,29 +53,42 @@ export const PLANS: Plan[] = [
   {
     id: "pro",
     name: "Pro",
-    emoji: "🚀",
-    price: "₹699",
-    priceInPaise: 69900,
+    emoji: "⭐",
+    price: "₹749",
+    priceInPaise: 74900,
     cadence: "/ month",
-    billingNote: "3 hours/month",
+    billingNote: "2 hours/month",
     description: "For active job seekers.",
-    features: ["3 hours/month", "Interview Mode", "Screen Analysis", "Coding Answers", "Full context library", "Priority support (support@smallbird.in)"],
+    features: ["2 hours/month", "Interview Mode", "Screen Analysis", "Coding Answers", "Full context library", "Priority support (support@smallbird.in)"],
     cta: "Start Pro",
     billingKind: "monthly",
   },
   {
     id: "pro-plus",
-    name: "Pro Plus",
-    emoji: "⭐",
-    price: "₹999",
-    priceInPaise: 99900,
+    name: "Pro+",
+    emoji: "🔥",
+    price: "₹1,399",
+    priceInPaise: 139900,
     cadence: "/ month",
-    billingNote: "6 hours/month",
-    description: "For heavy interview usage.",
-    features: ["6 hours/month", "Interview Mode", "Screen Analysis", "Coding Answers", "Full context library", "Priority support (support@smallbird.in)"],
-    cta: "Get Pro Plus",
+    billingNote: "4 hours/month",
+    description: "For serious interview prep.",
+    features: ["4 hours/month", "Interview Mode", "Screen Analysis", "Coding Answers", "Full context library", "Priority support (support@smallbird.in)"],
+    cta: "Get Pro+",
     billingKind: "monthly",
     recommended: true,
+  },
+  {
+    id: "max",
+    name: "Max",
+    emoji: "💎",
+    price: "₹2,599",
+    priceInPaise: 259900,
+    cadence: "/ month",
+    billingNote: "8 hours/month",
+    description: "For heavy interview usage.",
+    features: ["8 hours/month", "Interview Mode", "Screen Analysis", "Coding Answers", "Full context library", "Priority support (support@smallbird.in)"],
+    cta: "Get Max",
+    billingKind: "monthly",
   },
 ];
 
@@ -85,5 +98,5 @@ export function getPlan(id: PlanId): Plan {
   return plan;
 }
 
-export const PAID_PLAN_IDS = new Set<PlanId>(["starter", "pro", "pro-plus"]);
-export const SUBSCRIPTION_PLAN_IDS = new Set<PlanId>(["pro", "pro-plus"]);
+export const PAID_PLAN_IDS = new Set<PlanId>(["starter", "pro", "pro-plus", "max"]);
+export const SUBSCRIPTION_PLAN_IDS = new Set<PlanId>(["pro", "pro-plus", "max"]);
