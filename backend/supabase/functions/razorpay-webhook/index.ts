@@ -213,15 +213,28 @@ Deno.serve(async (req) => {
         const subscription = body.payload.subscription.entity;
         const userId = subscription.notes?.user_id;
         if (!userId) break;
+        if (await alreadyProcessed(eventType, subscription.id)) break;
 
+        // Mark as cancelled but keep the paid plan active until the current
+        // period ends — standard "cancel at period end" behaviour. The
+        // entitlement check in _shared/entitlement.ts already rejects access
+        // once period_end has passed, so we don't need to touch plan_id here.
+        const periodEnd = subscription.current_end
+          ? new Date(subscription.current_end * 1000).toISOString()
+          : null;
         await admin.from("subscriptions").update({ status: "canceled" }).eq("user_id", userId);
-        await admin.from("entitlements").update({ plan_id: "free" }).eq("user_id", userId);
+        if (periodEnd) {
+          await admin.from("entitlements").update({ period_end: periodEnd }).eq("user_id", userId);
+        }
 
         const cancelledEmail = await lookupUserEmail(userId);
         await notifyOwner(
           `📉 Subscription cancelled — ${cancelledEmail ?? userId}`,
-          `<p>A subscription was cancelled and the account dropped to the free plan.</p>
-           <p>Subscription: ${subscription.id}</p>`,
+          `<p>Subscription was cancelled. Access continues until period end.</p>
+           <ul>
+             <li>Subscription: ${subscription.id}</li>
+             <li>Access until: ${periodEnd ?? "unknown"}</li>
+           </ul>`,
         );
         break;
       }
@@ -234,15 +247,30 @@ Deno.serve(async (req) => {
         const subscription = body.payload.subscription.entity;
         const userId = subscription.notes?.user_id;
         if (!userId) break;
+        if (await alreadyProcessed(eventType, subscription.id)) break;
 
+        // Halted means Razorpay gave up collecting — expire access at period
+        // end instead of immediately, same as cancellation, to avoid cutting
+        // off a user who may just need to update their payment method.
+        const haltedPeriodEnd = subscription.current_end
+          ? new Date(subscription.current_end * 1000).toISOString()
+          : null;
         await admin.from("subscriptions").update({ status: "halted" }).eq("user_id", userId);
-        await admin.from("entitlements").update({ plan_id: "free" }).eq("user_id", userId);
+        if (haltedPeriodEnd) {
+          await admin.from("entitlements").update({ period_end: haltedPeriodEnd }).eq("user_id", userId);
+        } else {
+          // No period end from Razorpay — drop to free immediately as a safe fallback.
+          await admin.from("entitlements").update({ plan_id: "free" }).eq("user_id", userId);
+        }
 
         const haltedEmail = await lookupUserEmail(userId);
         await notifyOwner(
           `⚠️ Subscription halted — ${haltedEmail ?? userId}`,
-          `<p>Razorpay halted a subscription after repeated failed renewal charges (expired card, insufficient funds, etc.) — the account was dropped to the free plan.</p>
-           <p>Subscription: ${subscription.id}</p>`,
+          `<p>Razorpay halted a subscription after repeated failed renewal charges (expired card, insufficient funds, etc.).</p>
+           <ul>
+             <li>Subscription: ${subscription.id}</li>
+             <li>Access until: ${haltedPeriodEnd ?? "dropped to free immediately"}</li>
+           </ul>`,
         );
         break;
       }
