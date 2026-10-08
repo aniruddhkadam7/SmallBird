@@ -42,11 +42,17 @@ export function userIdFromVerifiedJwt(jwt: string): string {
 
 /// `allowDuringMaintenance` is only for the calls that close out and bill a
 /// session already running (heartbeat, usage-report) — blocking those would
-/// leave sessions unbilled. Everything that starts or powers a session
-/// (stt-token, llm-proxy) is refused while maintenance mode is on.
+/// leave sessions unbilled. `allowActiveSessionDuringMaintenance` is for the
+/// calls that power a session (llm-proxy): a user already mid-interview when
+/// maintenance is switched on keeps getting answers until they finish, while
+/// anyone without an active session is refused. Starting a session
+/// (stt-token) is always refused while maintenance mode is on.
 export async function requireEntitlement(
   req: Request,
-  { allowDuringMaintenance = false }: { allowDuringMaintenance?: boolean } = {},
+  {
+    allowDuringMaintenance = false,
+    allowActiveSessionDuringMaintenance = false,
+  }: { allowDuringMaintenance?: boolean; allowActiveSessionDuringMaintenance?: boolean } = {},
 ): Promise<Entitlement> {
   const authHeader = req.headers.get("Authorization") ?? "";
   const jwt = authHeader.replace(/^Bearer\s+/i, "");
@@ -81,8 +87,19 @@ export async function requireEntitlement(
     (maintenanceResult.data ?? []).map((r: { key: string; value: string }) => [r.key, r.value]),
   );
   if (settingsMap["maintenance_mode"] === "true" && !allowDuringMaintenance) {
-    const msg = settingsMap["maintenance_message"] ?? "SmallBird is currently under maintenance. Please check back shortly.";
-    throw new EntitlementError(503, msg, "MAINTENANCE");
+    let inActiveSession = false;
+    if (allowActiveSessionDuringMaintenance) {
+      const { count } = await admin
+        .from("interview_sessions")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("status", "active");
+      inActiveSession = (count ?? 0) > 0;
+    }
+    if (!inActiveSession) {
+      const msg = settingsMap["maintenance_message"] ?? "SmallBird is currently under maintenance. Please check back shortly.";
+      throw new EntitlementError(503, msg, "MAINTENANCE");
+    }
   }
 
   // Ban check

@@ -118,7 +118,8 @@ Deno.serve(withCors(async (req) => {
     // latency in front of the answer.
     const userId = jwt ? userIdFromVerifiedJwt(jwt) : null;
     const [entitlement, allowed, timeUp, raw] = await Promise.all([
-      requireEntitlement(req),
+      // Mid-interview users finish their session even if maintenance starts.
+      requireEntitlement(req, { allowActiveSessionDuringMaintenance: true }),
       userId ? withinRateLimit(guardAdmin, userId).catch(() => true) : Promise.resolve(true),
       // A session past its time gets no more answers (and is ended here),
       // even if its app stopped sending heartbeats.
