@@ -10,7 +10,8 @@ export const PLAN_LABELS: Record<PlanId, string> = {
   free: "Free",
   starter: "Starter",
   pro: "Pro",
-  "pro-plus": "Pro Plus",
+  "pro-plus": "Pro+",
+  max: "Max",
 }
 
 export type FlowStep = "signup" | "verify" | "payment" | "processing" | "done"
