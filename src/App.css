@@ -2998,6 +2998,10 @@ body.compact-transparent {
   color: var(--text-muted);
 }
 
+.sessions-other-device {
+  font-style: italic;
+}
+
 .sessions-mode {
   padding: 2px 8px;
   border-radius: 999px;

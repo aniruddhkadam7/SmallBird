@@ -21,6 +21,8 @@ export interface HistoryEntry {
   role?: string | null;
   company?: string | null;
   turns: HistoryTurn[];
+  /// Set when the session was recorded on another device and downloaded.
+  owner_email?: string | null;
 }
 
 /// A session's mode and details, recovered from how it was labelled when
@@ -86,9 +88,19 @@ export function SessionsPanel({ onContinue, sessionRunning }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+    const show = (list: HistoryEntry[]) => {
+      if (!cancelled) setEntries([...list].sort((a, b) => b.ended_at_ms - a.ended_at_ms));
+    };
+    // Local copy first so the list appears instantly, then whatever this
+    // account recorded on other devices once it has downloaded.
     invoke<HistoryEntry[]>("list_interview_history")
-      .then((list) => setEntries([...list].sort((a, b) => b.ended_at_ms - a.ended_at_ms)))
-      .catch(() => setEntries([]));
+      .then(show)
+      .catch(() => !cancelled && setEntries((prev) => prev ?? []))
+      .finally(() => invoke<HistoryEntry[]>("refresh_interview_history").then(show).catch(() => {}));
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const shown = useMemo(() => {
@@ -144,6 +156,7 @@ export function SessionsPanel({ onContinue, sessionRunning }: Props) {
                     <span>
                       {entry.turns.length} {entry.turns.length === 1 ? "question" : "questions"}
                     </span>
+                    {entry.owner_email && <span className="sessions-other-device">From another device</span>}
                   </span>
                 </button>
                 {open && (

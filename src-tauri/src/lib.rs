@@ -297,6 +297,7 @@ pub fn run() {
             interview_mode::commands::start_backend_session,
             interview_mode::commands::end_backend_session,
             history::list_interview_history,
+            history::refresh_interview_history,
             history::save_interview_session,
             history::resync_pending_interview_transcripts,
             notes_mode::store::list_notes,

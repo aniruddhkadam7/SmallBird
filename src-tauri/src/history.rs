@@ -85,6 +85,13 @@ pub struct InterviewHistoryEntry {
     /// goes up.
     #[serde(default)]
     pub revision: u64,
+    /// Set only on entries downloaded from the backend that this device
+    /// didn't record itself (see `pull_from_backend`): the email of the
+    /// account they belong to. The history file isn't per-account, so this is
+    /// what keeps one person's synced sessions from showing up for someone
+    /// else who later signs in on the same machine. `None` = recorded here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_email: Option<String>,
 }
 
 pub struct HistoryStore(
@@ -209,17 +216,51 @@ fn now_ms() -> u64 {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub fn list_interview_history(
-    app: AppHandle,
-    store: tauri::State<'_, HistoryStore>,
-) -> Vec<InterviewHistoryEntry> {
+pub fn list_interview_history(app: AppHandle) -> Vec<InterviewHistoryEntry> {
+    visible_entries(&app)
+}
+
+/// Downloads sessions this account recorded on other devices, caches them in
+/// the local history file, and returns the updated list. Network failures
+/// (offline, signed out) just fall back to what's already on disk.
+#[tauri::command]
+pub async fn refresh_interview_history(app: AppHandle) -> Vec<InterviewHistoryEntry> {
+    if let Err(err) = pull_from_backend(&app).await {
+        log::warn!("failed to fetch interview history from backend: {err}");
+    }
+    visible_entries(&app)
+}
+
+fn current_email(app: &AppHandle) -> Option<String> {
+    let state = app.state::<AppState>();
+    let guard = state.auth_session.lock_safe();
+    guard.as_ref().map(|s| s.email.clone())
+}
+
+/// Everything recorded on this device, plus downloaded entries that belong
+/// to whoever is signed in now. Newest first.
+fn visible_entries(app: &AppHandle) -> Vec<InterviewHistoryEntry> {
+    let email = current_email(app);
+    let store = app.state::<HistoryStore>();
     let mut guard = store.0.lock_safe();
     if guard.is_empty() {
-        *guard = load(&app);
+        *guard = load(app);
     }
-    let mut entries = guard.clone();
+    let mut entries = filter_for_account(&guard, email.as_deref());
     entries.sort_by(|a, b| b.started_at_ms.cmp(&a.started_at_ms));
     entries
+}
+
+fn filter_for_account(entries: &[InterviewHistoryEntry], email: Option<&str>) -> Vec<InterviewHistoryEntry> {
+    entries
+        .iter()
+        .filter(|e| match (&e.owner_email, email) {
+            (None, _) => true,
+            (Some(owner), Some(current)) => owner.eq_ignore_ascii_case(current),
+            (Some(_), None) => false,
+        })
+        .cloned()
+        .collect()
 }
 
 /// Saves the current state of one Interview Mode session — called
@@ -262,6 +303,7 @@ pub async fn save_interview_session(
         turns,
         synced: false,
         revision: 0,
+        owner_email: None,
     };
 
     let saved = upsert_local(&app, &store, entry)?;
@@ -456,6 +498,174 @@ async fn sync_to_backend(access_token: &str, entry: &InterviewHistoryEntry) -> R
 }
 
 // ---------------------------------------------------------------------------
+// Pull from Supabase: sessions recorded on this account's other devices
+// ---------------------------------------------------------------------------
+
+/// Rows per page when listing what the server has. Matches PostgREST's
+/// usual max-rows cap so a page is never silently truncated below it.
+const REMOTE_LIST_PAGE: usize = 1000;
+/// Full transcripts fetched per request (`id=in.(...)` keeps the URL short).
+const REMOTE_FETCH_CHUNK: usize = 50;
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct RemoteSummary {
+    id: String,
+    ended_at_ms: u64,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct RemoteRow {
+    id: String,
+    started_at_ms: u64,
+    ended_at_ms: u64,
+    #[serde(default)]
+    role: Option<String>,
+    #[serde(default)]
+    company: Option<String>,
+    turns: serde_json::Value,
+}
+
+/// Brings the local history up to date with the server, cheaply: one small
+/// listing (id + end time per session), then full transcripts only for
+/// sessions this device doesn't have or has an older copy of. Downloaded
+/// entries are written to the history file, so each one is fetched once per
+/// device and is readable offline afterwards. RLS limits every request to the
+/// signed-in user's own rows.
+async fn pull_from_backend(app: &AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let access_token = crate::auth::current_access_token(&state).await?;
+    let Some(email) = current_email(app) else {
+        return Ok(());
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let summaries = fetch_remote_summaries(&client, &access_token).await?;
+    let wanted = {
+        let store = app.state::<HistoryStore>();
+        let mut guard = store.0.lock_safe();
+        if guard.is_empty() {
+            *guard = load(app);
+        }
+        ids_to_download(&guard, &summaries)
+    };
+
+    for chunk in wanted.chunks(REMOTE_FETCH_CHUNK) {
+        let rows = fetch_remote_rows(&client, &access_token, chunk).await?;
+        let store = app.state::<HistoryStore>();
+        let mut guard = store.0.lock_safe();
+        if guard.is_empty() {
+            *guard = load(app);
+        }
+        if apply_remote(&mut guard, rows, &email) {
+            save(app, &guard)?;
+        }
+    }
+    Ok(())
+}
+
+async fn fetch_remote_summaries(client: &reqwest::Client, access_token: &str) -> Result<Vec<RemoteSummary>, String> {
+    let mut all = Vec::new();
+    loop {
+        let url = format!(
+            "{SUPABASE_URL}/rest/v1/interview_transcripts?select=id,ended_at_ms&order=started_at_ms.desc&limit={REMOTE_LIST_PAGE}&offset={}",
+            all.len()
+        );
+        let page: Vec<RemoteSummary> = get_json(client, access_token, &url).await?;
+        let done = page.len() < REMOTE_LIST_PAGE;
+        all.extend(page);
+        if done {
+            return Ok(all);
+        }
+    }
+}
+
+async fn fetch_remote_rows(client: &reqwest::Client, access_token: &str, ids: &[String]) -> Result<Vec<RemoteRow>, String> {
+    let url = format!(
+        "{SUPABASE_URL}/rest/v1/interview_transcripts?select=id,started_at_ms,ended_at_ms,role,company,turns&id=in.({})",
+        ids.join(",")
+    );
+    get_json(client, access_token, &url).await
+}
+
+async fn get_json<T: serde::de::DeserializeOwned>(client: &reqwest::Client, access_token: &str, url: &str) -> Result<T, String> {
+    let response = client
+        .get(url)
+        .header("apikey", SUPABASE_ANON_KEY)
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("{status}: {text}"));
+    }
+    response.json().await.map_err(|e| e.to_string())
+}
+
+/// Server sessions worth downloading: ones missing locally, or ones whose
+/// server copy ended later than an already-synced local copy (continued on
+/// another device). A local copy with unsent changes is never asked for —
+/// it's newer than the server's by definition and uploads on its own.
+fn ids_to_download(entries: &[InterviewHistoryEntry], remote: &[RemoteSummary]) -> Vec<String> {
+    remote
+        .iter()
+        .filter(|r| match entries.iter().find(|e| e.id == r.id) {
+            None => true,
+            Some(local) => local.synced && r.ended_at_ms > local.ended_at_ms,
+        })
+        .map(|r| r.id.clone())
+        .collect()
+}
+
+/// Merges downloaded rows into the local list. Re-checks against the current
+/// local state (it may have changed while the request was in flight), so an
+/// entry saved locally in the meantime is never overwritten. Downloaded
+/// entries are stored as already synced so they're never uploaded back.
+/// Returns whether anything changed.
+fn apply_remote(entries: &mut Vec<InterviewHistoryEntry>, rows: Vec<RemoteRow>, email: &str) -> bool {
+    let mut changed = false;
+    for row in rows {
+        let turns: Vec<HistoryTurn> = match serde_json::from_value(row.turns) {
+            Ok(turns) => turns,
+            Err(err) => {
+                log::warn!("skipping downloaded transcript {} with unreadable turns: {err}", row.id);
+                continue;
+            }
+        };
+        let mut entry = InterviewHistoryEntry {
+            id: row.id,
+            started_at_ms: row.started_at_ms,
+            ended_at_ms: row.ended_at_ms,
+            role: row.role,
+            company: row.company,
+            turns,
+            synced: true,
+            revision: 1,
+            owner_email: Some(email.to_string()),
+        };
+        match entries.iter_mut().find(|e| e.id == entry.id) {
+            Some(local) => {
+                if !local.synced || entry.ended_at_ms <= local.ended_at_ms {
+                    continue;
+                }
+                entry.revision = local.revision + 1;
+                // Recorded here first: still this device's entry.
+                entry.owner_email = local.owner_email.clone();
+                *local = entry;
+            }
+            None => entries.push(entry),
+        }
+        changed = true;
+    }
+    changed
+}
+
+// ---------------------------------------------------------------------------
 // Raw speech journal -> history entries
 // ---------------------------------------------------------------------------
 
@@ -602,6 +812,7 @@ fn recover_entry(entries: &mut Vec<InterviewHistoryEntry>, j: &LoadedJournal) ->
         turns,
         synced: false,
         revision: 0,
+        owner_email: None,
     };
     Some(apply_upsert(entries, entry))
 }
@@ -745,6 +956,7 @@ mod tests {
             }],
             synced: false,
             revision: 0,
+            owner_email: None,
         }
     }
 
@@ -823,6 +1035,85 @@ mod tests {
         assert!(v["turns"][0].get("kind").is_none());
         let v = serde_json::to_value(entry("a", 1, 2, Some("speech"))).unwrap();
         assert_eq!(v["turns"][0]["kind"], "speech");
+    }
+
+    // ----- pulling other devices' sessions -----
+
+    fn summary(id: &str, end: u64) -> RemoteSummary {
+        RemoteSummary { id: id.into(), ended_at_ms: end }
+    }
+
+    fn row(id: &str, start: u64, end: u64, answer: &str) -> RemoteRow {
+        RemoteRow {
+            id: id.into(),
+            started_at_ms: start,
+            ended_at_ms: end,
+            role: None,
+            company: None,
+            turns: serde_json::json!([{ "question": "q", "answer": answer }]),
+        }
+    }
+
+    fn synced(mut e: InterviewHistoryEntry) -> InterviewHistoryEntry {
+        e.synced = true;
+        e.revision = 1;
+        e
+    }
+
+    #[test]
+    fn only_missing_or_newer_sessions_are_downloaded() {
+        let entries = vec![synced(entry("same", 0, 100, None)), synced(entry("older", 0, 100, None)), entry("unsent", 0, 100, None)];
+        let remote = vec![summary("same", 100), summary("older", 200), summary("unsent", 200), summary("new", 50)];
+        assert_eq!(ids_to_download(&entries, &remote), vec!["older".to_string(), "new".to_string()]);
+    }
+
+    #[test]
+    fn downloaded_session_is_added_as_synced_and_owned() {
+        let mut entries = vec![];
+        assert!(apply_remote(&mut entries, vec![row("r", 10, 20, "a")], "me@x.com"));
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].synced);
+        assert_eq!(entries[0].owner_email.as_deref(), Some("me@x.com"));
+        assert_eq!(entries[0].turns[0].answer, "a");
+    }
+
+    #[test]
+    fn unsent_local_changes_are_never_overwritten() {
+        let mut entries = vec![entry("s", 0, 100, None)];
+        assert!(!apply_remote(&mut entries, vec![row("s", 0, 500, "server")], "me@x.com"));
+        assert_eq!(entries[0].turns[0].answer, "a");
+        assert!(!entries[0].synced);
+    }
+
+    #[test]
+    fn newer_server_copy_replaces_synced_local_but_keeps_it_local() {
+        let mut entries = vec![synced(entry("s", 0, 100, None))];
+        assert!(apply_remote(&mut entries, vec![row("s", 0, 500, "server")], "me@x.com"));
+        assert_eq!(entries[0].turns[0].answer, "server");
+        assert_eq!(entries[0].revision, 2);
+        assert!(entries[0].synced);
+        assert_eq!(entries[0].owner_email, None);
+    }
+
+    #[test]
+    fn unreadable_turns_skip_only_that_row() {
+        let mut bad = row("bad", 0, 1, "x");
+        bad.turns = serde_json::json!("not a list");
+        let mut entries = vec![];
+        assert!(apply_remote(&mut entries, vec![bad, row("good", 0, 1, "ok")], "me@x.com"));
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, "good");
+    }
+
+    #[test]
+    fn downloaded_sessions_are_hidden_from_other_accounts() {
+        let mut theirs = entry("theirs", 0, 1, None);
+        theirs.owner_email = Some("Me@X.com".into());
+        let entries = vec![entry("local", 0, 1, None), theirs];
+        let ids = |v: Vec<InterviewHistoryEntry>| v.into_iter().map(|e| e.id).collect::<Vec<_>>();
+        assert_eq!(ids(filter_for_account(&entries, Some("me@x.com"))), vec!["local", "theirs"]);
+        assert_eq!(ids(filter_for_account(&entries, Some("other@x.com"))), vec!["local"]);
+        assert_eq!(ids(filter_for_account(&entries, None)), vec!["local"]);
     }
 
     // ----- revision-checked sync -----
