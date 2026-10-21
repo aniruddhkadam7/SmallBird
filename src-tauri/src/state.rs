@@ -123,6 +123,10 @@ pub struct AppState {
     /// Interview/Meeting hear the call, Assistant hears the user's mic).
     pub system_default: AtomicBool,
     pub mic_default: AtomicBool,
+    /// Notes Mode: transcribe the call audio with Deepgram's speaker
+    /// diarization (Nova-3) instead of Flux, so each remote voice is told
+    /// apart. Latched like `system_wanted` — only changes between sessions.
+    pub diarize_call_audio: AtomicBool,
 }
 
 impl Default for AppState {
@@ -141,6 +145,7 @@ impl Default for AppState {
             system_wanted: AtomicBool::new(true),
             system_default: AtomicBool::new(true),
             mic_default: AtomicBool::new(false),
+            diarize_call_audio: AtomicBool::new(false),
         }
     }
 }

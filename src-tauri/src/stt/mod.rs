@@ -15,5 +15,5 @@ mod client;
 mod events;
 
 pub use backend_token::SttSession;
-pub use client::SttClient;
+pub use client::{SttClient, SttModel};
 pub use events::{SttEvent, SttEventKind};

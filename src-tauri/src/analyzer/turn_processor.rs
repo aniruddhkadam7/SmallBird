@@ -185,6 +185,7 @@ mod tests {
             final_text: Some(text.to_string()),
             start_time: None,
             end_time: None,
+            speaker: None,
         }
     }
 

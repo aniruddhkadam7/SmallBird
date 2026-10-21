@@ -16,4 +16,7 @@ pub struct SttEvent {
     /// timestamps (seconds).
     pub start_time: Option<f64>,
     pub end_time: Option<f64>,
+    /// Deepgram's speaker number (0-based) within this stream — only set by
+    /// the diarized Notes Mode connection (see `SttModel::DiarizedNova`).
+    pub speaker: Option<u32>,
 }

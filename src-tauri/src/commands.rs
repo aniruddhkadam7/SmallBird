@@ -360,7 +360,7 @@ fn start_source_inner(
         None => start_capture_buffer(source)?,
     };
     let (stt_tx, stt_rx) = std::sync::mpsc::channel();
-    let stt_client = match SttClient::spawn(source, stt_tx, api_key, Some(app.clone())) {
+    let stt_client = match SttClient::spawn(source, stt_model_for(&state, source), stt_tx, api_key, Some(app.clone())) {
         Ok(client) => client,
         Err(err) => {
             stop.stop();
@@ -530,12 +530,13 @@ fn spawn_mic_start(app: &tauri::AppHandle, mic_buffer: Option<crate::state::Capt
 /// window sends this whenever the mode changes). Takes effect right away
 /// between sessions; a live session keeps what it has.
 #[tauri::command]
-pub fn set_source_defaults(state: State<'_, AppState>, system: bool, mic: bool) {
-    apply_source_defaults(&state, system, mic);
+pub fn set_source_defaults(state: State<'_, AppState>, system: bool, mic: bool, diarize: Option<bool>) {
+    apply_source_defaults(&state, system, mic, diarize.unwrap_or(false));
 }
 
-/// See `set_source_defaults`; also used by the mode shortcuts.
-pub fn apply_source_defaults(state: &AppState, system: bool, mic: bool) {
+/// See `set_source_defaults`; also used by the mode shortcuts. `diarize`:
+/// Notes Mode — the call audio is transcribed with speaker labels.
+pub fn apply_source_defaults(state: &AppState, system: bool, mic: bool, diarize: bool) {
     use std::sync::atomic::Ordering::Relaxed;
     state.system_default.store(system, Relaxed);
     state.mic_default.store(mic, Relaxed);
@@ -547,6 +548,17 @@ pub fn apply_source_defaults(state: &AppState, system: bool, mic: bool) {
     if !busy {
         state.system_wanted.store(system, Relaxed);
         state.mic_wanted.store(mic, Relaxed);
+        state.diarize_call_audio.store(diarize, Relaxed);
+    }
+}
+
+/// The Deepgram model for one source's connection: Notes Mode's call audio
+/// is diarized; everything else (and the user's own mic, always) is Flux.
+fn stt_model_for(state: &AppState, source: AudioSource) -> crate::stt::SttModel {
+    let diarize = state.diarize_call_audio.load(std::sync::atomic::Ordering::Relaxed);
+    match source {
+        AudioSource::SystemAudio if diarize => crate::stt::SttModel::DiarizedNova,
+        _ => crate::stt::SttModel::Flux,
     }
 }
 
@@ -606,7 +618,7 @@ fn start_capture_inner(app: &tauri::AppHandle, state: &State<'_, AppState>) -> R
     // See `docs/performance-tuning.md`'s real-i3-latency-diagnosis section
     // (written for the old local-model version of this same problem; the
     // same ordering fix applies to a network connect delay).
-    let stt_client = match SttClient::spawn(AudioSource::SystemAudio, stt_tx, api_key, Some(app.clone())) {
+    let stt_client = match SttClient::spawn(AudioSource::SystemAudio, stt_model_for(state, AudioSource::SystemAudio), stt_tx, api_key, Some(app.clone())) {
         Ok(client) => client,
         Err(err) => {
             // No pipeline exists yet; a prebuffer recording since the key

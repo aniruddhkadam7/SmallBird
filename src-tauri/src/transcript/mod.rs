@@ -21,6 +21,9 @@ pub struct TranscriptSegment {
     pub final_text: Option<String>,
     pub start_time: Option<f64>,
     pub end_time: Option<f64>,
+    /// Who spoke, within this segment's source — Notes Mode's call audio
+    /// only (Deepgram diarization); `None` everywhere else.
+    pub speaker: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -192,6 +195,7 @@ impl TranscriptManager {
                     .entry(event.source)
                     .or_insert_with(|| new_segment(event.source));
                 segment.partial_text = Some(event.text);
+                segment.speaker = event.speaker;
                 Some(segment.clone())
             }
             SttEventKind::Final => {
@@ -203,6 +207,7 @@ impl TranscriptManager {
                 segment.final_text = Some(event.text);
                 segment.start_time = event.start_time;
                 segment.end_time = event.end_time;
+                segment.speaker = event.speaker;
                 segment.timestamp = now_ms();
                 self.session.segments.push(segment.clone());
                 Some(segment)
@@ -226,6 +231,7 @@ fn new_segment(source: AudioSource) -> TranscriptSegment {
         final_text: None,
         start_time: None,
         end_time: None,
+        speaker: None,
     }
 }
 

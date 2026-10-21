@@ -1847,3 +1847,78 @@ body.overlay-window #root {
   border-radius: 3px;
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
+
+/* ---- Notes Mode: who said what ---- */
+
+.notes-title {
+  font-size: 0.85em;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.notes-transcript {
+  gap: 10px;
+}
+
+.notes-block {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.notes-block.live .notes-text {
+  color: var(--muted);
+}
+
+.notes-block-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A speaker's name — a button, since clicking it renames that speaker. */
+.notes-speaker {
+  padding: 1px 8px;
+  border: none;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.78em;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.notes-speaker:hover {
+  filter: brightness(1.15);
+}
+
+.notes-speaker-input {
+  width: 140px;
+  padding: 1px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78em;
+  font-weight: 700;
+}
+
+.notes-time {
+  font-size: 0.72em;
+  color: var(--muted);
+}
+
+.notes-text {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.notes-speaker-you { background: rgba(34, 197, 94, 0.22); color: #86efac; }
+.notes-speaker-0 { background: rgba(59, 130, 246, 0.25); color: #93c5fd; }
+.notes-speaker-1 { background: rgba(249, 115, 22, 0.25); color: #fdba74; }
+.notes-speaker-2 { background: rgba(168, 85, 247, 0.25); color: #d8b4fe; }
+.notes-speaker-3 { background: rgba(236, 72, 153, 0.25); color: #f9a8d4; }
+.notes-speaker-4 { background: rgba(20, 184, 166, 0.25); color: #5eead4; }
+.notes-speaker-5 { background: rgba(234, 179, 8, 0.25); color: #fde047; }

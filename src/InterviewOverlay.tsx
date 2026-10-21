@@ -38,7 +38,17 @@ import {
   ThumbsUpIcon,
 } from "./OverlayIcons";
 import { loadLlmProvider } from "./llmProviderSetting";
-import { findCustomMode, listensToMic } from "./customModes";
+import { findCustomMode, sourceDefaults } from "./customModes";
+import { NotesTranscript } from "./NotesTranscript";
+import {
+  groupLines,
+  isNotesEntry,
+  notesToTurns,
+  speakerKeyOf,
+  speakerName,
+  turnsToNotes,
+  type NoteLine,
+} from "./notesMode";
 import { getEntitlement } from "./auth";
 
 function formatCountdown(totalSeconds: number): string {
@@ -114,6 +124,15 @@ interface Shot {
 function formatTimestamp(ms: number): string {
   const d = new Date(ms);
   return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+}
+
+/// Drops the leading words of an STT segment's text that already went out
+/// with a question (`sent`), leaving only what was said after. STT may revise
+/// earlier words as it goes, so this skips by word count rather than
+/// requiring an exact text match.
+function stripSentWords(text: string, sent: string): string {
+  const sentCount = sent.split(/\s+/).filter(Boolean).length;
+  return text.split(/\s+/).filter(Boolean).slice(sentCount).join(" ");
 }
 
 const overlayWindow = getCurrentWebviewWindow();
@@ -195,6 +214,9 @@ function transcriptLabels(settings: OverlaySettings): { role: string | null; com
   if (settings.mode === "assistant") {
     return { role: "Assistant", company: null };
   }
+  if (settings.mode === "notes") {
+    return { role: "Notes", company: null };
+  }
   const customMode = findCustomMode(settings.mode);
   if (customMode) {
     return { role: `Mode: ${customMode.name}`, company: null };
@@ -250,8 +272,16 @@ export function InterviewOverlay() {
   // The two audio sources, each switched by its own icon. Every session
   // starts with its mode's defaults: the call audio on and the user's mic off
   // in Interview/Meeting; the mic on and the call audio off in Assistant.
-  const [systemEnabled, setSystemEnabled] = useState(() => !listensToMic(loadOverlaySettings().mode));
-  const [micEnabled, setMicEnabled] = useState(() => listensToMic(loadOverlaySettings().mode));
+  const [systemEnabled, setSystemEnabled] = useState(() => sourceDefaults(loadOverlaySettings().mode).system);
+  const [micEnabled, setMicEnabled] = useState(() => sourceDefaults(loadOverlaySettings().mode).mic);
+  // Notes Mode: the meeting so far (finalized lines), what's being said right
+  // now (live partials by segment id), and the names given to speakers.
+  const [notesLines, setNotesLines] = useState<NoteLine[]>([]);
+  const [notesPartials, setNotesPartials] = useState<Record<string, { speaker: string; text: string }>>({});
+  const [speakerNames, setSpeakerNames] = useState<Record<string, string>>({});
+  // Set whenever the notes change; a timer below saves them a few seconds
+  // later, so a long monologue still gets saved as it goes.
+  const notesDirtyRef = useRef(false);
   const systemOnRef = useRef(systemEnabled);
   // Minimized into the small box in the bottom-right corner (same window,
   // resized — see overlay_window.rs's minimize_overlay). The session keeps
@@ -285,6 +315,7 @@ export function InterviewOverlay() {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const isMeeting = settings.mode === "meeting";
+  const isNotes = settings.mode === "notes";
   const isAssistant = settings.mode === "assistant";
   // A mode the user created (customModes.ts): worded like Assistant when it
   // listens to the user's mic, like Meeting when it listens to the call.
@@ -295,9 +326,11 @@ export function InterviewOverlay() {
   // lists (GFM for tables; styling in .rich-markdown).
   const markdownPlugins = [remarkGfm];
   const markdownClass = " rich-markdown";
-  const sessionNoun = isAssistant || customMode ? "session" : isMeeting ? "meeting" : "interview";
+  const sessionNoun = isAssistant || customMode ? "session" : isMeeting || isNotes ? "meeting" : "interview";
   // What the empty overlay says before anything has been asked.
-  const waitingText = asksLikeAssistant
+  const waitingText = isNotes
+    ? "Taking notes — who said what will appear here as people speak."
+    : asksLikeAssistant
     ? "Ask me anything — type, speak, or take a screenshot"
     : hearsOthers
       ? "Waiting for someone to speak…"
@@ -336,11 +369,13 @@ export function InterviewOverlay() {
   // Keyed by segment id, with its source — with the Mic on, the other side
   // and the user can both be mid-sentence at once.
   const partialsRef = useRef(new Map<string, { source: TranscriptSegment["source"]; text: string }>());
-  // Segment ids whose upcoming final_text should be dropped rather than
-  // appended, because they were already folded into a question that was
-  // just sent (see askAI). Each is cleared once its final arrives (or a new
-  // question starts).
-  const suppressFinalIdsRef = useRef(new Set<string>());
+  // Segments that were still mid-utterance when a question was sent, keyed by
+  // id, with the text of theirs that already went out (see askAI). Their
+  // later partials/final only contribute the words spoken after that, so the
+  // sent part doesn't reappear in the field — but whatever the speaker keeps
+  // saying while the answer generates still does. Each is cleared once its
+  // final arrives (or a new question starts).
+  const sentSegmentTextRef = useRef(new Map<string, string>());
   // The user's microphone, confirmed on by the backend (see the Mic effect
   // below); read from the transcript listener via the ref.
   const [micActive, setMicActive] = useState(false);
@@ -471,20 +506,50 @@ export function InterviewOverlay() {
       const segment = event.payload;
       const fromMic = segment.source === "MICROPHONE";
       if (fromMic && !micOnRef.current) return;
+      // Notes Mode only writes things down: no question field, no Auto
+      // Answer. The same echo filter keeps the call (heard through the
+      // user's speakers) from being written down a second time as "You".
+      if (settingsRef.current.mode === "notes") {
+        const speaker = speakerKeyOf(segment);
+        if (segment.final_text) {
+          const text = segment.final_text.trim();
+          setNotesPartials((prev) => {
+            if (!(segment.id in prev)) return prev;
+            const next = { ...prev };
+            delete next[segment.id];
+            return next;
+          });
+          if (!text) return;
+          if (fromMic) {
+            if (isEcho(text, recentHeardRef.current)) return;
+          } else {
+            recentHeardRef.current = rememberHeard(recentHeardRef.current, text);
+          }
+          notesDirtyRef.current = true;
+          setNotesLines((prev) => [...prev, { id: segment.id, speaker, text, at: segment.timestamp }]);
+        } else if (segment.partial_text) {
+          if (fromMic && isEcho(segment.partial_text, recentHeardRef.current)) return;
+          const text = segment.partial_text;
+          setNotesPartials((prev) => ({ ...prev, [segment.id]: { speaker, text } }));
+        }
+        return;
+      }
       // While an answer is streaming, keep buffering finals silently: the
       // interviewer may already be asking the next question. They land in the
       // field, not in the answer that's still arriving.
       if (segment.final_text) {
         partialsRef.current.delete(segment.id);
-        if (suppressFinalIdsRef.current.delete(segment.id)) {
-          // This final belongs to the utterance that was already sent as
-          // part of the previous question (via its partial text) — drop it
-          // instead of letting it repopulate the now-cleared field.
+        const sent = sentSegmentTextRef.current.get(segment.id);
+        sentSegmentTextRef.current.delete(segment.id);
+        // Part of this utterance already went out with the previous question
+        // (via its partial text) — keep only what was said after that.
+        const finalText = sent === undefined ? segment.final_text : stripSentWords(segment.final_text, sent);
+        if (!finalText) {
           renderQuestion();
           return;
         }
         if (fromMic) {
-          if (isEcho(segment.final_text, recentHeardRef.current)) {
+          if (isEcho(finalText, recentHeardRef.current)) {
             renderQuestion();
             return;
           }
@@ -494,7 +559,7 @@ export function InterviewOverlay() {
         committedRef.current = appendSpeech(
           committedRef.current,
           speakerLabel(segment.source, micOnRef.current && systemOnRef.current, committedRef.current),
-          segment.final_text,
+          finalText,
         );
         renderQuestion();
         if (!fromMic || !systemOnRef.current) {
@@ -508,12 +573,14 @@ export function InterviewOverlay() {
           armAutoAiTimer(AUTO_AI_SILENCE_MS_INCOMPLETE);
         }
       } else if (segment.partial_text) {
-        if (suppressFinalIdsRef.current.has(segment.id)) return;
+        const sent = sentSegmentTextRef.current.get(segment.id);
+        const partialText = sent === undefined ? segment.partial_text : stripSentWords(segment.partial_text, sent);
+        if (!partialText) return;
         if (fromMic) {
           const heardNow = [...partialsRef.current.values()].filter((p) => p.source !== "MICROPHONE").map((p) => p.text);
-          if (isEcho(segment.partial_text, recentHeardRef.current, heardNow)) return;
+          if (isEcho(partialText, recentHeardRef.current, heardNow)) return;
         }
-        partialsRef.current.set(segment.id, { source: segment.source, text: segment.partial_text });
+        partialsRef.current.set(segment.id, { source: segment.source, text: partialText });
         renderQuestion();
         // Still speaking (either side) — any timer counting down from an
         // earlier final must not fire mid-sentence.
@@ -645,6 +712,28 @@ export function InterviewOverlay() {
       turns: completed.map((t) => ({ question: t.question, answer: t.answer, askedAtMs: t.askedAt, kind: t.kind ?? undefined })),
     }).catch((e) => console.error("Failed to save interview progress:", e));
   }, [turns, settings]);
+
+  // Notes Mode's progress save: at most every few seconds while the notes
+  // keep changing (renames included), always the whole transcript under the
+  // session's one id — same crash-safety reasoning as the turn save above.
+  const notesSaveRef = useRef<() => void>(() => {});
+  notesSaveRef.current = () => {
+    if (!notesDirtyRef.current || settings.mode !== "notes" || notesLines.length === 0) return;
+    notesDirtyRef.current = false;
+    invoke("save_interview_session", {
+      id: sessionIdRef.current,
+      startedAtMs: recordStartedAtRef.current,
+      ...transcriptLabels(settings),
+      turns: notesToTurns(notesLines, speakerNames),
+    }).catch((e) => {
+      notesDirtyRef.current = true;
+      console.error("Failed to save notes:", e);
+    });
+  };
+  useEffect(() => {
+    const id = window.setInterval(() => notesSaveRef.current(), 4000);
+    return () => window.clearInterval(id);
+  }, []);
 
   // Live countdown: fetch the plan balance once per session (on mount, and
   // again whenever the reused overlay window resets for a new interview —
@@ -808,6 +897,14 @@ export function InterviewOverlay() {
       turns: { question: string; answer: string; askedAtMs?: number | null; kind?: string | null }[];
     }>("overlay:resume-session", (event) => {
       const entry = event.payload;
+      if (isNotesEntry(entry.turns)) {
+        sessionIdRef.current = entry.id;
+        recordStartedAtRef.current = entry.started_at_ms;
+        setNotesLines(turnsToNotes(entry.turns, entry.started_at_ms));
+        setNotesPartials({});
+        setSpeakerNames({});
+        return;
+      }
       const restored: Turn[] = entry.turns.map((t, i) => ({
         id: `${entry.id}-${i}`,
         question: t.question,
@@ -835,8 +932,9 @@ export function InterviewOverlay() {
       const mode = event.payload;
       if (!mode) return;
       setSettings((prev) => ({ ...prev, mode }));
-      setSystemEnabled(!listensToMic(mode));
-      setMicEnabled(listensToMic(mode));
+      const defaults = sourceDefaults(mode);
+      setSystemEnabled(defaults.system);
+      setMicEnabled(defaults.mic);
     });
     return () => {
       unlisten.then((f) => f());
@@ -887,6 +985,10 @@ export function InterviewOverlay() {
       // this specific interview (see App.tsx's start-details popover).
       setSettings(loadOverlaySettings());
       setTurns([]);
+      setNotesLines([]);
+      setNotesPartials({});
+      setSpeakerNames({});
+      notesDirtyRef.current = false;
       setQuestion("");
       setBusy(false);
       setError(null);
@@ -900,9 +1002,9 @@ export function InterviewOverlay() {
       setMiniStrip(false);
       setUnseenAnswer(false);
       setMaximized(false);
-      const micSession = listensToMic(loadOverlaySettings().mode);
-      setSystemEnabled(!micSession);
-      setMicEnabled(micSession);
+      const defaults = sourceDefaults(loadOverlaySettings().mode);
+      setSystemEnabled(defaults.system);
+      setMicEnabled(defaults.mic);
       // Capture was started just before this reset (App.tsx's
       // startInterview awaits it before showing the overlay) — re-read it
       // rather than trusting whatever this reused window last knew.
@@ -911,7 +1013,7 @@ export function InterviewOverlay() {
       invoke("clear_screenshots").catch(() => {});
       committedRef.current = "";
       partialsRef.current.clear();
-      suppressFinalIdsRef.current.clear();
+      sentSegmentTextRef.current.clear();
       recentHeardRef.current = [];
       busyRef.current = false;
       sessionStartedAtRef.current = Date.now();
@@ -1031,10 +1133,12 @@ export function InterviewOverlay() {
       setQuestion("");
       committedRef.current = "";
       // If the interviewer was still mid-utterance when Ask AI was pressed,
-      // its text already made it into `trimmed` via the live partial — the
-      // final that STT emits for that same segment a moment later must be
-      // dropped, not appended to the fresh buffer for the next question.
-      for (const id of partialsRef.current.keys()) suppressFinalIdsRef.current.add(id);
+      // its text so far already made it into `trimmed` via the live partial —
+      // that same segment's later partials/final must not bring it back, but
+      // anything they keep saying past it still starts the next question.
+      for (const [id, partial] of partialsRef.current) {
+        sentSegmentTextRef.current.set(id, (sentSegmentTextRef.current.get(id) ?? "") + " " + partial.text);
+      }
       partialsRef.current.clear();
     }
     busyRef.current = true;
@@ -1242,9 +1346,12 @@ export function InterviewOverlay() {
   // actually start blank instead of resuming the just-saved conversation.
   const closeOverlay = useCallback(async () => {
     setConfirmingClose(false);
-    const completed = turns
-      .filter((t) => !t.pending && !t.failed && t.answer.trim())
-      .map((t) => ({ question: t.question, answer: t.answer, askedAtMs: t.askedAt, kind: t.kind ?? undefined }));
+    const completed =
+      settings.mode === "notes"
+        ? notesToTurns(notesLines, speakerNames)
+        : turns
+            .filter((t) => !t.pending && !t.failed && t.answer.trim())
+            .map((t) => ({ question: t.question, answer: t.answer, askedAtMs: t.askedAt, kind: t.kind ?? undefined }));
     if (completed.length > 0) {
       try {
         await invoke("save_interview_session", {
@@ -1264,12 +1371,16 @@ export function InterviewOverlay() {
     }
     committedRef.current = "";
     partialsRef.current.clear();
-    suppressFinalIdsRef.current.clear();
+    sentSegmentTextRef.current.clear();
     sessionStartedAtRef.current = Date.now();
     recordStartedAtRef.current = sessionStartedAtRef.current;
     sessionIdRef.current = crypto.randomUUID();
     savedTurnCountRef.current = 0;
     setTurns([]);
+    setNotesLines([]);
+    setNotesPartials({});
+    setSpeakerNames({});
+    notesDirtyRef.current = false;
     setQuestion("");
     setShots([]);
     invoke("clear_screenshots").catch(() => {});
@@ -1282,7 +1393,7 @@ export function InterviewOverlay() {
     } else {
       dismissOverlay();
     }
-  }, [turns, settings, dismissOverlay]);
+  }, [turns, notesLines, speakerNames, settings, dismissOverlay]);
 
   // Entry point for both the End button and Escape: conversations with at least
   // one exchange ask for confirmation first (closing mid-interview is easy to
@@ -1484,6 +1595,8 @@ export function InterviewOverlay() {
   const opacityPercent = Math.round(settings.opacity * 100);
 
   if (minimized) {
+    const noteBlocks = isNotes ? groupLines(notesLines) : [];
+    const lastNoteBlock = noteBlocks[noteBlocks.length - 1];
     const trimmedQuestion = question.trim();
     const liveQuestion = trimmedQuestion.length > 240 ? `…${trimmedQuestion.slice(-240)}` : trimmedQuestion;
     // Same rule as the full overlay's Answer button.
@@ -1534,6 +1647,8 @@ export function InterviewOverlay() {
               {formatCountdownShort(secondsLeft)}
             </span>
           )}
+          {!isNotes && (
+            <>
           <button
             type="button"
             className={`overlay-pill-button${settings.autoAI ? " on" : ""}`}
@@ -1550,6 +1665,8 @@ export function InterviewOverlay() {
           <button type="button" className="overlay-pill-button" onClick={() => askAI()} disabled={!canAnswer}>
             Answer
           </button>
+            </>
+          )}
           <span className="overlay-window-controls">
             <button
               type="button"
@@ -1568,7 +1685,7 @@ export function InterviewOverlay() {
               onClick={() => {
                 // With a conversation, ending asks first — that prompt lives
                 // in the full overlay, so open it before asking.
-                if (turns.some((t) => !t.pending && t.answer.trim())) void restoreOverlay().then(requestClose);
+                if (notesLines.length > 0 || turns.some((t) => !t.pending && t.answer.trim())) void restoreOverlay().then(requestClose);
                 else requestClose();
               }}
               aria-label={`End ${sessionNoun}`}
@@ -1578,6 +1695,16 @@ export function InterviewOverlay() {
           </span>
           </div>
           <div className="overlay-mini-body" ref={miniScrollRef} hidden={miniStrip}>
+            {isNotes ? (
+              lastNoteBlock ? (
+                <p className="overlay-mini-live-text">
+                  <strong>{speakerName(lastNoteBlock.speaker, speakerNames)}:</strong> {lastNoteBlock.text}
+                </p>
+              ) : (
+                <p className="overlay-mini-muted">{waitingText}</p>
+              )
+            ) : (
+            <>
             {/* What's being heard right now (the question field), newest
                 words kept in view. */}
             {liveQuestion && (
@@ -1601,6 +1728,8 @@ export function InterviewOverlay() {
               </>
             ) : (
               !liveQuestion && <p className="overlay-mini-muted">{waitingText}</p>
+            )}
+            </>
             )}
           </div>
         </div>
@@ -1662,6 +1791,8 @@ export function InterviewOverlay() {
           <VoiceIcon size={13} off={!micEnabled} />
           {micEnabled && listening && !muted && <span className="overlay-status-dot voice" />}
         </button>
+        {!isNotes && (
+        <>
         <button
           type="button"
           className="overlay-pill-button"
@@ -1719,6 +1850,8 @@ export function InterviewOverlay() {
           Screenshot
           {shots.length > 0 && <span className="pill-count">{shots.length}</span>}
         </button>
+        </>
+        )}
         <div className="overlay-action-bar-spacer" />
         {/* Not a <button> — the whole bar is already the drag handle (see
             data-tauri-drag-region="deep" above); a real button here would
@@ -1849,6 +1982,20 @@ export function InterviewOverlay() {
           captureExcluded={captureExcluded}
           onCaptureExcludedChange={setCaptureExcluded}
         />
+      ) : isNotes ? (
+        <>
+          <NotesTranscript
+            lines={notesLines}
+            partials={notesPartials}
+            names={speakerNames}
+            onRename={(speaker, name) => {
+              notesDirtyRef.current = true;
+              setSpeakerNames((prev) => ({ ...prev, [speaker]: name }));
+            }}
+            emptyText={!systemEnabled && !micEnabled ? "Not listening — turn on the call audio or your mic" : waitingText}
+          />
+          {error && <p className="overlay-error">{error}</p>}
+        </>
       ) : (
         <>
           {/* Transcript/chat bar — its own rounded island, sitting between
@@ -1874,7 +2021,7 @@ export function InterviewOverlay() {
           )}
           {chatMode ? (
             <div className="overlay-header overlay-transcript-bar overlay-chat-compose">
-              <AudioLevelBars active={sttSpeaking && !busy} />
+              <AudioLevelBars active={sttSpeaking} />
               <textarea
                 className="overlay-question-input"
                 value={chatDraft}
@@ -1904,7 +2051,7 @@ export function InterviewOverlay() {
             </div>
           ) : (
             <div className="overlay-header overlay-transcript-bar">
-              <AudioLevelBars active={sttSpeaking && !busy} />
+              <AudioLevelBars active={sttSpeaking} />
               <textarea
                 ref={questionRef}
                 className="overlay-question-input"

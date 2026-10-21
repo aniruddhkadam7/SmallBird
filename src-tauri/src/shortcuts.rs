@@ -255,7 +255,7 @@ fn toggle_session(app: &AppHandle, mode: Option<&str>) -> Result<(), String> {
     // the call audio) — set before recording starts on the next line.
     if let Some(mode) = mode {
         let assistant = mode == "assistant";
-        crate::commands::apply_source_defaults(&app.state::<crate::state::AppState>(), !assistant, assistant);
+        crate::commands::apply_source_defaults(&app.state::<crate::state::AppState>(), !assistant, assistant, false);
     }
     // Start recording right away (off the UI thread — WASAPI init takes a
     // moment); the session attaches to it once its key/connection are ready.

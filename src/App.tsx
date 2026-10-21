@@ -44,7 +44,7 @@ import {
   customModeId,
   customModeValue,
   findCustomMode,
-  listensToMic,
+  sourceDefaults,
   loadCustomModes,
   newCustomModeId,
   saveCustomModes,
@@ -64,9 +64,10 @@ const SESSION_MODES: { value: SessionMode; label: string; description: string }[
   { value: "interview", label: "Interview", description: "Answers as you, the candidate" },
   { value: "meeting", label: "Meeting", description: "Suggests what to say in a meeting" },
   { value: "assistant", label: "Assistant", description: "Your personal assistant — ask anything" },
+  { value: "notes", label: "Notes", description: "Writes down who said what in a meeting" },
 ];
 
-const MODE_LABELS: Record<string, string> = { interview: "Interview", meeting: "Meeting", assistant: "Assistant" };
+const MODE_LABELS: Record<string, string> = { interview: "Interview", meeting: "Meeting", assistant: "Assistant", notes: "Notes" };
 
 function modeLabel(mode: SessionMode, customModes: CustomMode[]): string {
   return MODE_LABELS[mode] ?? findCustomMode(mode, customModes)?.name ?? "Custom";
@@ -155,13 +156,17 @@ function App() {
   const [sessionMode, setSessionMode] = useState<SessionMode>(() => loadSessionMode());
   const isMeeting = sessionMode === "meeting";
   const isAssistant = sessionMode === "assistant";
+  // Notes Mode asks nothing of the AI, so it has no context of its own — it
+  // borrows Assistant's (never a resume or a meeting agenda).
+  const isNotes = sessionMode === "notes";
+  const usesAssistantContext = isAssistant || isNotes;
 
   // Modes the user created (customModes.ts) — listed after the built-in ones.
   const [customModes, setCustomModes] = useState<CustomMode[]>(() => loadCustomModes());
   useEffect(() => saveCustomModes(customModes), [customModes]);
   const selectedCustomMode = findCustomMode(sessionMode, customModes);
   // Assistant and custom modes have nothing to set up — Start begins right away.
-  const startsImmediately = isAssistant || selectedCustomMode !== null;
+  const startsImmediately = usesAssistantContext || selectedCustomMode !== null;
   // The mode being created/edited in the CUSTOM_MODE panel.
   const [editingMode, setEditingMode] = useState<{ mode: CustomMode; isNew: boolean } | null>(null);
 
@@ -169,10 +174,10 @@ function App() {
   // (your mic off until you turn it on); Assistant listens to your mic (the
   // call audio off); a custom mode, whichever it was set to. The backend
   // records exactly these from the key press.
-  const micDefault = listensToMic(sessionMode, customModes);
+  const { system: systemDefault, mic: micDefault, diarize: diarizeDefault } = sourceDefaults(sessionMode, customModes);
   useEffect(() => {
-    invoke("set_source_defaults", { system: !micDefault, mic: micDefault }).catch(() => {});
-  }, [micDefault]);
+    invoke("set_source_defaults", { system: systemDefault, mic: micDefault, diarize: diarizeDefault }).catch(() => {});
+  }, [systemDefault, micDefault, diarizeDefault]);
 
   const [interviewContext, setInterviewContext] = useState<DocumentContextState>(() =>
     withSavedInstructions(emptyDocumentContextState(INTERVIEW_CONTEXT_SECTIONS), "interview"),
@@ -205,21 +210,21 @@ function App() {
   );
   const contextSections = selectedCustomMode
     ? customContextSections(selectedCustomMode.id)
-    : isAssistant
+    : usesAssistantContext
       ? ASSISTANT_CONTEXT_SECTIONS
       : isMeeting
         ? MEETING_CONTEXT_SECTIONS
         : INTERVIEW_CONTEXT_SECTIONS;
   const contextState = selectedCustomMode
     ? customContextOf(selectedCustomMode.id)
-    : isAssistant
+    : usesAssistantContext
       ? assistantContext
       : isMeeting
         ? meetingContext
         : interviewContext;
   const setContextState = selectedCustomMode
     ? customContextSetter(selectedCustomMode.id)
-    : isAssistant
+    : usesAssistantContext
       ? setAssistantContext
       : isMeeting
         ? setMeetingContext
@@ -459,7 +464,7 @@ function App() {
       const customId = customModeId(mode);
       return customId
         ? ([customContextSections(customId), customContextOf(customId), customContextSetter(customId)] as const)
-        : mode === "assistant"
+        : mode === "assistant" || mode === "notes"
           ? ([ASSISTANT_CONTEXT_SECTIONS, assistantContext, setAssistantContext] as const)
           : mode === "meeting"
             ? ([MEETING_CONTEXT_SECTIONS, meetingContext, setMeetingContext] as const)
@@ -735,8 +740,7 @@ function App() {
       saveOverlaySettings({ ...loadOverlaySettings(), mode, role, company, meetingTopic, participants: "" });
       // The mode's audio defaults before recording starts (the effect that
       // normally sends these runs only after the mode change renders).
-      const mic = listensToMic(mode);
-      await invoke("set_source_defaults", { system: !mic, mic }).catch(() => {});
+      await invoke("set_source_defaults", sourceDefaults(mode)).catch(() => {});
       closePopover();
       setError(null);
       setActiveElsewhereMessage(null);

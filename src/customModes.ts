@@ -76,6 +76,18 @@ export function listensToMic(mode: SessionMode, modes?: CustomMode[]): boolean {
   return findCustomMode(mode, modes)?.listenTo === "mic";
 }
 
+/// What a new session in `mode` hears, sent to the backend as
+/// `set_source_defaults`. Notes Mode hears both sides — the user's mic is
+/// "You" and the call audio is split by speaker (`diarize`).
+export function sourceDefaults(
+  mode: SessionMode,
+  modes?: CustomMode[],
+): { system: boolean; mic: boolean; diarize: boolean } {
+  if (mode === "notes") return { system: true, mic: true, diarize: true };
+  const mic = listensToMic(mode, modes);
+  return { system: !mic, mic, diarize: false };
+}
+
 export function customContextSections(id: string): DocumentContextSection[] {
   return [
     {

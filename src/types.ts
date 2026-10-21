@@ -15,6 +15,9 @@ export interface TranscriptSegment {
   final_text: string | null;
   start_time: number | null;
   end_time: number | null;
+  /// Deepgram's speaker number within this source — Notes Mode's call
+  /// audio only (see notesMode.ts).
+  speaker?: number | null;
 }
 
 export interface InterviewSession {

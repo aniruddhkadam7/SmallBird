@@ -61,7 +61,7 @@ fn main() {
     };
 
     // `None`: this headless binary has no `AppHandle`.
-    let sidecar = match SttClient::spawn(desktop_lib::audio::AudioSource::SystemAudio, stt_tx, api_key, None) {
+    let sidecar = match SttClient::spawn(desktop_lib::audio::AudioSource::SystemAudio, desktop_lib::stt::SttModel::Flux, stt_tx, api_key, None) {
         Ok(client) => client,
         Err(err) => {
             eprintln!("STT client failed: {err}");
