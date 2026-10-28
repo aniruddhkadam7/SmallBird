@@ -321,27 +321,25 @@ impl DirectLlmClient {
 pub const TRACKING_MODEL: &str = "gpt-6-luna@none";
 
 /// Reading an image/screenshot attached in the Context panel — runs once per
-/// image, and whatever it reads feeds every later answer, so it gets the
-/// strong model.
-pub const IMAGE_READING_MODEL: &str = "gpt-6-sol@low";
+/// image, and whatever it reads feeds every later answer, so it thinks a
+/// little first.
+pub const IMAGE_READING_MODEL: &str = "gpt-6-luna@low";
 
 /// Resume/JD summary and Notes (ask + summarize): accuracy matters, and the
 /// user may be waiting a few seconds.
-pub const WRITING_MODEL: &str = "gpt-6-sol@low";
+pub const WRITING_MODEL: &str = "gpt-6-luna@low";
 
 /// Post-interview analysis (scoring each answer + the overall assessment):
 /// real judgment, and nobody is waiting live.
-pub const ANALYSIS_MODEL: &str = "gpt-6-sol@medium";
+pub const ANALYSIS_MODEL: &str = "gpt-6-luna@medium";
 
-/// Every live answer (Answer, Enter, Auto Answer): GPT-6 Sol at "low"
-/// thinking — measured as fast to the first word as gpt-4.1 (~1.2s) with
-/// clearly stronger answers, for ~5% more per answer. "model@effort" — see
-/// `providers::openai::split_model_spec`.
-pub const ANSWER_MODEL: &str = "gpt-6-sol@low";
+/// Every live answer (Answer, Enter, Auto Answer): GPT-6 Luna at "low"
+/// thinking. "model@effort" — see `providers::openai::split_model_spec`.
+pub const ANSWER_MODEL: &str = "gpt-6-luna@low";
 
 /// Deep mode (the overlay's Deep toggle / Ctrl+D): the same model thinking
-/// harder — ~3-5s to the first word, the most thorough answers.
-pub const DEEP_MODEL: &str = "gpt-6-sol@medium";
+/// harder — slower to the first word, more thorough answers.
+pub const DEEP_MODEL: &str = "gpt-6-luna@medium";
 
 /// Dev-build-only switch for comparing OpenAI models on real questions
 /// without a rebuild per model (see `debug_set_ask_model`). Always `None`

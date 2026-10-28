@@ -29,7 +29,6 @@ interface AppConfigResponse {
 // first -- ModelSelector treats options[0] as the default for the
 // "default"/"override" badge.
 const MODEL_PRICES = [
-  { value: "gpt-6-sol",    name: "GPT-6 Sol",    input: 2.0,  output: 10.0 },
   { value: "gpt-6-luna",   name: "GPT-6 Luna",   input: 0.1,  output: 0.5 },
   { value: "gpt-5",        name: "GPT-5",        input: 1.25, output: 10.0 },
   { value: "gpt-5-mini",   name: "GPT-5 Mini",   input: 0.25, output: 2.0 },
@@ -53,7 +52,7 @@ function withDefaultFirst(defaultValue: string) {
   ];
 }
 
-const MAIN_MODEL_OPTIONS = withDefaultFirst("gpt-6-sol");
+const MAIN_MODEL_OPTIONS = withDefaultFirst("gpt-6-luna");
 const TRACKING_MODEL_OPTIONS = withDefaultFirst("gpt-6-luna");
 
 function extractValue(settings: Record<string, unknown>, key: string, fallback: string): string {
@@ -223,7 +222,7 @@ export default function AiUsagePage() {
   if (!summary) return <PageLoading error={error} />;
 
   const settings = appConfig?.settings ?? {};
-  const mainModel     = extractValue(settings, "llm_main_model",     "gpt-6-sol");
+  const mainModel     = extractValue(settings, "llm_main_model",     "gpt-6-luna");
   const trackingModel = extractValue(settings, "llm_tracking_model", "gpt-6-luna");
 
   const empty = summary.byModel.length === 0 && summary.byUser.length === 0;

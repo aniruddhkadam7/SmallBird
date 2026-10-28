@@ -139,6 +139,8 @@ Formatting is part of the answer, not optional — every answer beyond a one-lin
 
 7. CODE / IMPLEMENTATION REQUEST (\"Write a function that...\", \"Can you code that up?\", \"Implement X in Python\", \"What would the SQL look like?\", a LeetCode-style problem): the interviewer wants to see actual code, not a description of code. At most one short spoken framing sentence, then a single fenced Markdown code block (```python ... ``` or whatever language fits — use the language the interviewer named, or the clearest idiomatic default for the task, e.g. Python for a general algorithm, SQL for a query, bash for a shell task) containing complete, correct, properly indented code that actually solves what was asked — never pseudocode dressed up as an answer unless pseudocode is explicitly what was asked for. Optionally, one short trailing sentence after the block for a genuinely useful detail (time/space complexity, a key trade-off) — skip this entirely if there's nothing worth adding. Never describe the code in prose instead of writing it.
 
+9. DIAGRAM REQUEST (\"Draw the architecture\", \"Can you draw a diagram of…\", \"Sketch the flow\"): the interviewer wants to see a drawing, not only hear about it. One short spoken sentence, then a single fenced block tagged ```text with a plain-ASCII box-and-arrow diagram of the real components and how data moves between them, then a short numbered walkthrough that matches the boxes. Never describe the diagram in prose instead of drawing it.
+
 A follow-up question answers only the new point being asked, using the FORMAT that matches the follow-up itself (a narrow follow-up usually earns format 1, even if the question it follows up on used a fuller format) — see FOLLOW-UP QUESTIONS below for how to resolve what it's referring to.
 
 WORKED EXAMPLE (format 4, architecture/system design — follow this exact shape AND this exact spoken-sentence-plus-formatting style, adapted to whatever system is actually being discussed):
@@ -294,6 +296,16 @@ const CODE_MARKERS: &[&str] = &[
     "in java", "in c++", "in golang", "in rust", "using python", "using javascript",
     "using sql", "what would the sql", "what would the code", "how would you code",
 ];
+// "Draw / diagram / sketch" — the interviewer wants a picture on screen.
+// "draw" and "sketch" are whole-word checks so "drawback" never matches.
+const DIAGRAM_MARKERS: &[&str] = &["diagram", "flowchart", "flow chart", "visualize", "visualise"];
+const DIAGRAM_WORDS: &[&str] = &["draw", "drawing", "sketch"];
+
+fn is_diagram_request(lowered: &str) -> bool {
+    DIAGRAM_MARKERS.iter().any(|m| lowered.contains(m)) || DIAGRAM_WORDS.iter().any(|w| word_in(lowered, w))
+}
+
+const DIAGRAM_FORMAT: &str = "FORMAT 9 (diagram): one short spoken sentence saying what it is, then a single fenced block tagged ```text holding a box-and-arrow diagram of the real components and how data moves between them, then a short numbered walkthrough (one spoken sentence per stage, stage name **bolded**) that follows the boxes in the same order. Diagram rules: plain ASCII only — boxes like [ Vector DB ] or +-----------+, arrows --> and | with v for down — flowing top to bottom, no line wider than 48 characters, labels of 2-4 words, two boxes side by side only for steps that run in parallel (like vector search and BM25). Keep every column lined up with spaces. Unless the question is about the candidate's own system, keep it general — never \"we built\". Never describe the diagram in prose instead of drawing it.";
 
 /// Meeting questions that refer to a whole list in the meeting material
 /// ("those 11 points", "what did you understand about the use cases",
@@ -345,6 +357,11 @@ fn word_in(text: &str, word: &str) -> bool {
 fn classify_format(question: &str) -> Option<&'static str> {
     let lowered = question.to_lowercase();
 
+    // Checked first: "draw the RAG architecture" also matches the
+    // architecture markers, which would get a spoken walkthrough only.
+    if is_diagram_request(&lowered) {
+        return Some(DIAGRAM_FORMAT);
+    }
     if NARROW_FOLLOWUP_MARKERS.iter().any(|m| lowered.contains(m)) || EXAMPLE_SCOPE_MARKERS.iter().any(|m| lowered.contains(m)) {
         return Some("FORMAT 1-STYLE (narrow follow-up): answer only the specific piece asked about, in one or two direct spoken sentences. No list needed, no recap of the broader topic it's part of.");
     }
@@ -404,6 +421,10 @@ fn length_target(tier: &str) -> LengthTarget {
             prompt_text: "CODE (word count doesn't apply) — at most one short spoken framing sentence, then complete, correct, runnable code in a fenced block, then at most one short trailing sentence only if genuinely useful. Don't pad with unnecessary explanation, but never truncate the code itself to save space — a partial or pseudocode answer is not acceptable when real code was asked for.",
             max_tokens: 500,
         },
+        "diagram" => LengthTarget {
+            prompt_text: "DIAGRAM (word count doesn't apply to the drawing) — the whole diagram, then a walkthrough of about 4-6 short spoken sentences. Never cut the diagram short to save space.",
+            max_tokens: 800,
+        },
         "very_long" => LengthTarget {
             prompt_text: "VERY LONG / DETAILED (a short intro sentence plus roughly 7-10 real sentences or numbered steps) — they explicitly asked for the complete picture. Give the fullest real explanation, covering every real stage with its concrete technology — don't truncate this one to save words.",
             max_tokens: 900,
@@ -434,6 +455,10 @@ const DEFAULT_JUDGE_TEXT: &str = "Judge SHORT/MEDIUM/LONG/VERY LONG from the que
 fn classify_length(question: &str) -> (&'static str, u32) {
     let lowered = question.to_lowercase();
 
+    if is_diagram_request(&lowered) {
+        let t = length_target("diagram");
+        return (t.prompt_text, t.max_tokens);
+    }
     if NARROW_FOLLOWUP_MARKERS.iter().any(|m| lowered.contains(m)) {
         let t = length_target("narrow_followup");
         return (t.prompt_text, t.max_tokens);
@@ -717,7 +742,9 @@ fn max_tokens_for_text(request: &AskRequest) -> u32 {
     if request.meeting.is_some() {
         question_budget = question_budget.max(MEETING_MIN_TOKENS);
     }
-    if request.answer_length == "brief" {
+    // A diagram cut off at 120 tokens is a broken half-drawing, so "brief"
+    // doesn't apply to it.
+    if request.answer_length == "brief" && !is_diagram_request(&asked_text(request).to_lowercase()) {
         question_budget.min(120)
     } else {
         question_budget
@@ -999,6 +1026,26 @@ mod tests {
         assert!(hint.unwrap().contains("FORMAT 7"));
         let (_, budget) = classify_length("Can you write a function that checks if a string is a palindrome?");
         assert_eq!(budget, 500);
+    }
+
+    #[test]
+    fn draw_request_gets_diagram_format_over_architecture() {
+        let q = "advanced rag architecture draw diagram";
+        assert!(classify_format(q).unwrap().contains("FORMAT 9"));
+        assert_eq!(classify_length(q).1, 800);
+        assert!(classify_format("Can you sketch the flow?").unwrap().contains("FORMAT 9"));
+    }
+
+    #[test]
+    fn drawback_is_not_a_diagram_request() {
+        assert!(!classify_format("What's the drawback of RAG?").unwrap_or("").contains("FORMAT 9"));
+    }
+
+    #[test]
+    fn brief_setting_does_not_cut_a_diagram() {
+        let mut req = base_request("Draw the RAG architecture");
+        req.answer_length = "brief".to_string();
+        assert_eq!(max_tokens_for_question(&req), 800);
     }
 
     #[test]

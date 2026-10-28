@@ -9,9 +9,8 @@ import { callAdminFunction, AdminApiError } from "@/lib/adminApi";
 // OpenAI API; classic models use max_tokens + temperature. The proxy handles
 // the parameter translation automatically when an override is applied.
 const MODEL_OPTIONS = [
-  { value: "gpt-6-sol",   label: "GPT-6 Sol — smartest, highest cost (default)" },
-  { value: "gpt-6-luna",  label: "GPT-6 Luna — fast background model" },
-  { value: "gpt-4.1",     label: "GPT-4.1 — strong & cheaper than Sol" },
+  { value: "gpt-6-luna",  label: "GPT-6 Luna — fast, cheapest GPT-6 (default)" },
+  { value: "gpt-4.1",     label: "GPT-4.1 — strong classic" },
   { value: "gpt-4.1-mini",label: "GPT-4.1 Mini — cheaper still, good quality" },
   { value: "gpt-4.1-nano",label: "GPT-4.1 Nano — fastest classic, cheapest" },
   { value: "gpt-5-mini",  label: "GPT-5 Mini — GPT-5 family (note: no Markdown in answers)" },
@@ -143,7 +142,7 @@ function extractValue(settings: Record<string, unknown>, key: string, fallback: 
 }
 
 export function ModelConfigPanel({ settings, onSuccess }: Props) {
-  const mainModel   = extractValue(settings, "llm_main_model",     "gpt-6-sol");
+  const mainModel   = extractValue(settings, "llm_main_model",     "gpt-6-luna");
   const trackModel  = extractValue(settings, "llm_tracking_model", "gpt-6-luna");
 
   const slots: ModelSlot[] = [

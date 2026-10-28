@@ -175,6 +175,12 @@ function MarkdownCode({ className, children, ...rest }: React.ComponentPropsWith
       </code>
     );
   }
+  // "Draw a diagram" answers come back as a ```text box-and-arrow sketch —
+  // wrapping would break its columns apart, so it scrolls sideways instead.
+  const isDiagram = language === "text";
+  const wrap = isDiagram
+    ? { whiteSpace: "pre" as const, overflowWrap: "normal" as const }
+    : { whiteSpace: "pre-wrap" as const, overflowWrap: "anywhere" as const };
   return (
     <SyntaxHighlighter
       language={language}
@@ -190,14 +196,13 @@ function MarkdownCode({ className, children, ...rest }: React.ComponentPropsWith
         // The overlay is narrow — wrap long lines instead of the theme's
         // default horizontal scroll, matching how the rest of the answer
         // already wraps.
-        whiteSpace: "pre-wrap",
-        overflowWrap: "anywhere",
+        ...wrap,
+        overflowX: isDiagram ? "auto" : undefined,
       }}
       codeTagProps={{
         style: {
           fontFamily: '"Cascadia Code", "SF Mono", Menlo, Consolas, monospace',
-          whiteSpace: "pre-wrap",
-          overflowWrap: "anywhere",
+          ...wrap,
         },
       }}
     >

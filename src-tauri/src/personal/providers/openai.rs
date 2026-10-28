@@ -48,7 +48,7 @@ const REASONING_EFFORT: &str = "minimal";
 pub const DEFAULT_GPT6_EFFORT: &str = "low";
 
 /// Callers pick a thinking level per request by naming the model as
-/// "model@effort" (e.g. "gpt-6-sol@medium" for Deep, "gpt-6-sol@low" for
+/// "model@effort" (e.g. "gpt-6-luna@medium" for Deep, "gpt-6-luna@low" for
 /// normal answers — see `personal::client`). Only the model part is sent as
 /// `model`; the effort becomes `reasoning_effort`.
 fn split_model_spec(spec: &str) -> (&str, Option<&str>) {

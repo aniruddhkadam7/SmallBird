@@ -31,7 +31,20 @@ pub fn ensure_markdown_structure(answer: &str) -> String {
     // these sub-points with literal leading spaces, which would otherwise
     // defeat the `^` anchor and leave the whole answer unrewritten even
     // though it's the exact same "Label: sentence" shape underneath.
-    let trimmed: Vec<&str> = lines.iter().map(|line| line.trim_start()).collect();
+    // Lines inside a ``` fence (code, or a ```text diagram whose boxes can
+    // read like "Query: user") are blanked here so they never match.
+    let mut in_fence = false;
+    let trimmed: Vec<&str> = lines
+        .iter()
+        .map(|line| {
+            let t = line.trim_start();
+            if t.starts_with("```") {
+                in_fence = !in_fence;
+                return "";
+            }
+            if in_fence { "" } else { t }
+        })
+        .collect();
 
     let plain_match_count = trimmed.iter().filter(|line| plain_label_re.is_match(line)).count();
     if plain_match_count >= 2 {
@@ -133,6 +146,12 @@ mod tests {
         assert!(out.contains("2. **Chunking:** The documents are split into pieces."));
         assert!(out.contains("3. **Retrieval:** Relevant chunks are retrieved via similarity search."));
         assert!(out.starts_with("RAG combines retrieval with generation."));
+    }
+
+    #[test]
+    fn leaves_label_lines_inside_a_fence_untouched() {
+        let input = "Here's the flow.\n\n```text\nQuery: user question\nSearch: vector + BM25\n```\n\nThat's it.";
+        assert_eq!(ensure_markdown_structure(input), input);
     }
 
     #[test]

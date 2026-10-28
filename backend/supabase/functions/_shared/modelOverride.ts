@@ -1,7 +1,7 @@
 // Forces every proxied LLM request onto the models chosen in the admin
 // console (app_settings llm_main_model / llm_tracking_model), whatever model
-// the client asked for. That covers the current app (gpt-6-sol / gpt-6-luna),
-// older installs that still send gpt-4o / gpt-4.1 / *-mini, and anyone
+// the client asked for. That covers the current app (gpt-6-luna), older
+// installs that still send gpt-6-sol / gpt-4o / gpt-4.1 / *-mini, and anyone
 // calling the proxy directly -- users only ever get the selected models.
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
@@ -11,7 +11,7 @@ export interface ModelOverrides {
   tracking: string; // background conversation tracking
 }
 
-const DEFAULT_OVERRIDES: ModelOverrides = { main: "gpt-6-sol", tracking: "gpt-6-luna" };
+const DEFAULT_OVERRIDES: ModelOverrides = { main: "gpt-6-luna", tracking: "gpt-6-luna" };
 
 // Module-level cache so we don't hit the DB on every single request. Edge
 // function instances are short-lived, so 60s is plenty -- an admin change
