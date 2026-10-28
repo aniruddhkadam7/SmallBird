@@ -34,6 +34,17 @@
   border-color: hsl(var(--border));
 }
 
+/* No rubber-band stretch when pulling past the top or bottom -- feels like
+   an app, not a web page, when opened from the iPhone home screen. */
+html,
+body {
+  overscroll-behavior: none;
+}
+
+html {
+  background-color: hsl(var(--subtle));
+}
+
 body {
   @apply bg-subtle text-ink antialiased;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";

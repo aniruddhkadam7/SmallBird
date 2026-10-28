@@ -7,7 +7,11 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Smallbird Admin",
     short_name: "SB Admin",
+    id: "/",
     start_url: "/dashboard",
+    // Every page (login included) stays inside the app -- nothing opens a
+    // Safari address bar.
+    scope: "/",
     display: "standalone",
     background_color: "#0e1525",
     theme_color: "#0e1525",
