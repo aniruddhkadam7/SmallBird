@@ -7,6 +7,7 @@ import { Unauthorized } from "@/components/Unauthorized";
 import { PageLoading } from "@/components/PageLoading";
 import { ChevronRight } from "lucide-react";
 import type { DeviceSummary } from "@/lib/devices";
+import { formatJoined } from "@/lib/format";
 
 interface UserRow {
   user_id: string;
@@ -133,6 +134,7 @@ export default function UsersPage() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-ink">{u.display_name || u.email}</p>
                   {u.display_name && <p className="truncate text-xs text-muted">{u.email}</p>}
+                  <p className="truncate text-xs text-muted">Joined {formatJoined(u.created_at)}</p>
                 </div>
                 {u.is_owner ? (
                   <span className="badge badge-ok">Owner</span>
