@@ -128,6 +128,73 @@ function formatRupees(amountPaise: number): string {
   return `₹${(amountPaise / 100).toFixed(2)}`;
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" });
+}
+
+function formatMinutes(minutes: number): string {
+  if (minutes >= 60 && minutes % 60 === 0) return `${minutes / 60} hours (${minutes} minutes)`;
+  return `${minutes} minutes`;
+}
+
+// Best-effort receipt/thank-you email to the paying customer. Same
+// never-throws contract as notifyOwner: the payment is already recorded,
+// so an email failure must not make Razorpay retry the webhook.
+async function notifyCustomer(
+  userId: string,
+  kind: "purchase" | "renewal",
+  details: { planId: string; amountPaise: number; minutes: number; reference: string; renewsOn?: string | null },
+): Promise<void> {
+  const resendKey = Deno.env.get("RESEND_API_KEY");
+  if (!resendKey) return;
+  const to = await lookupUserEmail(userId);
+  if (!to) return;
+
+  const planName = details.planId.charAt(0).toUpperCase() + details.planId.slice(1).replace(/[_-]/g, " ");
+  const isRenewal = kind === "renewal";
+  const subject = isRenewal ? `Your SmallBird ${planName} plan has been renewed` : `Welcome to SmallBird ${planName} — payment received`;
+  const heading = isRenewal ? "Thanks for staying with us! 🎉" : "Thank you for your purchase! 🎉";
+  const intro = isRenewal
+    ? `Your <strong>${escapeHtml(planName)}</strong> subscription has renewed successfully and fresh minutes have been added to your account.`
+    : `Your payment was successful and your <strong>${escapeHtml(planName)}</strong> plan is now active. Open the SmallBird app and you're ready to go — your minutes are already in your account.`;
+  const row = (label: string, value: string) =>
+    `<tr><td style="padding:8px 0;color:#6b7280">${label}</td><td style="padding:8px 0;text-align:right;font-weight:600;color:#111827">${value}</td></tr>`;
+
+  const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#111827">
+    <h2 style="margin:0 0 12px">${heading}</h2>
+    <p style="line-height:1.6;margin:0 0 20px">${intro}</p>
+    <table style="width:100%;border-collapse:collapse;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">
+      ${row("Plan", escapeHtml(planName))}
+      ${row("Amount paid", formatRupees(details.amountPaise))}
+      ${row("Minutes added", formatMinutes(details.minutes))}
+      ${details.renewsOn ? row(isRenewal ? "Next renewal" : "Renews on", formatDate(details.renewsOn)) : ""}
+      ${row("Reference", escapeHtml(details.reference))}
+    </table>
+    <p style="line-height:1.6;margin:20px 0 0;color:#374151">🔒 Your payment was processed securely by Razorpay. SmallBird never sees or stores your card details.${isRenewal ? " You can cancel your subscription at any time and keep access until the end of the period you've paid for." : ""}</p>
+    <div style="margin:20px 0 0;padding:16px;background:#f3f4f6;border-radius:8px">
+      <p style="margin:0 0 6px;font-weight:600">Need help? We're here for you.</p>
+      <p style="margin:0;line-height:1.6;color:#374151">Questions about your plan, billing, a refund, or anything not working? Simply reply to this email or contact us at <a href="mailto:support@smallbird.in">support@smallbird.in</a> — a real person will get back to you.</p>
+    </div>
+    <p style="margin:20px 0 0;color:#374151">Thank you for trusting SmallBird.<br>— The SmallBird team</p>
+    <p style="margin:20px 0 0;font-size:12px;line-height:1.5;color:#9ca3af">This is a payment confirmation for your records. We will never ask for your password, OTP or card details by email. If you didn't make this purchase, contact support@smallbird.in right away.</p>
+  </div>`;
+
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${resendKey}`, "content-type": "application/json" },
+      body: JSON.stringify({ from: FROM_ADDRESS, to, subject, html, reply_to: "support@smallbird.in" }),
+    });
+    if (!res.ok) console.error("razorpay-webhook: customer email failed", res.status, await res.text());
+  } catch (err) {
+    console.error("razorpay-webhook: customer email threw", err);
+  }
+}
+
 Deno.serve(async (req) => {
   const rawBody = await req.text();
   const signature = req.headers.get("x-razorpay-signature");
@@ -179,6 +246,13 @@ Deno.serve(async (req) => {
           await admin.from("entitlements").update({ plan_id: planId }).eq("user_id", userId);
         }
 
+        await notifyCustomer(userId, "purchase", {
+          planId,
+          amountPaise: order.amount,
+          minutes: plan.minutes,
+          reference: order.id,
+        });
+
         const buyerEmail = await lookupUserEmail(userId);
         await notifyOwner(
           `💰 ${formatRupees(order.amount)} — ${planId}`,
@@ -227,6 +301,15 @@ Deno.serve(async (req) => {
           p_minutes: plan.minutes,
           p_source: "PURCHASE",
           p_reference_id: payment.id,
+        });
+
+        // paid_count is 1 on the first charge and increments on each renewal.
+        await notifyCustomer(userId, Number(subscription.paid_count) > 1 ? "renewal" : "purchase", {
+          planId,
+          amountPaise: payment.amount,
+          minutes: plan.minutes,
+          reference: payment.id,
+          renewsOn: subscription.current_end ? new Date(subscription.current_end * 1000).toISOString() : null,
         });
 
         const chargedEmail = await lookupUserEmail(userId);
