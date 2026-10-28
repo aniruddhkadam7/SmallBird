@@ -2,8 +2,8 @@
 // haven't opened the desktop app or done an interview yet (see
 // welcome_email_candidates() in 0040_welcome_emails.sql).
 //
-// Called every minute by pg_cron via pg_net, so a new user gets it about 10
-// minutes after signing up (0041_welcome_email_10_min.sql). Safe to be called by anyone: it
+// Called every 20 seconds by pg_cron via pg_net, so a new user gets it
+// within about half a minute of signing up (0042_welcome_email_instant.sql). Safe to be called by anyone: it
 // only ever emails due users, and each user at most once -- the
 // welcome_emails row is claimed before sending, so two overlapping runs
 // can't both send to the same person.
