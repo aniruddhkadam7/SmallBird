@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { callAdminFunction, AdminApiError } from "@/lib/adminApi";
 import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { Wordmark } from "@/components/Wordmark";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -71,8 +72,10 @@ export default function LoginPage() {
               className="relative h-14 w-14 drop-shadow-sm"
             />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight text-ink">Smallbird Admin</h1>
-          <p className="mt-1.5 text-sm text-muted">Internal console &middot; authorized staff only</p>
+          <h1>
+            <Wordmark className="text-[28px]" />
+          </h1>
+          <p className="mt-1.5 text-sm text-muted">Admin console &middot; authorized staff only</p>
         </div>
         <form onSubmit={handleSubmit} className="card space-y-4 sm:p-6">
           <div>

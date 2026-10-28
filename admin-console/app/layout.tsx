@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+// The SmallBird wordmark's font -- the same one the website and desktop app use.
+const playfair = Playfair_Display({ subsets: ["latin"], weight: "700", variable: "--font-brand" });
 
 export const metadata: Metadata = {
   title: "Smallbird Admin",
@@ -52,7 +54,7 @@ const themeInitScript = `
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
+    <html lang="en" className={`${inter.variable} ${playfair.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>

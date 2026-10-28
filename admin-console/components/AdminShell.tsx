@@ -8,6 +8,7 @@ import { Menu, X, ChevronsLeft, ChevronsRight, LayoutDashboard, Users, Video, Re
 import { Nav } from "@/components/Nav";
 import { SignOutButton } from "@/components/SignOutButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { Wordmark } from "@/components/Wordmark";
 
 const COLLAPSE_KEY = "admin-sidebar-collapsed";
 
@@ -48,8 +49,10 @@ function Brand({ collapsed = false }: { collapsed?: boolean }) {
     <div className="flex min-w-0 items-center gap-2.5">
       <Image src="/smallbird-logo.png" alt="" width={32} height={32} className="h-8 w-8 flex-shrink-0" />
       <div className={`min-w-0 ${collapsed ? "lg:hidden" : ""}`}>
-        <p className="truncate text-sm font-semibold text-ink">Smallbird Admin</p>
-        <p className="text-[11px] text-muted">Internal console</p>
+        <p className="whitespace-nowrap leading-tight">
+          <Wordmark className="text-[18px]" />
+        </p>
+        <p className="text-[11px] text-muted">Admin console</p>
       </div>
     </div>
   );
