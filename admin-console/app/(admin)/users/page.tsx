@@ -5,7 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
 import { PageLoading } from "@/components/PageLoading";
-import { deviceBadge, deviceLabel, userStage, type DeviceSummary } from "@/lib/devices";
+import { ChevronRight } from "lucide-react";
+import type { DeviceSummary } from "@/lib/devices";
 
 interface UserRow {
   user_id: string;
@@ -112,74 +113,40 @@ export default function UsersPage() {
         </button>
       </form>
 
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Email</th>
-              <th>Plan</th>
-              <th>Stage</th>
-              <th>Devices</th>
-              <th>Remaining</th>
-              <th>Purchased</th>
-              <th>Consumed</th>
-              <th>Interviews</th>
-              <th>Transcripts</th>
-              <th>Signed up</th>
-              <th>Last seen</th>
-              <th>Flag</th>
-            </tr>
-          </thead>
-          <tbody>
-            {result.users.map((u) => (
-              <tr key={u.user_id}>
-                <td>
-                  <Link href={`/users/${u.user_id}`} className="font-medium text-accent hover:underline">
-                    {u.email}
-                  </Link>
-                  {u.display_name && <span className="ml-1 text-xs text-muted">({u.display_name})</span>}
-                </td>
-                <td>
-                  <span className={`badge ${u.plan_id === "free" ? "badge-muted" : "badge-ok"}`}>{u.plan_id}</span>
-                </td>
-                <td className="whitespace-nowrap text-xs">{userStage(u.devices, u.interview_count)}</td>
-                <td>
-                  <div className="flex flex-wrap gap-1">
-                    {u.devices.map((d) => (
-                      <span
-                        key={`${d.kind}-${d.os}`}
-                        className={`badge ${deviceBadge(d)} whitespace-nowrap`}
-                        title={`Last seen ${new Date(d.lastSeenAt).toLocaleString()}${d.appVersion ? ` · v${d.appVersion}` : ""}`}
-                      >
-                        {deviceLabel(d)}
-                      </span>
-                    ))}
-                    {u.devices.length === 0 && <span className="text-xs text-muted">--</span>}
-                  </div>
-                </td>
-                <td>{Number(u.remaining_minutes).toFixed(1)}</td>
-                <td>{Number(u.total_purchased_minutes).toFixed(0)}</td>
-                <td>{Number(u.total_consumed_minutes).toFixed(1)}</td>
-                <td>{u.interview_count}</td>
-                <td>{u.transcript_count}</td>
-                <td>{new Date(u.created_at).toLocaleDateString()}</td>
-                <td className="whitespace-nowrap">{u.last_seen_at ? new Date(u.last_seen_at).toLocaleDateString() : "--"}</td>
-                <td>
-                  {u.is_owner && <span className="badge badge-ok">Owner</span>}
-                  {u.is_suspicious && <span className="badge badge-danger">Suspicious</span>}
-                </td>
-              </tr>
-            ))}
-            {result.users.length === 0 && (
-              <tr>
-                <td colSpan={12} className="py-8 text-center text-muted">
-                  No users match these filters.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {/* Just who they are and whether they pay; tapping a user opens
+          everything else (devices, minutes, sessions, transcripts). */}
+      <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface shadow-card">
+        {result.users.map((u) => {
+          const paid = u.plan_id !== "free";
+          return (
+            <li key={u.user_id}>
+              <Link
+                href={`/users/${u.user_id}`}
+                className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-subtle active:bg-subtle"
+              >
+                <div
+                  className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-accent/15 text-sm font-semibold text-accent"
+                  aria-hidden
+                >
+                  {(u.display_name || u.email).charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-ink">{u.display_name || u.email}</p>
+                  {u.display_name && <p className="truncate text-xs text-muted">{u.email}</p>}
+                </div>
+                {u.is_owner ? (
+                  <span className="badge badge-ok">Owner</span>
+                ) : (
+                  <span className={`badge ${paid ? "badge-ok" : "badge-muted"}`}>{paid ? "Paid" : "Free"}</span>
+                )}
+                {u.is_suspicious && <span className="badge badge-danger">Suspicious</span>}
+                <ChevronRight size={16} className="flex-shrink-0 text-muted" aria-hidden />
+              </Link>
+            </li>
+          );
+        })}
+        {result.users.length === 0 && <li className="py-8 text-center text-sm text-muted">No users match these filters.</li>}
+      </ul>
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
         <span>
