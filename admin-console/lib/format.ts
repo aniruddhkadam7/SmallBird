@@ -48,3 +48,9 @@ export function avatarGradient(key: string): string {
   for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) | 0;
   return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
 }
+
+// ₹1,994 / ₹2,790.50 -- Indian digit grouping, paise shown only when there are any.
+export function formatRupees(paise: number): string {
+  const rupees = paise / 100;
+  return `₹${rupees.toLocaleString("en-IN", { minimumFractionDigits: rupees % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
+}

@@ -30,3 +30,9 @@ export const SESSION_STATUSES: Record<string, string> = {
   expired: "Timed out",
   terminated: "Ended early",
 };
+
+export const PAYMENT_PERIODS: Record<string, string> = {
+  today: "Today's payments",
+  week: "This week's payments",
+  month: "This month's payments",
+};

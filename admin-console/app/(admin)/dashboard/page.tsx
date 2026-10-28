@@ -19,6 +19,7 @@ import {
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
 import { PageLoading } from "@/components/PageLoading";
+import { formatRupees } from "@/lib/format";
 
 interface DashboardStats {
   totalUsers: number;
@@ -53,6 +54,17 @@ interface DashboardStats {
     iosUsers: number;
     computerBrowserUsers: number;
     websiteOnlyUsers: number;
+  };
+  // Money received (public.purchases), India-time periods.
+  earnings: {
+    totalPaise: number;
+    totalCount: number;
+    todayPaise: number;
+    todayCount: number;
+    weekPaise: number;
+    weekCount: number;
+    monthPaise: number;
+    monthCount: number;
   };
   // Null when GitHub couldn't be reached.
   downloads: {
@@ -188,7 +200,7 @@ function MiniStats({
   items,
   onColor = false,
 }: {
-  items: { label: string; value: number; href: string }[];
+  items: { label: string; value: number | string; href: string; sub?: string }[];
   onColor?: boolean;
 }) {
   return (
@@ -201,8 +213,11 @@ function MiniStats({
             onColor ? "bg-white/15 hover:bg-white/25" : "bg-subtle hover:bg-ink/[0.06]"
           }`}
         >
-          <p className={`text-lg font-semibold tabular-nums ${onColor ? "" : "text-ink"}`}>{x.value.toLocaleString()}</p>
+          <p className={`text-lg font-semibold tabular-nums ${onColor ? "" : "text-ink"}`}>
+            {typeof x.value === "number" ? x.value.toLocaleString() : x.value}
+          </p>
           <p className={`text-[11px] ${onColor ? "text-white/80" : "text-muted"}`}>{x.label}</p>
+          {x.sub && <p className={`text-[10px] ${onColor ? "text-white/70" : "text-muted"}`}>{x.sub}</p>}
         </Link>
       ))}
     </div>
@@ -259,6 +274,45 @@ export default function DashboardPage() {
               { label: "Paid", value: stats.paidUsers, href: "/users?plan=paid" },
               { label: "Free", value: stats.freeUsers, href: "/users?plan=free" },
               { label: "Active 7 days", value: stats.activeUsers7d, href: "/users?segment=active_7d" },
+            ]}
+          />
+        </div>
+      </section>
+
+      {/* Money received. */}
+      <section className="rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 p-5 text-white shadow-card">
+        <Link href="/payments" className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm text-white/80">Total earnings</p>
+            <p className="mt-1 text-4xl font-semibold tabular-nums">{formatRupees(stats.earnings.totalPaise)}</p>
+            <p className="mt-1 text-sm text-white/85">
+              from {stats.earnings.totalCount} payment{stats.earnings.totalCount === 1 ? "" : "s"}
+            </p>
+          </div>
+          <ChevronRight size={20} className="mt-1 text-white/70" aria-hidden />
+        </Link>
+        <div className="mt-4">
+          <MiniStats
+            onColor
+            items={[
+              {
+                label: "Today",
+                value: formatRupees(stats.earnings.todayPaise),
+                sub: `${stats.earnings.todayCount} paid`,
+                href: "/payments?period=today",
+              },
+              {
+                label: "This week",
+                value: formatRupees(stats.earnings.weekPaise),
+                sub: `${stats.earnings.weekCount} paid`,
+                href: "/payments?period=week",
+              },
+              {
+                label: "This month",
+                value: formatRupees(stats.earnings.monthPaise),
+                sub: `${stats.earnings.monthCount} paid`,
+                href: "/payments?period=month",
+              },
             ]}
           />
         </div>
