@@ -12,6 +12,9 @@ export const metadata: Metadata = {
   // bar draws over the page, so the shell pads for the safe areas.
   appleWebApp: { capable: true, title: "SB Admin", statusBarStyle: "black-translucent" },
   formatDetection: { telephone: false },
+  // Next only emits the generic mobile-web-app-capable tag; older iOS needs
+  // Apple's own name for it to open full-screen.
+  other: { "apple-mobile-web-app-capable": "yes" },
 };
 
 export const viewport: Viewport = {
