@@ -5,7 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
 import { PageLoading } from "@/components/PageLoading";
-import { ChevronRight } from "lucide-react";
+import { useState } from "react";
+import { ChevronRight, Search, SlidersHorizontal } from "lucide-react";
 import { appStatus, type DeviceSummary } from "@/lib/devices";
 import { avatarGradient, formatJoined } from "@/lib/format";
 
@@ -45,6 +46,8 @@ export default function UsersPage() {
   const clientFilter = clientParam && CLIENT_FILTERS.includes(clientParam) ? clientParam : undefined;
   const page = Math.max(Number(searchParams.get("page")) || 1, 1);
   const offset = (page - 1) * PAGE_SIZE;
+  const activeFilters = [planFilter, clientFilter, suspiciousOnly || undefined].filter(Boolean).length;
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const { data: result, error } = useAdminQuery<UsersListResponse>("admin-users-list", {
     search,
@@ -82,36 +85,75 @@ export default function UsersPage() {
         <p className="text-sm text-muted">{result.totalCount} total</p>
       </div>
 
-      <form className="flex flex-wrap items-end gap-3" method="get">
-        <div className="w-full sm:w-auto sm:min-w-[240px]">
-          <label className="mb-1 block text-xs font-medium text-muted">Search (email or user id)</label>
-          <input name="q" defaultValue={search ?? ""} className="input" placeholder="jane@example.com" />
+      {/* One compact row on phones: search plus a Filters button. The
+          filters (always shown on wide screens) apply as soon as one is
+          picked, and stay part of the form while hidden so a search keeps
+          them. */}
+      <form className="space-y-2 lg:flex lg:items-center lg:gap-3 lg:space-y-0" method="get">
+        <div className="flex gap-2 lg:w-80">
+          <div className="relative flex-1">
+            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden />
+            <input
+              name="q"
+              type="search"
+              enterKeyHint="search"
+              defaultValue={search ?? ""}
+              className="input !pl-9"
+              placeholder="Search email or user id"
+              aria-label="Search users"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((o) => !o)}
+            aria-expanded={filtersOpen}
+            className={`btn-secondary relative px-3 lg:hidden ${filtersOpen ? "border-accent text-accent" : ""}`}
+          >
+            <SlidersHorizontal size={16} aria-hidden />
+            Filters
+            {activeFilters > 0 && (
+              <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[11px] font-semibold text-white">
+                {activeFilters}
+              </span>
+            )}
+          </button>
         </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-muted">Plan</label>
-          <select name="plan" defaultValue={planFilter ?? ""} className="input">
-            <option value="">All</option>
+        <div className={`${filtersOpen ? "grid" : "hidden"} grid-cols-2 items-center gap-2 lg:flex`}>
+          <select
+            name="plan"
+            defaultValue={planFilter ?? ""}
+            onChange={(e) => e.currentTarget.form?.requestSubmit()}
+            className="input py-1.5 lg:!w-auto"
+            aria-label="Plan"
+          >
+            <option value="">All plans</option>
             <option value="free">Free</option>
             <option value="paid">Paid</option>
           </select>
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-muted">Device</label>
-          <select name="device" defaultValue={clientFilter ?? ""} className="input">
-            <option value="">All</option>
+          <select
+            name="device"
+            defaultValue={clientFilter ?? ""}
+            onChange={(e) => e.currentTarget.form?.requestSubmit()}
+            className="input py-1.5 lg:!w-auto"
+            aria-label="Device"
+          >
+            <option value="">All devices</option>
             <option value="desktop">Desktop app</option>
             <option value="browser">Phone / browser</option>
             <option value="website">Website sign-in</option>
             <option value="none">No device recorded</option>
           </select>
+          <label className="col-span-2 flex items-center gap-2 px-1 text-sm text-ink">
+            <input
+              type="checkbox"
+              name="suspicious"
+              value="1"
+              defaultChecked={suspiciousOnly}
+              onChange={(e) => e.currentTarget.form?.requestSubmit()}
+            />
+            Suspicious only
+          </label>
         </div>
-        <label className="flex items-center gap-2 pb-2 text-sm text-ink">
-          <input type="checkbox" name="suspicious" value="1" defaultChecked={suspiciousOnly} />
-          Suspicious only
-        </label>
-        <button type="submit" className="btn-primary">
-          Apply
-        </button>
       </form>
 
       {/* Just who they are and whether they pay; tapping a user opens
