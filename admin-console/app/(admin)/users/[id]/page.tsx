@@ -9,6 +9,7 @@ import { ManageMinutesPanel } from "@/components/ManageMinutesPanel";
 import { GrantPassPanel } from "@/components/GrantPassPanel";
 import { TranscriptModal } from "@/components/TranscriptModal";
 import { BanUserPanel } from "@/components/BanUserPanel";
+import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { Modal } from "@/components/Modal";
 import { formatDuration } from "@/lib/format";
 import { deviceBadge, deviceLabel, userStage, type DeviceKind, type DeviceOs } from "@/lib/devices";
@@ -52,6 +53,7 @@ interface SessionRow {
   client_os: DeviceOs | null;
   // AI answers given during the session; 0 means nothing was asked.
   ai_answers: number;
+  plan_id: string | null;
   transcript_id: string | null;
   transcript_turn_count: number | null;
 }
@@ -79,7 +81,7 @@ interface DeviceRow {
 }
 
 interface UserDetail {
-  profile: { userId: string; email: string; displayName: string | null; createdAt: string; lastSignInAt: string | null; signUpProvider: string | null; isOwner: boolean; isBanned: boolean; banReason: string | null; bannedAt: string | null; bannedByEmail: string | null };
+  profile: { userId: string; email: string; displayName: string | null; createdAt: string; lastSignInAt: string | null; signUpProvider: string | null; welcomeEmailSentAt: string | null; isOwner: boolean; isBanned: boolean; banReason: string | null; bannedAt: string | null; bannedByEmail: string | null };
   devices: DeviceRow[];
   entitlement: { planId: string; remainingMinutes: number; periodStart: string; periodEnd: string | null; updatedAt: string };
   ledger: LedgerRow[];
@@ -158,6 +160,8 @@ export default function UserDetailPage() {
       </div>
 
       <div className="space-y-6">
+        <ActivityTimeline detail={detail} />
+
         <section className="card">
           <h2 className="text-sm font-semibold text-ink">Overview</h2>
           <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
