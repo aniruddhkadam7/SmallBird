@@ -6,8 +6,8 @@ import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
 import { PageLoading } from "@/components/PageLoading";
 import { ChevronRight } from "lucide-react";
-import type { DeviceSummary } from "@/lib/devices";
-import { formatJoined } from "@/lib/format";
+import { appStatus, type DeviceSummary } from "@/lib/devices";
+import { avatarGradient, formatJoined } from "@/lib/format";
 
 interface UserRow {
   user_id: string;
@@ -119,6 +119,7 @@ export default function UsersPage() {
       <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface shadow-card">
         {result.users.map((u) => {
           const paid = u.plan_id !== "free";
+          const status = appStatus(u.devices, u.interview_count);
           return (
             <li key={u.user_id}>
               <Link
@@ -126,7 +127,7 @@ export default function UsersPage() {
                 className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-subtle active:bg-subtle"
               >
                 <div
-                  className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-accent/15 text-sm font-semibold text-accent"
+                  className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-sm font-semibold text-white shadow-sm ${avatarGradient(u.email)}`}
                   aria-hidden
                 >
                   {(u.display_name || u.email).charAt(0).toUpperCase()}
@@ -135,13 +136,16 @@ export default function UsersPage() {
                   <p className="truncate text-sm font-medium text-ink">{u.display_name || u.email}</p>
                   {u.display_name && <p className="truncate text-xs text-muted">{u.email}</p>}
                   <p className="truncate text-xs text-muted">Joined {formatJoined(u.created_at)}</p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {u.is_owner ? (
+                      <span className="badge badge-ok">Owner</span>
+                    ) : (
+                      <span className={`badge ${paid ? "badge-ok" : "badge-muted"}`}>{paid ? "Paid" : "Free"}</span>
+                    )}
+                    <span className={`badge ${status.badge}`}>{status.label}</span>
+                    {u.is_suspicious && <span className="badge badge-danger">Suspicious</span>}
+                  </div>
                 </div>
-                {u.is_owner ? (
-                  <span className="badge badge-ok">Owner</span>
-                ) : (
-                  <span className={`badge ${paid ? "badge-ok" : "badge-muted"}`}>{paid ? "Paid" : "Free"}</span>
-                )}
-                {u.is_suspicious && <span className="badge badge-danger">Suspicious</span>}
                 <ChevronRight size={16} className="flex-shrink-0 text-muted" aria-hidden />
               </Link>
             </li>

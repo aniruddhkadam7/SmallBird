@@ -27,3 +27,24 @@ export function formatJoined(iso: string, now: Date = new Date()): string {
     ...(d.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
   });
 }
+
+// A colourful gradient for someone's initial circle, always the same one for
+// the same person (picked from their email).
+const AVATAR_GRADIENTS = [
+  "from-pink-500 to-rose-500",
+  "from-orange-400 to-amber-500",
+  "from-emerald-400 to-teal-500",
+  "from-sky-400 to-blue-600",
+  "from-violet-500 to-purple-600",
+  "from-fuchsia-500 to-pink-600",
+  "from-cyan-400 to-sky-600",
+  "from-lime-400 to-green-600",
+  "from-indigo-500 to-violet-600",
+  "from-red-400 to-orange-500",
+];
+
+export function avatarGradient(key: string): string {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
+}

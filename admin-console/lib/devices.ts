@@ -45,3 +45,19 @@ export function userStage(devices: { kind: DeviceKind }[], interviewCount: numbe
   if (usedApp) return "Installed app, no interview yet";
   return "Signed up only";
 }
+
+/// Badge for the Users list: did they only register, or actually get the
+/// app? Older users with interviews but no device on record (from before
+/// device tracking) clearly used the app, so they count as "Used the app".
+/// A computer browser only means they signed in on the website.
+export function appStatus(
+  devices: { kind: DeviceKind; os: DeviceOs }[],
+  interviewCount: number,
+): { label: string; badge: string } {
+  if (devices.some((d) => d.kind === "desktop")) return { label: "App installed", badge: "badge-ok" };
+  if (devices.some((d) => d.kind === "browser" && (d.os === "android" || d.os === "ios"))) {
+    return { label: "Phone only", badge: "badge-warn" };
+  }
+  if (interviewCount > 0) return { label: "Used the app", badge: "badge-ok" };
+  return { label: "Just registered", badge: "badge-muted" };
+}
