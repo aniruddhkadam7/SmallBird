@@ -15,6 +15,25 @@ import { findCustomMode } from "./customModes";
 export type SessionMode = "interview" | "meeting" | "assistant" | "notes" | `custom:${string}`;
 
 const STORAGE_KEY = "smallbird:session-mode";
+// Which account the saved mode belongs to. The saved mode lives on the
+// computer, not the account, so without this a new account signing in on a
+// computer someone already used would start in their last mode instead of
+// Interview.
+const OWNER_KEY = "smallbird:session-mode-owner";
+
+/// Call once the signed-in email is known. Returns true when `email` is a
+/// different account from the one the saved mode belongs to -- the caller
+/// then switches to Interview. The first account seen on a computer keeps
+/// whatever mode it already had.
+export function claimSessionModeFor(email: string): boolean {
+  try {
+    const owner = window.localStorage.getItem(OWNER_KEY);
+    window.localStorage.setItem(OWNER_KEY, email);
+    return owner !== null && owner !== email;
+  } catch {
+    return false;
+  }
+}
 
 export function saveSessionMode(mode: SessionMode): void {
   try {

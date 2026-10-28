@@ -38,7 +38,7 @@ import {
   MEETING_CONTEXT_SECTIONS,
 } from "./headerPopups";
 import { loadLlmProvider, saveLlmProvider, type LlmProvider } from "./llmProviderSetting";
-import { loadSessionMode, saveSessionMode, type SessionMode } from "./sessionMode";
+import { claimSessionModeFor, loadSessionMode, saveSessionMode, type SessionMode } from "./sessionMode";
 import {
   customContextSections,
   customModeId,
@@ -587,15 +587,14 @@ function App() {
   // Start is actually pressed, not on every keystroke.
   const [startRole, setStartRole] = useState("");
   const [startCompany, setStartCompany] = useState("");
-  // Meeting Mode's start details — the purpose is the one required field
-  // (Start Meeting stays disabled without it); participants are optional.
+  // Meeting Mode's start details — all optional, so a meeting can start
+  // straight away; whatever is filled in helps the AI follow the meeting.
   const [startMeetingTopic, setStartMeetingTopic] = useState("");
   const [startParticipants, setStartParticipants] = useState("");
 
   const handleConfirmStart = useCallback(async () => {
     const current = loadOverlaySettings();
     if (isMeeting) {
-      if (!startMeetingTopic.trim()) return;
       saveOverlaySettings({
         ...current,
         mode: "meeting",
@@ -641,6 +640,13 @@ function App() {
     // (which reads this) before the main window gets to save anything.
     saveOverlaySettings({ ...loadOverlaySettings(), mode });
   }, []);
+
+  // A different account signing in starts in Interview, not the previous
+  // account's mode (see claimSessionModeFor).
+  useEffect(() => {
+    if (!authSession?.loggedIn || !authSession.email) return;
+    if (claimSessionModeFor(authSession.email) && sessionStateRef.current === "IDLE") selectMode("interview");
+  }, [authSession?.loggedIn, authSession?.email, selectMode]);
 
   // Drops a mode's context and everything it uploaded.
   const discardCustomContext = useCallback((id: string) => {
@@ -1170,7 +1176,7 @@ function App() {
                         <div className="popover-body start-setup-body">
                           <div className="setup-identity-field">
                             <label className="setup-section-label" htmlFor="start-setup-meeting-topic">
-                              What is this meeting about?
+                              What is this meeting about? <span className="setup-section-optional">Optional</span>
                             </label>
                             <input
                               id="start-setup-meeting-topic"
@@ -1267,8 +1273,6 @@ function App() {
                         <Button
                           variant="primary"
                           onClick={handleConfirmStart}
-                          disabled={isMeeting && !startMeetingTopic.trim()}
-                          title={isMeeting && !startMeetingTopic.trim() ? "Say what the meeting is about first" : undefined}
                         >
                           {isMeeting ? "Start Meeting" : "Start Interview"}
                         </Button>
