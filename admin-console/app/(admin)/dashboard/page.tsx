@@ -22,6 +22,30 @@ interface DashboardStats {
   estimatedAiCostUsd: number;
   failedSessions: number;
   suspiciousAccounts: number;
+  signupsToday: number;
+  signupsThisWeek: number;
+  signupsThisMonth: number;
+  activeUsers7d: number;
+  usersNeverInterviewed: number;
+  devices: {
+    desktopUsers: number;
+    desktopWindows: number;
+    desktopMac: number;
+    browserUsers: number;
+    phoneUsers: number;
+    androidUsers: number;
+    iosUsers: number;
+    computerBrowserUsers: number;
+    websiteOnlyUsers: number;
+  };
+  // Null when GitHub couldn't be reached.
+  downloads: {
+    windowsInstaller: number;
+    windowsUpdates: number;
+    mac: number;
+    latestVersion: string | null;
+    latestVersionDownloads: number;
+  } | null;
 }
 
 function Stat({ label, value, tone }: { label: string; value: string | number; tone?: "danger" | "warn" }) {
@@ -63,7 +87,51 @@ export default function DashboardPage() {
             value={stats.suspiciousAccounts}
             tone={stats.suspiciousAccounts > 0 ? "danger" : undefined}
           />
+          <Stat label="Sign-ups today" value={stats.signupsToday} />
+          <Stat label="Sign-ups this week" value={stats.signupsThisWeek} />
+          <Stat label="Sign-ups this month" value={stats.signupsThisMonth} />
+          <Stat label="Active last 7 days" value={stats.activeUsers7d} />
+          <Stat label="Never did an interview" value={stats.usersNeverInterviewed} />
         </div>
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-sm font-semibold text-muted">Devices (users)</h2>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          <Stat label="Desktop app" value={stats.devices.desktopUsers} />
+          <Stat label="Desktop · Windows" value={stats.devices.desktopWindows} />
+          <Stat label="Desktop · Mac" value={stats.devices.desktopMac} />
+          <Stat label="Phone" value={stats.devices.phoneUsers} />
+          <Stat label="Phone · Android" value={stats.devices.androidUsers} />
+          <Stat label="Phone · iPhone" value={stats.devices.iosUsers} />
+          <Stat label="Browser on computer" value={stats.devices.computerBrowserUsers} />
+          <Stat label="Website only (no app, no phone)" value={stats.devices.websiteOnlyUsers} />
+        </div>
+        <p className="mt-2 text-xs text-muted">
+          Desktop use is recorded from each user&apos;s next sign-in or interview, so older desktop users fill in over time.
+        </p>
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-sm font-semibold text-muted">Downloads</h2>
+        {stats.downloads ? (
+          <>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+              <Stat label="Windows installer downloads" value={stats.downloads.windowsInstaller} />
+              <Stat label="Mac downloads" value={stats.downloads.mac} />
+              <Stat label="Auto-updates" value={stats.downloads.windowsUpdates} />
+              <Stat
+                label={`Latest (${stats.downloads.latestVersion ?? "--"})`}
+                value={stats.downloads.latestVersionDownloads}
+              />
+            </div>
+            <p className="mt-2 text-xs text-muted">
+              From GitHub releases. Downloads are anonymous, so they are totals only, not per user.
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-muted">Could not load download counts from GitHub right now.</p>
+        )}
       </section>
 
       <section>

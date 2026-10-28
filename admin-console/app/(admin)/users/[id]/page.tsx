@@ -11,6 +11,7 @@ import { TranscriptModal } from "@/components/TranscriptModal";
 import { BanUserPanel } from "@/components/BanUserPanel";
 import { Modal } from "@/components/Modal";
 import { formatDuration } from "@/lib/format";
+import { deviceBadge, deviceLabel, userStage, type DeviceKind, type DeviceOs } from "@/lib/devices";
 
 interface LedgerRow {
   id: number;
@@ -47,6 +48,8 @@ interface SessionRow {
   actual_duration_seconds: number | null;
   usage_deducted: boolean;
   termination_reason: string | null;
+  client_kind: DeviceKind | null;
+  client_os: DeviceOs | null;
   transcript_id: string | null;
   transcript_turn_count: number | null;
 }
@@ -61,8 +64,21 @@ interface TranscriptRow {
   created_at: string;
 }
 
+interface DeviceRow {
+  kind: DeviceKind;
+  os: DeviceOs;
+  appVersion: string | null;
+  userAgent: string | null;
+  lastIp: string | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  signInCount: number;
+  sessionCount: number;
+}
+
 interface UserDetail {
-  profile: { userId: string; email: string; displayName: string | null; createdAt: string; lastSignInAt: string | null; isBanned: boolean; banReason: string | null; bannedAt: string | null; bannedByEmail: string | null };
+  profile: { userId: string; email: string; displayName: string | null; createdAt: string; lastSignInAt: string | null; signUpProvider: string | null; isBanned: boolean; banReason: string | null; bannedAt: string | null; bannedByEmail: string | null };
+  devices: DeviceRow[];
   entitlement: { planId: string; remainingMinutes: number; periodStart: string; periodEnd: string | null; updatedAt: string };
   ledger: LedgerRow[];
   purchases: PurchaseRow[];
@@ -112,7 +128,9 @@ export default function UserDetailPage() {
             {detail.profile.displayName ?? "No display name"} &middot; joined{" "}
             {new Date(detail.profile.createdAt).toLocaleString()}
             {detail.profile.lastSignInAt && <> &middot; last sign-in {new Date(detail.profile.lastSignInAt).toLocaleString()}</>}
+            {detail.profile.signUpProvider && <> &middot; signed up with {detail.profile.signUpProvider === "google" ? "Google" : detail.profile.signUpProvider}</>}
           </p>
+          <p className="mt-1 text-sm font-medium text-ink">{userStage(detail.devices, detail.sessionsSummary.total)}</p>
           <p className="mt-1 break-all font-mono text-xs text-muted">{detail.profile.userId}</p>
         </div>
         {/* All admin actions and secondary info live behind these buttons instead
@@ -194,6 +212,49 @@ export default function UserDetailPage() {
         </section>
 
         <section>
+          <h2 className="mb-2 text-sm font-semibold text-ink">Devices ({detail.devices.length})</h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Device</th>
+                  <th>App version</th>
+                  <th>Sign-ins</th>
+                  <th>Interviews</th>
+                  <th>First seen</th>
+                  <th>Last seen</th>
+                  <th>Last IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.devices.map((d) => (
+                  <tr key={`${d.kind}-${d.os}`}>
+                    <td>
+                      <span className={`badge ${deviceBadge(d)} whitespace-nowrap`} title={d.userAgent ?? ""}>
+                        {deviceLabel(d)}
+                      </span>
+                    </td>
+                    <td>{d.appVersion ? `v${d.appVersion}` : "--"}</td>
+                    <td>{d.signInCount}</td>
+                    <td>{d.sessionCount}</td>
+                    <td className="whitespace-nowrap">{new Date(d.firstSeenAt).toLocaleString()}</td>
+                    <td className="whitespace-nowrap">{new Date(d.lastSeenAt).toLocaleString()}</td>
+                    <td className="font-mono text-xs text-muted">{d.lastIp ?? "--"}</td>
+                  </tr>
+                ))}
+                {detail.devices.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="py-6 text-center text-muted">
+                      No device recorded yet. It shows up on the user&apos;s next sign-in or interview.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section>
           <h2 className="mb-2 text-sm font-semibold text-ink">Entitlement ledger ({detail.ledger.length})</h2>
           <div className="table-wrap max-h-96 overflow-y-auto">
             <table>
@@ -245,6 +306,7 @@ export default function UserDetailPage() {
                 <tr>
                   <th>Started</th>
                   <th>Status</th>
+                  <th>Device</th>
                   <th>Duration</th>
                   <th>Minutes consumed</th>
                   <th>Deducted</th>
@@ -269,6 +331,9 @@ export default function UserDetailPage() {
                       </span>
                       {s.termination_reason && <span className="ml-1 text-xs text-muted">({s.termination_reason})</span>}
                     </td>
+                    <td className="whitespace-nowrap text-xs">
+                      {s.client_kind ? deviceLabel({ kind: s.client_kind, os: s.client_os ?? "unknown" }) : "--"}
+                    </td>
                     <td>{s.actual_duration_seconds != null ? formatDuration(s.actual_duration_seconds) : "--"}</td>
                     <td>{s.minutes_consumed != null ? Number(s.minutes_consumed).toFixed(2) : "--"}</td>
                     <td>{s.usage_deducted ? "Yes" : "No"}</td>
@@ -291,7 +356,7 @@ export default function UserDetailPage() {
                 ))}
                 {detail.sessions.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="py-6 text-center text-muted">
+                    <td colSpan={7} className="py-6 text-center text-muted">
                       No sessions.
                     </td>
                   </tr>

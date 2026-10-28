@@ -49,6 +49,13 @@ pub(super) fn client() -> reqwest::Client {
     reqwest::Client::new()
 }
 
+/// Value of the `x-smallbird-client` header, e.g. `desktop/0.1.35 (windows)`,
+/// so the backend can record which app version and OS a user signs in and
+/// runs interviews from (see backend/supabase/functions/_shared/device.ts).
+pub(crate) fn client_header() -> String {
+    format!("desktop/{} ({})", env!("CARGO_PKG_VERSION"), std::env::consts::OS)
+}
+
 pub(super) async fn parse_auth_error(response: reqwest::Response) -> String {
     let status = response.status();
     let text = response.text().await.unwrap_or_default();
@@ -92,6 +99,7 @@ pub async fn verify_otp(email: &str, code: &str, name: Option<&str>) -> Result<A
     let response = client()
         .post(format!("{SUPABASE_URL}/functions/v1/verify-otp"))
         .header("apikey", SUPABASE_ANON_KEY)
+        .header("x-smallbird-client", client_header())
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
         .json(&serde_json::json!({ "email": email, "code": code, "name": name }))
         .send()

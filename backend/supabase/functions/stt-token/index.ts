@@ -13,6 +13,7 @@
 import { entitlementErrorResponse, requireEntitlement } from "../_shared/entitlement.ts";
 import { withCors } from "../_shared/cors.ts";
 import { revokeSessionKey } from "../_shared/deepgram.ts";
+import { detectClient, recordDevice } from "../_shared/device.ts";
 
 // Hard ceiling regardless of balance. It is also how long the minted Deepgram
 // key stays valid, so it bounds the damage if a key ever leaks — but it must
@@ -41,6 +42,8 @@ Deno.serve(withCors(async (req) => {
       MAX_SESSION_SECONDS,
     );
 
+    const client = detectClient(req);
+
     const insertSession = () =>
       entitlement.admin
         .from("interview_sessions")
@@ -51,6 +54,8 @@ Deno.serve(withCors(async (req) => {
           stt_mode: "cloud",
           cloud_stt_provider: "deepgram",
           status: "active",
+          client_kind: client.kind,
+          client_os: client.os,
         })
         .select("id")
         .single();
@@ -106,6 +111,8 @@ Deno.serve(withCors(async (req) => {
     if (sessionErr || !session) {
       throw sessionErr ?? new Error("Failed to create interview session");
     }
+
+    await recordDevice(entitlement.admin, req, entitlement.userId, "session");
 
     const projectId = Deno.env.get("DEEPGRAM_PROJECT_ID")!;
     const managementKey = Deno.env.get("DEEPGRAM_API_KEY")!;

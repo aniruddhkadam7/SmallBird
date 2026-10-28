@@ -15,6 +15,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { withCors } from "../_shared/cors.ts";
 import { allowRequest, clientIp } from "../_shared/ratelimit.ts";
+import { recordDevice } from "../_shared/device.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -146,5 +147,6 @@ Deno.serve(withCors(async (req) => {
   }
 
   const session = await verifyRes.json();
+  await recordDevice(admin, req, linkData.user.id, "sign_in");
   return json(session);
 }));

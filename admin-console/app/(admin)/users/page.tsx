@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
 import { PageLoading } from "@/components/PageLoading";
+import { deviceBadge, deviceLabel, userStage, type DeviceSummary } from "@/lib/devices";
 
 interface UserRow {
   user_id: string;
@@ -19,6 +20,8 @@ interface UserRow {
   interview_count: number;
   transcript_count: number;
   is_suspicious: boolean;
+  devices: DeviceSummary[];
+  last_seen_at: string | null;
 }
 
 interface UsersListResponse {
@@ -27,6 +30,7 @@ interface UsersListResponse {
 }
 
 const PAGE_SIZE = 50;
+const CLIENT_FILTERS = ["desktop", "browser", "website", "none"];
 
 export default function UsersPage() {
   const searchParams = useSearchParams();
@@ -34,6 +38,8 @@ export default function UsersPage() {
   const search = searchParams.get("q")?.trim() || undefined;
   const planFilter = searchParams.get("plan") === "free" || searchParams.get("plan") === "paid" ? searchParams.get("plan")! : undefined;
   const suspiciousOnly = searchParams.get("suspicious") === "1";
+  const clientParam = searchParams.get("device");
+  const clientFilter = clientParam && CLIENT_FILTERS.includes(clientParam) ? clientParam : undefined;
   const page = Math.max(Number(searchParams.get("page")) || 1, 1);
   const offset = (page - 1) * PAGE_SIZE;
 
@@ -41,6 +47,7 @@ export default function UsersPage() {
     search,
     planFilter,
     suspiciousOnly,
+    clientFilter,
     limit: PAGE_SIZE,
     offset,
   });
@@ -55,6 +62,7 @@ export default function UsersPage() {
     if (search) params.set("q", search);
     if (planFilter) params.set("plan", planFilter);
     if (suspiciousOnly) params.set("suspicious", "1");
+    if (clientFilter) params.set("device", clientFilter);
     if (page > 1) params.set("page", String(page));
     for (const [k, v] of Object.entries(overrides)) {
       if (v === undefined) params.delete(k);
@@ -84,6 +92,16 @@ export default function UsersPage() {
             <option value="paid">Paid</option>
           </select>
         </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted">Device</label>
+          <select name="device" defaultValue={clientFilter ?? ""} className="input">
+            <option value="">All</option>
+            <option value="desktop">Desktop app</option>
+            <option value="browser">Phone / browser</option>
+            <option value="website">Website sign-in</option>
+            <option value="none">No device recorded</option>
+          </select>
+        </div>
         <label className="flex items-center gap-2 pb-2 text-sm text-ink">
           <input type="checkbox" name="suspicious" value="1" defaultChecked={suspiciousOnly} />
           Suspicious only
@@ -99,12 +117,15 @@ export default function UsersPage() {
             <tr>
               <th>Email</th>
               <th>Plan</th>
+              <th>Stage</th>
+              <th>Devices</th>
               <th>Remaining</th>
               <th>Purchased</th>
               <th>Consumed</th>
               <th>Interviews</th>
               <th>Transcripts</th>
               <th>Signed up</th>
+              <th>Last seen</th>
               <th>Flag</th>
             </tr>
           </thead>
@@ -120,18 +141,34 @@ export default function UsersPage() {
                 <td>
                   <span className={`badge ${u.plan_id === "free" ? "badge-muted" : "badge-ok"}`}>{u.plan_id}</span>
                 </td>
+                <td className="whitespace-nowrap text-xs">{userStage(u.devices, u.interview_count)}</td>
+                <td>
+                  <div className="flex flex-wrap gap-1">
+                    {u.devices.map((d) => (
+                      <span
+                        key={`${d.kind}-${d.os}`}
+                        className={`badge ${deviceBadge(d)} whitespace-nowrap`}
+                        title={`Last seen ${new Date(d.lastSeenAt).toLocaleString()}${d.appVersion ? ` · v${d.appVersion}` : ""}`}
+                      >
+                        {deviceLabel(d)}
+                      </span>
+                    ))}
+                    {u.devices.length === 0 && <span className="text-xs text-muted">--</span>}
+                  </div>
+                </td>
                 <td>{Number(u.remaining_minutes).toFixed(1)}</td>
                 <td>{Number(u.total_purchased_minutes).toFixed(0)}</td>
                 <td>{Number(u.total_consumed_minutes).toFixed(1)}</td>
                 <td>{u.interview_count}</td>
                 <td>{u.transcript_count}</td>
                 <td>{new Date(u.created_at).toLocaleDateString()}</td>
+                <td className="whitespace-nowrap">{u.last_seen_at ? new Date(u.last_seen_at).toLocaleDateString() : "--"}</td>
                 <td>{u.is_suspicious && <span className="badge badge-danger">Suspicious</span>}</td>
               </tr>
             ))}
             {result.users.length === 0 && (
               <tr>
-                <td colSpan={9} className="py-8 text-center text-muted">
+                <td colSpan={12} className="py-8 text-center text-muted">
                   No users match these filters.
                 </td>
               </tr>

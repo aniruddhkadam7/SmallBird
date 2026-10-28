@@ -1,6 +1,6 @@
 // Paginated, filterable user list for the admin console's Users table.
 // Request body: { search?, planFilter?: "free" | "paid", suspiciousOnly?,
-// limit?, offset? }. admin_list_users() embeds its own admin check, so this
+// clientFilter?: "desktop" | "browser" | "website" | "none", limit?, offset? }. admin_list_users() embeds its own admin check, so this
 // is one Postgres round trip.
 
 import { adminErrorResponse, getUserClient, handlePreflight, jsonResponse, throwOnRpcError } from "../_shared/admin.ts";
@@ -20,6 +20,7 @@ Deno.serve(async (req) => {
     const search = typeof body.search === "string" && body.search.trim() ? body.search.trim() : null;
     const planFilter = body.planFilter === "free" || body.planFilter === "paid" ? body.planFilter : null;
     const suspiciousOnly = body.suspiciousOnly === true;
+    const clientFilter = ["desktop", "browser", "website", "none"].includes(body.clientFilter) ? body.clientFilter : null;
     const limit = Math.min(Math.max(Number(body.limit) || 50, 1), 200);
     const offset = Math.max(Number(body.offset) || 0, 0);
 
@@ -29,6 +30,7 @@ Deno.serve(async (req) => {
       p_suspicious_only: suspiciousOnly,
       p_limit: limit,
       p_offset: offset,
+      p_client_filter: clientFilter,
     });
     if (error) throwOnRpcError(error);
 

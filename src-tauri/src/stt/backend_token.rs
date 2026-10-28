@@ -82,6 +82,7 @@ pub async fn mint(access_token: &str, force: bool) -> Result<MintedSession, Mint
     let response = client()
         .post(format!("{SUPABASE_URL}/functions/v1/stt-token"))
         .bearer_auth(access_token)
+        .header("x-smallbird-client", crate::auth::client::client_header())
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
         .json(&serde_json::json!({ "force": force }))
         .send()
