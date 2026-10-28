@@ -1,9 +1,10 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { ArrowLeft, Download, Smartphone } from "lucide-react"
+import { ArrowLeft, CheckCircle2, Download, Smartphone } from "lucide-react"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
 import { RelatedPages } from "@/components/blocks/related-pages"
+import { WINDOWS_INSTALLER_URL } from "@/lib/download"
 
 export const metadata: Metadata = {
   title: "Download Smallbird for Windows",
@@ -36,15 +37,6 @@ function AppleLogo() {
   )
 }
 
-// The stable "always points at the newest release" URL — GitHub resolves
-// /releases/latest/download/<asset-name> to whatever the latest tagged
-// release's matching asset is, so this link never needs updating per release.
-// Points at the separate SmallBird-releases repo (public installer builds
-// only) rather than this project's own SmallBird repo, which holds the
-// actual source and is private — a private repo's release assets 404 for
-// anyone without repo access, so a public download link can't point there.
-const WINDOWS_INSTALLER_URL = "https://github.com/aniruddhkadam7/SmallBird-releases/releases/latest/download/Smallbird-Setup.exe"
-
 // The download itself is free and ungated — no login required. The app
 // still requires signing in for any AI feature (Interview Mode, Notes),
 // enforced server-side on the desktop app's own session start, so gating
@@ -52,7 +44,12 @@ const WINDOWS_INSTALLER_URL = "https://github.com/aniruddhkadam7/SmallBird-relea
 // account gets the free plan's entitlement automatically anyway, so
 // "logged in" was never actually a paywall, just an extra step before
 // someone could even try the app.
-export default function DownloadPage() {
+//
+// ?welcome=1 is where a brand-new account lands right after signing up
+// (purchase-flow.tsx): same page, with a line saying what to do next.
+export default async function DownloadPage({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
+  const welcome = (await searchParams).welcome === "1"
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-16 sm:py-24">
       <Link
@@ -64,8 +61,23 @@ export default function DownloadPage() {
       </Link>
 
       <div className="mt-10 text-center">
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Download Smallbird</h1>
-        <p className="mt-4 text-muted-foreground">Free to download. Pick your platform below.</p>
+        {welcome ? (
+          <>
+            <p className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-sm text-muted-foreground">
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              Your account is ready
+            </p>
+            <h1 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">Now download Smallbird</h1>
+            <p className="mt-4 text-muted-foreground">
+              Install it on your Windows laptop and log in with the same email. Your free minutes are waiting.
+            </p>
+          </>
+        ) : (
+          <>
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Download Smallbird</h1>
+            <p className="mt-4 text-muted-foreground">Free to download. Pick your platform below.</p>
+          </>
+        )}
       </div>
 
       <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">

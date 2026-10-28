@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
+import type { User } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/client"
 import { PAID_PLAN_IDS, type PlanId } from "@/lib/plans"
 
@@ -45,6 +46,35 @@ declare global {
   }
 }
 
+// A brand-new account is sent straight to the download page once, right
+// after signing up -- without it people registered and then didn't know
+// what to do next. "New" = created in the last 30 minutes, so an old account
+// logging in on a fresh browser isn't sent there.
+const WELCOME_SHOWN_KEY = "smallbird:welcome-shown"
+const NEW_ACCOUNT_MS = 30 * 60 * 1000
+
+function shouldWelcome(user: User): boolean {
+  if (Date.now() - Date.parse(user.created_at) > NEW_ACCOUNT_MS) return false
+  try {
+    return localStorage.getItem(WELCOME_SHOWN_KEY) !== user.id
+  } catch {
+    return true
+  }
+}
+
+function markWelcomed(user: User) {
+  try {
+    localStorage.setItem(WELCOME_SHOWN_KEY, user.id)
+  } catch {
+    // Storage blocked -- they may just be sent there again next time.
+  }
+}
+
+function goToDownload(user: User) {
+  markWelcomed(user)
+  window.location.href = "/download?welcome=1"
+}
+
 function loadRazorpayScript(): Promise<void> {
   if (window.Razorpay) return Promise.resolve()
   return new Promise((resolve, reject) => {
@@ -84,6 +114,24 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
       setSignedUp(true)
       setEmail(data.user.email)
 
+      const pendingPlan = sessionStorage.getItem("smallbird:pending-plan") as PlanId | null
+      sessionStorage.removeItem("smallbird:pending-plan")
+      if (pendingPlan && PAID_PLAN_IDS.has(pendingPlan)) {
+        // Paying first; the "done" step offers the download afterwards.
+        setSelectedPlan(pendingPlan)
+        setActiveFlow({ plan: pendingPlan, step: "payment", authMode: "signup" })
+        markWelcomed(data.user)
+        return
+      }
+
+      // Just signed up (e.g. back from Google): the download page comes
+      // before wherever they were headed.
+      if (shouldWelcome(data.user)) {
+        sessionStorage.removeItem(PENDING_REDIRECT_KEY)
+        goToDownload(data.user)
+        return
+      }
+
       const pendingRedirect = sessionStorage.getItem(PENDING_REDIRECT_KEY)
       if (pendingRedirect) {
         sessionStorage.removeItem(PENDING_REDIRECT_KEY)
@@ -91,15 +139,9 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      const pendingPlan = sessionStorage.getItem("smallbird:pending-plan") as PlanId | null
       if (pendingPlan) {
-        sessionStorage.removeItem("smallbird:pending-plan")
         setSelectedPlan(pendingPlan)
-        if (PAID_PLAN_IDS.has(pendingPlan)) {
-          setActiveFlow({ plan: pendingPlan, step: "payment", authMode: "signup" })
-        } else {
-          setPurchased(true)
-        }
+        setPurchased(true)
       }
     })
   }, [])
@@ -170,6 +212,14 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
         await supabase.auth.updateUser({ data: { full_name: pendingName } })
       }
 
+      const user = verifyData.user
+      const paying = !!activeFlow && PAID_PLAN_IDS.has(activeFlow.plan)
+      if (user && !paying && shouldWelcome(user)) {
+        sessionStorage.removeItem(PENDING_REDIRECT_KEY)
+        goToDownload(user)
+        return
+      }
+
       const pendingRedirect = sessionStorage.getItem(PENDING_REDIRECT_KEY)
       if (pendingRedirect) {
         sessionStorage.removeItem(PENDING_REDIRECT_KEY)
@@ -178,7 +228,8 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
       }
 
       if (!activeFlow) return
-      if (PAID_PLAN_IDS.has(activeFlow.plan)) {
+      if (paying) {
+        if (user) markWelcomed(user)
         setActiveFlow({ plan: activeFlow.plan, step: "payment", authMode: activeFlow.authMode })
       } else {
         setPurchased(true)
