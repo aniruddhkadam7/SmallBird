@@ -15,6 +15,9 @@ verify_jwt = true
 [functions.session-janitor]
 verify_jwt = true
 
+[functions.welcome-email]
+verify_jwt = true
+
 [functions.session-heartbeat]
 verify_jwt = true
 
