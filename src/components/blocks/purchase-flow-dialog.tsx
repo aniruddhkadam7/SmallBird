@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 import { CheckCircle2 } from "lucide-react"
 import {
   Dialog,
@@ -14,6 +13,7 @@ import {
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { PLAN_LABELS, usePurchaseFlow } from "@/lib/purchase-flow"
 import { getPlan } from "@/lib/plans"
+import { DownloadNextSteps } from "@/components/blocks/download-next-steps"
 
 // Google's official four-color "G" logomark, per their brand guidelines for
 // "Continue with Google" buttons — an inline SVG rather than an image file
@@ -42,11 +42,20 @@ function GoogleIcon() {
 }
 
 export function PurchaseFlowDialog() {
-  const { activeFlow, closeFlow, requestCode, verifyCode, signInWithGoogle, completePayment, busy, error } = usePurchaseFlow()
+  const {
+    activeFlow,
+    closeFlow,
+    email: accountEmail,
+    requestCode,
+    verifyCode,
+    signInWithGoogle,
+    completePayment,
+    busy,
+    error,
+  } = usePurchaseFlow()
   const [email, setEmail] = useState("")
   const [name, setName] = useState("")
   const [code, setCode] = useState("")
-  const router = useRouter()
 
   if (!activeFlow) return null
 
@@ -190,20 +199,10 @@ export function PurchaseFlowDialog() {
               </div>
               <DialogTitle className="text-center">You're all set</DialogTitle>
               <DialogDescription className="text-center">
-                {planLabel} is ready. Download Smallbird for Windows to get started.
+                {planLabel} is ready. Here&apos;s how to start using it.
               </DialogDescription>
             </DialogHeader>
-            <DialogFooter>
-              <LiquidButton
-                className="w-full"
-                onClick={() => {
-                  closeFlow()
-                  router.push("/download")
-                }}
-              >
-                Go to download
-              </LiquidButton>
-            </DialogFooter>
+            <DownloadNextSteps email={accountEmail} onDone={closeFlow} />
           </>
         ) : null}
       </DialogContent>
