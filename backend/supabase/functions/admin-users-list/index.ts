@@ -1,9 +1,16 @@
 // Paginated, filterable user list for the admin console's Users table.
 // Request body: { search?, planFilter?: "free" | "paid", suspiciousOnly?,
-// clientFilter?: "desktop" | "browser" | "website" | "none", limit?, offset? }. admin_list_users() embeds its own admin check, so this
+// clientFilter?: "desktop" | "browser" | "website" | "none", segment?,
+// limit?, offset? }. admin_list_users() embeds its own admin check, so this
 // is one Postgres round trip.
 
 import { adminErrorResponse, getUserClient, handlePreflight, jsonResponse, throwOnRpcError } from "../_shared/admin.ts";
+
+// What a Home card counted -- see admin_list_users' p_segment.
+const SEGMENTS = new Set([
+  "joined_today", "joined_week", "joined_month", "active_7d", "interviewed", "never_interviewed",
+  "desktop_windows", "desktop_mac", "android", "ios", "computer_browser", "website_only",
+]);
 
 Deno.serve(async (req) => {
   const preflight = handlePreflight(req);
@@ -21,6 +28,7 @@ Deno.serve(async (req) => {
     const planFilter = body.planFilter === "free" || body.planFilter === "paid" ? body.planFilter : null;
     const suspiciousOnly = body.suspiciousOnly === true;
     const clientFilter = ["desktop", "browser", "website", "none"].includes(body.clientFilter) ? body.clientFilter : null;
+    const segment = SEGMENTS.has(body.segment) ? body.segment : null;
     const limit = Math.min(Math.max(Number(body.limit) || 50, 1), 200);
     const offset = Math.max(Number(body.offset) || 0, 0);
 
@@ -31,6 +39,7 @@ Deno.serve(async (req) => {
       p_limit: limit,
       p_offset: offset,
       p_client_filter: clientFilter,
+      p_segment: segment,
     });
     if (error) throwOnRpcError(error);
 

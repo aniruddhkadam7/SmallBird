@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
 import { PageLoading } from "@/components/PageLoading";
+import { FilterChip } from "@/components/FilterChip";
+import { SESSION_PERIODS, SESSION_STATUSES } from "@/lib/segments";
 
 interface SessionRow {
   session_id: string;
@@ -35,11 +37,14 @@ export default function SessionsPage() {
   const search = searchParams.get("q")?.trim() || undefined;
   const status = searchParams.get("status") || undefined;
   const suspiciousOnly = searchParams.get("suspicious") === "1";
+  const periodParam = searchParams.get("period");
+  const period = periodParam && periodParam in SESSION_PERIODS ? periodParam : undefined;
 
   const { data: result, error } = useAdminQuery<SessionsListResponse>("admin-sessions-list", {
     search,
     status,
     suspiciousOnly,
+    period,
     limit: FETCH_LIMIT,
     offset: 0,
   });
@@ -82,7 +87,15 @@ export default function SessionsPage() {
         </p>
       </div>
 
+      {(period || status) && (
+        <FilterChip
+          label={[period && SESSION_PERIODS[period], status && SESSION_STATUSES[status]].filter(Boolean).join(" · ")}
+          clearHref="/sessions"
+        />
+      )}
+
       <form className="flex flex-wrap items-end gap-3" method="get">
+        {period && <input type="hidden" name="period" value={period} />}
         <div className="w-full sm:w-auto sm:min-w-[240px]">
           <label className="mb-1 block text-xs font-medium text-muted">Search (email or user id)</label>
           <input name="q" defaultValue={search ?? ""} className="input" />
@@ -95,6 +108,7 @@ export default function SessionsPage() {
             <option value="completed">Completed</option>
             <option value="expired">Expired</option>
             <option value="terminated">Terminated</option>
+            <option value="failed">Ended early or timed out</option>
           </select>
         </div>
         <label className="flex items-center gap-2 pb-2 text-sm text-ink">

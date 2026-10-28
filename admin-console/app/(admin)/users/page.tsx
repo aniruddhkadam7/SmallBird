@@ -9,6 +9,8 @@ import { useState } from "react";
 import { ChevronRight, Search, SlidersHorizontal } from "lucide-react";
 import { appStatus, type DeviceSummary } from "@/lib/devices";
 import { avatarGradient, formatJoined } from "@/lib/format";
+import { USER_SEGMENTS } from "@/lib/segments";
+import { FilterChip } from "@/components/FilterChip";
 
 interface UserRow {
   user_id: string;
@@ -44,6 +46,8 @@ export default function UsersPage() {
   const suspiciousOnly = searchParams.get("suspicious") === "1";
   const clientParam = searchParams.get("device");
   const clientFilter = clientParam && CLIENT_FILTERS.includes(clientParam) ? clientParam : undefined;
+  const segmentParam = searchParams.get("segment");
+  const segment = segmentParam && segmentParam in USER_SEGMENTS ? segmentParam : undefined;
   const page = Math.max(Number(searchParams.get("page")) || 1, 1);
   const offset = (page - 1) * PAGE_SIZE;
   const activeFilters = [planFilter, clientFilter, suspiciousOnly || undefined].filter(Boolean).length;
@@ -54,6 +58,7 @@ export default function UsersPage() {
     planFilter,
     suspiciousOnly,
     clientFilter,
+    segment,
     limit: PAGE_SIZE,
     offset,
   });
@@ -69,6 +74,7 @@ export default function UsersPage() {
     if (planFilter) params.set("plan", planFilter);
     if (suspiciousOnly) params.set("suspicious", "1");
     if (clientFilter) params.set("device", clientFilter);
+    if (segment) params.set("segment", segment);
     if (page > 1) params.set("page", String(page));
     for (const [k, v] of Object.entries(overrides)) {
       if (v === undefined) params.delete(k);
@@ -89,7 +95,24 @@ export default function UsersPage() {
           filters (always shown on wide screens) apply as soon as one is
           picked, and stay part of the form while hidden so a search keeps
           them. */}
+      {/* Names what's being shown -- a Home card's slice, or a filter that's
+          hidden behind the Filters button on phones. */}
+      {(segment || planFilter || suspiciousOnly) && (
+        <FilterChip
+          label={[
+            segment && USER_SEGMENTS[segment],
+            planFilter === "paid" ? "Paid" : planFilter === "free" ? "Free" : undefined,
+            suspiciousOnly ? "Suspicious" : undefined,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+          clearHref="/users"
+        />
+      )}
+
       <form className="space-y-2 lg:flex lg:items-center lg:gap-3 lg:space-y-0" method="get">
+        {/* Keeps a Home card's slice while searching or filtering within it. */}
+        {segment && <input type="hidden" name="segment" value={segment} />}
         <div className="flex gap-2 lg:w-80">
           <div className="relative flex-1">
             <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden />

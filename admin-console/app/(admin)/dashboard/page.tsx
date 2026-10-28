@@ -126,53 +126,84 @@ function Tile({
 
 // One measure as horizontal bars in a single colour, with each value written
 // beside its bar (one series, so no legend). Widths are relative to `max`.
-function Bars({ rows, max }: { rows: { label: string; value: number; note?: string }[]; max: number }) {
+function Bars({ rows, max }: { rows: { label: string; value: number; note?: string; href: string }[]; max: number }) {
   return (
-    <ul className="space-y-3">
+    <ul className="-mx-2 space-y-1">
       {rows.map((r) => (
-        <li key={r.label} title={`${r.label}: ${r.value}${r.note ? ` (${r.note})` : ""}`}>
-          <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
-            <span className="text-ink">{r.label}</span>
-            <span className="tabular-nums text-ink">
-              <span className="font-semibold">{r.value.toLocaleString()}</span>
-              {r.note && <span className="ml-1.5 text-xs text-muted">{r.note}</span>}
-            </span>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-ink/[0.06]">
-            <div
-              className="h-full rounded-full bg-accent"
-              style={{ width: `${max > 0 ? Math.max((r.value / max) * 100, r.value > 0 ? 2 : 0) : 0}%` }}
-            />
-          </div>
+        <li key={r.label}>
+          <Link
+            href={r.href}
+            title={`${r.label}: ${r.value}${r.note ? ` (${r.note})` : ""}`}
+            className="block rounded-lg px-2 py-1.5 transition-colors hover:bg-subtle active:bg-subtle"
+          >
+            <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
+              <span className="text-ink">{r.label}</span>
+              <span className="flex items-center gap-1 tabular-nums text-ink">
+                <span className="font-semibold">{r.value.toLocaleString()}</span>
+                {r.note && <span className="ml-0.5 text-xs text-muted">{r.note}</span>}
+                <ChevronRight size={13} className="text-muted/60" aria-hidden />
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-ink/[0.06]">
+              <div
+                className="h-full rounded-full bg-accent"
+                style={{ width: `${max > 0 ? Math.max((r.value / max) * 100, r.value > 0 ? 2 : 0) : 0}%` }}
+              />
+            </div>
+          </Link>
         </li>
       ))}
     </ul>
   );
 }
 
-function Section({ title, aside, href, children }: { title: string; aside?: string; href: string; children: React.ReactNode }) {
+function Section({ title, aside, href, children }: { title: string; aside?: string; href?: string; children: React.ReactNode }) {
+  const header = (
+    <div className="mb-4 flex items-center justify-between gap-3">
+      <h2 className="text-sm font-semibold text-ink">{title}</h2>
+      <span className="flex items-center gap-1 text-xs text-muted">
+        {aside}
+        {href && <ChevronRight size={14} className="text-muted/60" aria-hidden />}
+      </span>
+    </div>
+  );
+  if (href) {
+    return (
+      <CardLink href={href} className="card block">
+        {header}
+        {children}
+      </CardLink>
+    );
+  }
+  // Its rows are the links.
   return (
-    <CardLink href={href} className="card block">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-ink">{title}</h2>
-        <span className="flex items-center gap-1 text-xs text-muted">
-          {aside}
-          <ChevronRight size={14} className="text-muted/60" aria-hidden />
-        </span>
-      </div>
+    <section className="card">
+      {header}
       {children}
-    </CardLink>
+    </section>
   );
 }
 
-function MiniStats({ items, onColor = false }: { items: { label: string; value: number }[]; onColor?: boolean }) {
+function MiniStats({
+  items,
+  onColor = false,
+}: {
+  items: { label: string; value: number; href: string }[];
+  onColor?: boolean;
+}) {
   return (
     <div className="grid grid-cols-3 gap-2 text-center">
       {items.map((x) => (
-        <div key={x.label} className={`rounded-xl px-2 py-2.5 ${onColor ? "bg-white/15" : "bg-subtle"}`}>
+        <Link
+          key={x.label}
+          href={x.href}
+          className={`rounded-xl px-2 py-2.5 transition active:scale-[0.97] ${
+            onColor ? "bg-white/15 hover:bg-white/25" : "bg-subtle hover:bg-ink/[0.06]"
+          }`}
+        >
           <p className={`text-lg font-semibold tabular-nums ${onColor ? "" : "text-ink"}`}>{x.value.toLocaleString()}</p>
           <p className={`text-[11px] ${onColor ? "text-white/80" : "text-muted"}`}>{x.label}</p>
-        </div>
+        </Link>
       ))}
     </div>
   );
@@ -188,12 +219,12 @@ export default function DashboardPage() {
   const interviewed = stats.totalUsers - stats.usersNeverInterviewed;
   const d = stats.devices;
   const deviceRows = [
-    { label: "Desktop app · Windows", value: d.desktopWindows },
-    { label: "Desktop app · Mac", value: d.desktopMac },
-    { label: "Phone · Android", value: d.androidUsers },
-    { label: "Phone · iPhone", value: d.iosUsers },
-    { label: "Browser on a computer", value: d.computerBrowserUsers },
-    { label: "Website only", value: d.websiteOnlyUsers },
+    { label: "Desktop app · Windows", value: d.desktopWindows, href: "/users?segment=desktop_windows" },
+    { label: "Desktop app · Mac", value: d.desktopMac, href: "/users?segment=desktop_mac" },
+    { label: "Phone · Android", value: d.androidUsers, href: "/users?segment=android" },
+    { label: "Phone · iPhone", value: d.iosUsers, href: "/users?segment=ios" },
+    { label: "Browser on a computer", value: d.computerBrowserUsers, href: "/users?segment=computer_browser" },
+    { label: "Website only", value: d.websiteOnlyUsers, href: "/users?segment=website_only" },
   ];
 
   return (
@@ -206,27 +237,36 @@ export default function DashboardPage() {
       </div>
 
       {/* Headline: how many people, and how many joined recently. */}
-      <CardLink href="/users" className="block rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 p-5 text-white shadow-card">
-        <p className="text-sm text-white/80">Total users</p>
-        <p className="mt-1 text-4xl font-semibold tabular-nums">{stats.totalUsers.toLocaleString()}</p>
+      <section className="rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 p-5 text-white shadow-card">
+        <Link href="/users" className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm text-white/80">Total users</p>
+            <p className="mt-1 text-4xl font-semibold tabular-nums">{stats.totalUsers.toLocaleString()}</p>
+          </div>
+          <ChevronRight size={20} className="mt-1 text-white/70" aria-hidden />
+        </Link>
         <p className="mt-1 text-sm text-white/85">
-          +{stats.signupsToday} today · +{stats.signupsThisWeek} this week · +{stats.signupsThisMonth} this month
+          <Link href="/users?segment=joined_today" className="underline-offset-2 hover:underline">+{stats.signupsToday} today</Link>
+          {" · "}
+          <Link href="/users?segment=joined_week" className="underline-offset-2 hover:underline">+{stats.signupsThisWeek} this week</Link>
+          {" · "}
+          <Link href="/users?segment=joined_month" className="underline-offset-2 hover:underline">+{stats.signupsThisMonth} this month</Link>
         </p>
         <div className="mt-4">
           <MiniStats
             onColor
             items={[
-              { label: "Paid", value: stats.paidUsers },
-              { label: "Free", value: stats.freeUsers },
-              { label: "Active 7 days", value: stats.activeUsers7d },
+              { label: "Paid", value: stats.paidUsers, href: "/users?plan=paid" },
+              { label: "Free", value: stats.freeUsers, href: "/users?plan=free" },
+              { label: "Active 7 days", value: stats.activeUsers7d, href: "/users?segment=active_7d" },
             ]}
           />
         </div>
-      </CardLink>
+      </section>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile icon={UserPlus} href="/users" label="Sign-ups today" value={stats.signupsToday} sub={`${stats.signupsThisWeek} this week`} />
-        <Tile icon={Video} href="/sessions" label="Interviews today" value={stats.interviewsToday} sub={`${stats.interviewsThisWeek} this week`} />
+        <Tile icon={UserPlus} href="/users?segment=joined_today" label="Sign-ups today" value={stats.signupsToday} sub={`${stats.signupsThisWeek} this week`} />
+        <Tile icon={Video} href="/sessions?period=today" label="Interviews today" value={stats.interviewsToday} sub={`${stats.interviewsThisWeek} this week`} />
         <Tile
           icon={Clock}
           href="/sessions"
@@ -244,41 +284,50 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Section title="From sign-up to paid" aside="share of all users" href="/users">
+        <Section title="From sign-up to paid" aside="share of all users">
           <Bars
             max={stats.totalUsers}
             rows={[
-              { label: "Signed up", value: stats.totalUsers },
-              { label: "Did an interview", value: interviewed, note: pct(interviewed, stats.totalUsers) },
-              { label: "Paid", value: stats.paidUsers, note: pct(stats.paidUsers, stats.totalUsers) },
+              { label: "Signed up", value: stats.totalUsers, href: "/users" },
+              { label: "Did an interview", value: interviewed, note: pct(interviewed, stats.totalUsers), href: "/users?segment=interviewed" },
+              { label: "Paid", value: stats.paidUsers, note: pct(stats.paidUsers, stats.totalUsers), href: "/users?plan=paid" },
             ]}
           />
         </Section>
 
-        <Section title="Where people use Smallbird" aside="users" href="/users">
+        <Section title="Where people use Smallbird" aside="users">
           <Bars rows={deviceRows} max={Math.max(...deviceRows.map((r) => r.value), 1)} />
           <p className="mt-4 text-xs text-muted">Desktop use is counted from each user&apos;s next sign-in or interview.</p>
         </Section>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Section title="Interviews" aside={`${stats.totalInterviews.toLocaleString()} in total`} href="/sessions">
+        <Section title="Interviews" aside={`${stats.totalInterviews.toLocaleString()} in total`}>
           <MiniStats
             items={[
-              { label: "Today", value: stats.interviewsToday },
-              { label: "This week", value: stats.interviewsThisWeek },
-              { label: "This month", value: stats.interviewsThisMonth },
+              { label: "Today", value: stats.interviewsToday, href: "/sessions?period=today" },
+              { label: "This week", value: stats.interviewsThisWeek, href: "/sessions?period=week" },
+              { label: "This month", value: stats.interviewsThisMonth, href: "/sessions?period=month" },
             ]}
           />
-          <div className="mt-4 space-y-2 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-muted">Transcripts saved</span>
-              <span className="font-semibold tabular-nums text-ink">{stats.totalTranscripts.toLocaleString()}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted">Ended early or timed out</span>
-              <span className="font-semibold tabular-nums text-ink">{stats.failedSessions.toLocaleString()}</span>
-            </div>
+          <div className="-mx-2 mt-3 text-sm">
+            {[
+              { label: "All interviews", value: stats.totalInterviews, href: "/sessions" },
+              { label: "Transcripts saved", value: stats.totalTranscripts, href: "/transcripts" },
+              { label: "Ended early or timed out", value: stats.failedSessions, href: "/sessions?status=failed" },
+            ].map((x) => (
+              <Link
+                key={x.label}
+                href={x.href}
+                className="flex items-center justify-between rounded-lg px-2 py-2 transition-colors hover:bg-subtle active:bg-subtle"
+              >
+                <span className="text-muted">{x.label}</span>
+                <span className="flex items-center gap-1 font-semibold tabular-nums text-ink">
+                  {x.value.toLocaleString()}
+                  <ChevronRight size={13} className="text-muted/60" aria-hidden />
+                </span>
+              </Link>
+            ))}
           </div>
         </Section>
 
@@ -319,14 +368,14 @@ export default function DashboardPage() {
         <Tile icon={CreditCard} href="/subscriptions" label="Active subscriptions" value={stats.activeSubscriptions} sub={`${stats.expiredSubscriptions} ended`} />
         <Tile
           icon={Users}
-          href="/users"
+          href="/users?segment=never_interviewed"
           label="Never did an interview"
           value={stats.usersNeverInterviewed}
           sub={`${pct(stats.usersNeverInterviewed, stats.totalUsers)} of users`}
         />
         <Tile icon={Activity} href="/payments" label="Minutes bought" value={Math.round(stats.totalMinutesPurchased).toLocaleString()} />
         {/* A status, so it carries an icon and words, not colour alone. */}
-        <CardLink href="/abuse" className="card flex flex-col gap-3">
+        <CardLink href="/users?suspicious=1" className="card flex flex-col gap-3">
           <div className="flex items-center gap-2 text-muted">
             <span
               className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${

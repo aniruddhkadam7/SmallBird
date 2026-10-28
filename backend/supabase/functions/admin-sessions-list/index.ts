@@ -5,7 +5,9 @@
 
 import { adminErrorResponse, getUserClient, handlePreflight, jsonResponse, throwOnRpcError } from "../_shared/admin.ts";
 
-const VALID_STATUSES = new Set(["active", "completed", "expired", "terminated"]);
+// "failed" = ended early or timed out (terminated or expired).
+const VALID_STATUSES = new Set(["active", "completed", "expired", "terminated", "failed"]);
+const PERIODS = new Set(["today", "week", "month"]);
 
 Deno.serve(async (req) => {
   const preflight = handlePreflight(req);
@@ -24,6 +26,7 @@ Deno.serve(async (req) => {
     const dateFrom = typeof body.dateFrom === "string" ? body.dateFrom : null;
     const dateTo = typeof body.dateTo === "string" ? body.dateTo : null;
     const suspiciousOnly = body.suspiciousOnly === true;
+    const period = PERIODS.has(body.period) ? body.period : null;
     const limit = Math.min(Math.max(Number(body.limit) || 50, 1), 200);
     const offset = Math.max(Number(body.offset) || 0, 0);
 
@@ -35,6 +38,7 @@ Deno.serve(async (req) => {
       p_suspicious_only: suspiciousOnly,
       p_limit: limit,
       p_offset: offset,
+      p_period: period,
     });
     if (error) throwOnRpcError(error);
 
