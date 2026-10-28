@@ -54,3 +54,9 @@ export function formatRupees(paise: number): string {
   const rupees = paise / 100;
   return `₹${rupees.toLocaleString("en-IN", { minimumFractionDigits: rupees % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
 }
+
+// 10 / 2.5 / 1,234 -- whole minutes stay whole, others get one decimal.
+export function formatMinutes(minutes: number): string {
+  const m = Math.round(Number(minutes) * 10) / 10;
+  return m.toLocaleString("en-IN", { maximumFractionDigits: 1 });
+}

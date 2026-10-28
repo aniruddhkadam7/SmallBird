@@ -8,7 +8,7 @@ import { PageLoading } from "@/components/PageLoading";
 import { useState } from "react";
 import { ChevronRight, Search, SlidersHorizontal } from "lucide-react";
 import { appStatus, type DeviceSummary } from "@/lib/devices";
-import { avatarGradient, formatJoined } from "@/lib/format";
+import { avatarGradient, formatJoined, formatMinutes } from "@/lib/format";
 import { USER_SEGMENTS } from "@/lib/segments";
 import { FilterChip } from "@/components/FilterChip";
 
@@ -201,6 +201,11 @@ export default function UsersPage() {
                   <p className="truncate text-sm font-medium text-ink">{u.display_name || u.email}</p>
                   {u.display_name && <p className="truncate text-xs text-muted">{u.email}</p>}
                   <p className="truncate text-xs text-muted">Joined {formatJoined(u.created_at)}</p>
+                  <p className="truncate text-xs text-muted">
+                    <span className="font-medium text-ink">{formatMinutes(u.remaining_minutes)} min left</span>
+                    {" · "}
+                    {formatMinutes(u.total_consumed_minutes)} used
+                  </p>
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {u.is_owner ? (
                       <span className="badge badge-ok">Owner</span>
