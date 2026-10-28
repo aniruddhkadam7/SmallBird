@@ -14,6 +14,9 @@ interface SessionRow {
   minutes_consumed: number | null;
   is_suspicious: boolean;
   transcript_id: string | null;
+  // AI answers given during the session; 0 means nothing was asked, so no
+  // transcript is expected.
+  ai_answers: number;
 }
 
 interface SessionsListResponse {
@@ -59,7 +62,7 @@ export default function SessionsPage() {
       g.count += 1;
       g.totalMinutes += s.minutes_consumed ?? 0;
       if (s.is_suspicious) g.flagged += 1;
-      if (!s.transcript_id) g.missingTranscripts += 1;
+      if (!s.transcript_id && s.ai_answers > 0) g.missingTranscripts += 1;
       byUser.set(s.user_id, g);
     }
     return Array.from(byUser.values()).sort((a, b) => b.count - a.count);

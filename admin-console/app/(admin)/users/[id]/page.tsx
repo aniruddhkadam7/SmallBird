@@ -50,6 +50,8 @@ interface SessionRow {
   termination_reason: string | null;
   client_kind: DeviceKind | null;
   client_os: DeviceOs | null;
+  // AI answers given during the session; 0 means nothing was asked.
+  ai_answers: number;
   transcript_id: string | null;
   transcript_turn_count: number | null;
 }
@@ -347,9 +349,16 @@ export default function UserDetailPage() {
                         >
                           {s.transcript_turn_count} turn{s.transcript_turn_count === 1 ? "" : "s"}
                         </button>
-                      ) : (
-                        <span className="badge badge-danger" title="No transcript was ever saved for this session">
+                      ) : s.ai_answers > 0 ? (
+                        <span className="badge badge-danger" title="The AI answered in this session, but no transcript was ever saved">
                           Missing
+                        </span>
+                      ) : (
+                        <span
+                          className="badge badge-muted"
+                          title="Nothing was asked in this session (e.g. a Test Audio run), so there was nothing to save"
+                        >
+                          No questions
                         </span>
                       )}
                     </td>
