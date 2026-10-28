@@ -132,7 +132,24 @@ async fn exchange_code_for_session(auth_code: &str, verifier: &str) -> Result<Au
         email: body.user.email.unwrap_or_default(),
     };
     session_store::store_refresh_token(&session.refresh_token, &session.email)?;
+    record_sign_in(session.access_token.clone());
     Ok(session)
+}
+
+/// This sign-in went straight to Supabase Auth, so tell the backend which
+/// device it came from (the email-code path records it in verify-otp).
+/// Fire-and-forget: a failure here must never affect signing in.
+fn record_sign_in(access_token: String) {
+    tauri::async_runtime::spawn(async move {
+        let _ = client()
+            .post(format!("{SUPABASE_URL}/functions/v1/record-sign-in"))
+            .header("apikey", SUPABASE_ANON_KEY)
+            .header("x-smallbird-client", super::client::client_header())
+            .bearer_auth(access_token)
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await;
+    });
 }
 
 #[cfg(test)]

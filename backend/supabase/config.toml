@@ -18,6 +18,9 @@ verify_jwt = true
 [functions.welcome-email]
 verify_jwt = true
 
+[functions.record-sign-in]
+verify_jwt = true
+
 [functions.session-heartbeat]
 verify_jwt = true
 
