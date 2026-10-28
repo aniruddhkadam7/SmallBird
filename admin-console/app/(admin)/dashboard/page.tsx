@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import {
+  ChevronRight,
   Users,
   UserPlus,
   Activity,
@@ -73,21 +75,52 @@ function pct(part: number, whole: number): string {
   return whole > 0 ? `${Math.round((part / whole) * 100)}%` : "0%";
 }
 
-// A headline figure with an icon.
-function Tile({ icon: Icon, label, value, sub }: { icon: LucideIcon; label: string; value: string | number; sub?: string }) {
+// Every card on Home opens the page with the details behind it.
+const TAPPABLE = "transition hover:border-accent/40 hover:shadow-md active:scale-[0.98]";
+
+function CardLink({ href, className, children }: { href: string; className: string; children: React.ReactNode }) {
+  if (href.startsWith("http")) {
+    return (
+      <a href={href} target="_blank" rel="noreferrer" className={`${className} ${TAPPABLE}`}>
+        {children}
+      </a>
+    );
+  }
   return (
-    <div className="card flex flex-col gap-3">
+    <Link href={href} className={`${className} ${TAPPABLE}`}>
+      {children}
+    </Link>
+  );
+}
+
+// A headline figure with an icon.
+function Tile({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  href,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string | number;
+  sub?: string;
+  href: string;
+}) {
+  return (
+    <CardLink href={href} className="card flex flex-col gap-3">
       <div className="flex items-center gap-2 text-muted">
         <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
           <Icon size={16} strokeWidth={2.2} />
         </span>
-        <span className="text-xs font-medium leading-tight">{label}</span>
+        <span className="flex-1 text-xs font-medium leading-tight">{label}</span>
+        <ChevronRight size={14} className="flex-shrink-0 text-muted/60" aria-hidden />
       </div>
       <div>
         <p className="text-2xl font-semibold tabular-nums text-ink">{value}</p>
         {sub && <p className="mt-0.5 text-xs text-muted">{sub}</p>}
       </div>
-    </div>
+    </CardLink>
   );
 }
 
@@ -117,15 +150,18 @@ function Bars({ rows, max }: { rows: { label: string; value: number; note?: stri
   );
 }
 
-function Section({ title, aside, children }: { title: string; aside?: string; children: React.ReactNode }) {
+function Section({ title, aside, href, children }: { title: string; aside?: string; href: string; children: React.ReactNode }) {
   return (
-    <section className="card">
-      <div className="mb-4 flex items-baseline justify-between gap-3">
+    <CardLink href={href} className="card block">
+      <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-ink">{title}</h2>
-        {aside && <span className="text-xs text-muted">{aside}</span>}
+        <span className="flex items-center gap-1 text-xs text-muted">
+          {aside}
+          <ChevronRight size={14} className="text-muted/60" aria-hidden />
+        </span>
       </div>
       {children}
-    </section>
+    </CardLink>
   );
 }
 
@@ -170,7 +206,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Headline: how many people, and how many joined recently. */}
-      <section className="rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 p-5 text-white shadow-card">
+      <CardLink href="/users" className="block rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 p-5 text-white shadow-card">
         <p className="text-sm text-white/80">Total users</p>
         <p className="mt-1 text-4xl font-semibold tabular-nums">{stats.totalUsers.toLocaleString()}</p>
         <p className="mt-1 text-sm text-white/85">
@@ -186,19 +222,21 @@ export default function DashboardPage() {
             ]}
           />
         </div>
-      </section>
+      </CardLink>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile icon={UserPlus} label="Sign-ups today" value={stats.signupsToday} sub={`${stats.signupsThisWeek} this week`} />
-        <Tile icon={Video} label="Interviews today" value={stats.interviewsToday} sub={`${stats.interviewsThisWeek} this week`} />
+        <Tile icon={UserPlus} href="/users" label="Sign-ups today" value={stats.signupsToday} sub={`${stats.signupsThisWeek} this week`} />
+        <Tile icon={Video} href="/sessions" label="Interviews today" value={stats.interviewsToday} sub={`${stats.interviewsThisWeek} this week`} />
         <Tile
           icon={Clock}
+          href="/sessions"
           label="Minutes used"
           value={Math.round(stats.totalMinutesConsumed).toLocaleString()}
           sub={`${Math.round(stats.totalMinutesRemaining).toLocaleString()} still unused`}
         />
         <Tile
           icon={Sparkles}
+          href="/ai-usage"
           label="AI cost"
           value={`$${stats.estimatedAiCostUsd.toFixed(2)}`}
           sub={`${(stats.totalAiTokens / 1_000_000).toFixed(1)}M tokens`}
@@ -206,7 +244,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Section title="From sign-up to paid" aside="share of all users">
+        <Section title="From sign-up to paid" aside="share of all users" href="/users">
           <Bars
             max={stats.totalUsers}
             rows={[
@@ -217,14 +255,14 @@ export default function DashboardPage() {
           />
         </Section>
 
-        <Section title="Where people use Smallbird" aside="users">
+        <Section title="Where people use Smallbird" aside="users" href="/users">
           <Bars rows={deviceRows} max={Math.max(...deviceRows.map((r) => r.value), 1)} />
           <p className="mt-4 text-xs text-muted">Desktop use is counted from each user&apos;s next sign-in or interview.</p>
         </Section>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Section title="Interviews" aside={`${stats.totalInterviews.toLocaleString()} in total`}>
+        <Section title="Interviews" aside={`${stats.totalInterviews.toLocaleString()} in total`} href="/sessions">
           <MiniStats
             items={[
               { label: "Today", value: stats.interviewsToday },
@@ -244,7 +282,7 @@ export default function DashboardPage() {
           </div>
         </Section>
 
-        <Section title="Downloads" aside="from GitHub releases">
+        <Section title="Downloads" aside="from GitHub releases" href="https://github.com/aniruddhkadam7/SmallBird-releases/releases">
           {stats.downloads ? (
             <div className="space-y-3">
               <div className="flex items-center gap-3">
@@ -278,16 +316,17 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile icon={CreditCard} label="Active subscriptions" value={stats.activeSubscriptions} sub={`${stats.expiredSubscriptions} ended`} />
+        <Tile icon={CreditCard} href="/subscriptions" label="Active subscriptions" value={stats.activeSubscriptions} sub={`${stats.expiredSubscriptions} ended`} />
         <Tile
           icon={Users}
+          href="/users"
           label="Never did an interview"
           value={stats.usersNeverInterviewed}
           sub={`${pct(stats.usersNeverInterviewed, stats.totalUsers)} of users`}
         />
-        <Tile icon={Activity} label="Minutes bought" value={Math.round(stats.totalMinutesPurchased).toLocaleString()} />
+        <Tile icon={Activity} href="/payments" label="Minutes bought" value={Math.round(stats.totalMinutesPurchased).toLocaleString()} />
         {/* A status, so it carries an icon and words, not colour alone. */}
-        <div className="card flex flex-col gap-3">
+        <CardLink href="/abuse" className="card flex flex-col gap-3">
           <div className="flex items-center gap-2 text-muted">
             <span
               className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${
@@ -296,13 +335,14 @@ export default function DashboardPage() {
             >
               {stats.suspiciousAccounts > 0 ? <ShieldAlert size={16} /> : <ShieldCheck size={16} />}
             </span>
-            <span className="text-xs font-medium leading-tight">Suspicious accounts</span>
+            <span className="flex-1 text-xs font-medium leading-tight">Suspicious accounts</span>
+            <ChevronRight size={14} className="flex-shrink-0 text-muted/60" aria-hidden />
           </div>
           <div>
             <p className="text-2xl font-semibold tabular-nums text-ink">{stats.suspiciousAccounts}</p>
             <p className="mt-0.5 text-xs text-muted">{stats.suspiciousAccounts > 0 ? "Needs a look" : "All clear"}</p>
           </div>
-        </div>
+        </CardLink>
       </div>
     </div>
   );
