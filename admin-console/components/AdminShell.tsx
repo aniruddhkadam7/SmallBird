@@ -1,14 +1,47 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
-import { Menu, X, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { Menu, X, ChevronsLeft, ChevronsRight, LayoutDashboard, Users, Video, Receipt, type LucideIcon } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { SignOutButton } from "@/components/SignOutButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 const COLLAPSE_KEY = "admin-sidebar-collapsed";
+
+// The phone tab bar's shortcuts; everything else is under "More" (the drawer).
+const TABS: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: "/dashboard", label: "Home", icon: LayoutDashboard },
+  { href: "/users", label: "Users", icon: Users },
+  { href: "/sessions", label: "Sessions", icon: Video },
+  { href: "/payments", label: "Payments", icon: Receipt },
+];
+
+// On phones every table is shown as a stack of cards (see globals.css), and
+// each cell needs its column name to label it. Copies each header's text
+// onto the cells below it as data-label, and keeps doing so as tables
+// re-render with new data.
+function useTableCellLabels() {
+  useEffect(() => {
+    const label = () => {
+      document.querySelectorAll("table").forEach((table) => {
+        const heads = Array.from(table.querySelectorAll("thead th")).map((th) => th.textContent?.trim() ?? "");
+        table.querySelectorAll("tbody tr").forEach((tr) => {
+          Array.from(tr.children).forEach((td, i) => {
+            const text = (td as HTMLElement).hasAttribute("colspan") ? "" : heads[i] ?? "";
+            if (td.getAttribute("data-label") !== text) td.setAttribute("data-label", text);
+          });
+        });
+      });
+    };
+    label();
+    const observer = new MutationObserver(label);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+}
 
 function Brand({ collapsed = false }: { collapsed?: boolean }) {
   return (
@@ -31,6 +64,7 @@ export function AdminShell({ email, children }: { email: string; children: React
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
   const initial = (email || "?").charAt(0).toUpperCase();
+  useTableCellLabels();
 
   // Close the drawer after navigating.
   useEffect(() => {
@@ -71,7 +105,7 @@ export function AdminShell({ email, children }: { email: string; children: React
 
   return (
     <div className="min-h-screen lg:flex">
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-border bg-surface/90 px-4 py-3 backdrop-blur lg:hidden">
+      <header className="safe-x sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-border bg-surface/90 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur lg:hidden">
         <button
           onClick={() => setOpen(true)}
           aria-label="Open menu"
@@ -95,7 +129,7 @@ export function AdminShell({ email, children }: { email: string; children: React
       />
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-border bg-surface transition-transform duration-200 lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:max-w-none lg:flex-shrink-0 lg:translate-x-0 lg:transition-[width] lg:duration-150 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-border bg-surface pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] transition-transform lg:pb-0 lg:pt-0 duration-200 lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:max-w-none lg:flex-shrink-0 lg:translate-x-0 lg:transition-[width] lg:duration-150 ${
           open ? "translate-x-0 shadow-xl" : "-translate-x-full"
         } ${collapsed ? "lg:w-16" : "lg:w-52"}`}
       >
@@ -136,7 +170,38 @@ export function AdminShell({ email, children }: { email: string; children: React
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-x-hidden bg-subtle p-4 sm:p-6">{children}</main>
+      <main className="safe-x min-w-0 flex-1 overflow-x-hidden bg-subtle pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-4 sm:pt-6 lg:p-6">
+        {children}
+      </main>
+
+      <nav
+        aria-label="Main"
+        className="safe-x fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-surface/90 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+      >
+        {TABS.map(({ href, label, icon: Icon }) => {
+          const active = pathname === href || pathname.startsWith(href + "/");
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${active ? "text-accent" : "text-muted"}`}
+            >
+              <Icon size={21} strokeWidth={active ? 2.4 : 2} />
+              {label}
+            </Link>
+          );
+        })}
+        <button
+          onClick={() => setOpen(true)}
+          aria-label="More pages"
+          className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${
+            TABS.some((t) => pathname === t.href || pathname.startsWith(t.href + "/")) ? "text-muted" : "text-accent"
+          }`}
+        >
+          <Menu size={21} />
+          More
+        </button>
+      </nav>
     </div>
   );
 }

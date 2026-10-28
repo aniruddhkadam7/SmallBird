@@ -97,14 +97,74 @@ code {
   -webkit-overflow-scrolling: touch;
 }
 
-/* On phones, keep each row on one line and let the table scroll sideways
-   inside .table-wrap -- wrapped cells made rows jump to uneven heights. */
-@media (max-width: 1023px) {
-  tbody td {
-    @apply whitespace-nowrap px-3 py-2.5;
+/* Side padding that also clears the notch / rounded corners when the
+   phone is turned sideways (the page runs edge to edge: viewport-fit=cover). */
+@layer utilities {
+  .safe-x {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
   }
-  thead th {
-    @apply px-3;
+  @media (min-width: 640px) {
+    .safe-x {
+      padding-left: max(1.5rem, env(safe-area-inset-left));
+      padding-right: max(1.5rem, env(safe-area-inset-right));
+    }
+  }
+}
+
+/* On phones every table becomes a stack of cards: one card per row, each
+   value labelled with its column name (data-label, filled in by
+   AdminShell's useTableCellLabels). The first column -- the row's name, e.g.
+   the user's email -- is the card's title. */
+@media (max-width: 1023px) {
+  .table-wrap,
+  .table-wrap[class*="max-h-"] {
+    @apply overflow-visible rounded-none border-0 bg-transparent shadow-none;
+    max-height: none;
+  }
+  .table-wrap thead {
+    display: none;
+  }
+  .table-wrap table,
+  .table-wrap tbody,
+  .table-wrap tr {
+    display: block;
+  }
+  .table-wrap tbody tr {
+    @apply mb-3 rounded-xl border border-border bg-surface px-4 py-3 shadow-card;
+  }
+  .table-wrap tbody tr:hover {
+    @apply bg-surface;
+  }
+  .table-wrap tbody td {
+    @apply flex items-center justify-between gap-4 border-0 px-0 py-1.5 text-right;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .table-wrap tbody td::before {
+    content: attr(data-label);
+    @apply flex-shrink-0 text-left text-xs font-medium text-muted;
+  }
+  .table-wrap tbody td[data-label=""]::before {
+    display: none;
+  }
+  /* A blank value (e.g. no flag) is just noise in a card. */
+  .table-wrap tbody td:empty {
+    display: none;
+  }
+  .table-wrap tbody td:first-child {
+    @apply mb-1 block border-b border-border pb-2.5 text-left text-[15px] font-semibold;
+  }
+  .table-wrap tbody td:first-child::before {
+    display: none;
+  }
+  /* Empty-state rows ("No users match these filters.") */
+  .table-wrap tbody td[colspan] {
+    @apply block border-0 py-4 text-center font-normal;
+  }
+  /* Cells that only hold badges/buttons line them up on the right. */
+  .table-wrap tbody td > div {
+    @apply justify-end;
   }
 }
 

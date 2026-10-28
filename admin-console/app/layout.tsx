@@ -8,11 +8,17 @@ export const metadata: Metadata = {
   title: "Smallbird Admin",
   description: "Internal admin console -- authorized staff only.",
   robots: { index: false, follow: false },
+  // Added to an iPhone home screen, open full-screen like an app. The status
+  // bar draws over the page, so the shell pads for the safe areas.
+  appleWebApp: { capable: true, title: "SB Admin", statusBarStyle: "black-translucent" },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Stops iOS zooming in when a form field is tapped and leaving the page zoomed.
+  maximumScale: 1,
   viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
