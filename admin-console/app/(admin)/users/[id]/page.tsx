@@ -77,7 +77,7 @@ interface DeviceRow {
 }
 
 interface UserDetail {
-  profile: { userId: string; email: string; displayName: string | null; createdAt: string; lastSignInAt: string | null; signUpProvider: string | null; isBanned: boolean; banReason: string | null; bannedAt: string | null; bannedByEmail: string | null };
+  profile: { userId: string; email: string; displayName: string | null; createdAt: string; lastSignInAt: string | null; signUpProvider: string | null; isOwner: boolean; isBanned: boolean; banReason: string | null; bannedAt: string | null; bannedByEmail: string | null };
   devices: DeviceRow[];
   entitlement: { planId: string; remainingMinutes: number; periodStart: string; periodEnd: string | null; updatedAt: string };
   ledger: LedgerRow[];
@@ -122,6 +122,7 @@ export default function UserDetailPage() {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="break-all text-lg font-semibold text-ink">{detail.profile.email}</h1>
+            {detail.profile.isOwner && <span className="badge badge-ok">Owner</span>}
             {detail.profile.isBanned && <span className="badge badge-danger">Banned</span>}
           </div>
           <p className="text-sm text-muted">

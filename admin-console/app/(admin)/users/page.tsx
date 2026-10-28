@@ -22,6 +22,7 @@ interface UserRow {
   is_suspicious: boolean;
   devices: DeviceSummary[];
   last_seen_at: string | null;
+  is_owner: boolean;
 }
 
 interface UsersListResponse {
@@ -163,7 +164,10 @@ export default function UsersPage() {
                 <td>{u.transcript_count}</td>
                 <td>{new Date(u.created_at).toLocaleDateString()}</td>
                 <td className="whitespace-nowrap">{u.last_seen_at ? new Date(u.last_seen_at).toLocaleDateString() : "--"}</td>
-                <td>{u.is_suspicious && <span className="badge badge-danger">Suspicious</span>}</td>
+                <td>
+                  {u.is_owner && <span className="badge badge-ok">Owner</span>}
+                  {u.is_suspicious && <span className="badge badge-danger">Suspicious</span>}
+                </td>
               </tr>
             ))}
             {result.users.length === 0 && (
