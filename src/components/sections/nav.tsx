@@ -15,6 +15,7 @@ const links = [
   { label: "Reviews", href: "/#reviews" },
   { label: "Privacy", href: "/#privacy" },
   { label: "Pricing", href: "/pricing" },
+  { label: "Resume Builder", href: "/ai-resume-builder" },
   { label: "Mobile", href: "/mobile" },
 ]
 

@@ -54,7 +54,7 @@ export default function SmallbirdAlternativesPage() {
             { label: "Platform", values: ["Windows desktop app (macOS coming soon)", "Desktop app", "Browser/desktop", "Browser-based"] },
             { label: "Invisible on screen share", values: ["Yes", "Stealth mode available", "Stealth mode available", "Not confirmed"] },
             { label: "Free plan", values: ["Yes — 10 min/month", "Yes, limited", "Yes, limited", "Yes, limited"] },
-            { label: "Pricing model", values: ["INR, one-time or monthly", "USD, monthly/annual subscription", "USD, monthly subscription or credits", "USD, monthly subscription"] },
+            { label: "Pricing model", values: ["INR, one-time passes", "USD, monthly/annual subscription", "USD, monthly subscription or credits", "USD, monthly subscription"] },
             { label: "India-specific payment support", values: ["UPI, PhonePe, Paytm, Google Pay", "Not confirmed", "Not confirmed", "Not confirmed"] },
           ]}
           footnote="Information on third-party tools reflects how each company publicly describes its own product as of September 2026 — we have not independently tested them, and pricing and features change. Verify current details on each vendor's own site. Smallbird's row is drawn from our own product and pricing pages."
@@ -102,7 +102,7 @@ export default function SmallbirdAlternativesPage() {
           {
             href: "/pricing",
             label: "Pricing",
-            description: "Free plan, one-time passes, and monthly plans.",
+            description: "Free plan and one-time passes from ₹299.",
           },
         ]}
       />

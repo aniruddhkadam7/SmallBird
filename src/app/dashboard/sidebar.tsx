@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
-import { AudioLines, Gift, LogOut, Menu, Moon, MonitorSmartphone, Sun, X } from "lucide-react"
+import { AudioLines, FileText, Gift, LogOut, Menu, Moon, MonitorSmartphone, Sun, X } from "lucide-react"
 import logo from "@/assets/smallbird-logo.png"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { usePurchaseFlow } from "@/lib/purchase-flow"
@@ -67,17 +67,24 @@ export function DashboardSidebar({
   email,
   name: storedName,
   plan,
+  resumesView,
   children,
 }: {
   email: string
   name: string | null
   plan: PlanInfo | null
+  resumesView: React.ReactNode
   children: React.ReactNode
 }) {
   const router = useRouter()
   const { logout } = usePurchaseFlow()
   const [theme, setTheme] = useTheme()
-  const [view, setView] = useState<"interviews" | "plans">("interviews")
+  const [view, setView] = useState<"interviews" | "resumes" | "plans">("interviews")
+
+  // The resume editor's back button links to /dashboard?view=resumes.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("view") === "resumes") setView("resumes")
+  }, [])
   const [confirmingLogout, setConfirmingLogout] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const name = storedName || nameFromEmail(email)
@@ -150,6 +157,19 @@ export function DashboardSidebar({
             <AudioLines className="h-4 w-4" />
             Interviews
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setView("resumes")
+              setMobileNavOpen(false)
+            }}
+            className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
+              view === "resumes" ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5"
+            }`}
+          >
+            <FileText className="h-4 w-4" />
+            Resumes
+          </button>
         </nav>
 
         <div className="mt-auto flex flex-col gap-3">
@@ -217,7 +237,7 @@ export function DashboardSidebar({
         </div>
       </aside>
 
-      <div className="flex-1 overflow-y-auto">{view === "plans" ? <PlansView /> : children}</div>
+      <div className="flex-1 overflow-y-auto">{view === "plans" ? <PlansView /> : view === "resumes" ? resumesView : children}</div>
 
       {confirmingLogout && (
         <div

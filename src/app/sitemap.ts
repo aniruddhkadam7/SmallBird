@@ -5,6 +5,7 @@ const routes: { path: string; changeFrequency: MetadataRoute.Sitemap[number]["ch
   { path: "", changeFrequency: "weekly", priority: 1 },
   { path: "/pricing", changeFrequency: "monthly", priority: 0.9 },
   { path: "/download", changeFrequency: "monthly", priority: 0.9 },
+  { path: "/ai-resume-builder", changeFrequency: "monthly", priority: 0.8 },
   { path: "/ai-interview-assistant", changeFrequency: "monthly", priority: 0.8 },
   { path: "/ai-interview-copilot", changeFrequency: "monthly", priority: 0.8 },
   { path: "/ai-coding-interview-assistant", changeFrequency: "monthly", priority: 0.8 },

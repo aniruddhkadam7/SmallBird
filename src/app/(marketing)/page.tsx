@@ -6,6 +6,7 @@ import { ProductDemo } from "@/components/sections/product-demo";
 import { Platforms } from "@/components/sections/platforms";
 import { Advantages } from "@/components/sections/advantages";
 import { Reviews } from "@/components/sections/reviews";
+import { ResumeBuilder } from "@/components/sections/resume-builder";
 import { Companies } from "@/components/sections/companies";
 import { Privacy } from "@/components/sections/privacy";
 import { Pricing } from "@/components/sections/pricing";
@@ -47,6 +48,7 @@ export default function Home() {
       <ProductDemo />
       <Platforms />
       <Advantages />
+      <ResumeBuilder />
       <Reviews />
       <Companies />
       <Privacy />

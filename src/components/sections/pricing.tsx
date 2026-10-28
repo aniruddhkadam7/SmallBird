@@ -34,8 +34,8 @@ export function Pricing() {
             Simple, transparent pricing
           </h2>
           <p className="mt-4 text-muted-foreground">
-            Priced for India. One-time, monthly, or yearly — pick what fits
-            how often you use Smallbird.
+            Priced for India. One-time passes, no subscriptions — pick the
+            one that fits how much you're interviewing.
           </p>
         </div>
 
@@ -101,8 +101,8 @@ export function Pricing() {
         </div>
 
         <p className="mt-8 text-center text-xs text-muted-foreground">
-          Prices are in INR and include applicable taxes. Starter is a
-          one-time purchase; Pro and Pro Plus are recurring subscriptions.
+          Prices are in INR and include applicable taxes. All passes are
+          one-time purchases, valid until used.
         </p>
 
         <div className="mt-10 flex flex-wrap items-center justify-center gap-2.5">

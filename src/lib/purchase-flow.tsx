@@ -3,15 +3,15 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
 import type { User } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/client"
-import { PAID_PLAN_IDS, SUBSCRIPTION_PLAN_IDS, type PlanId } from "@/lib/plans"
+import { PAID_PLAN_IDS, type PlanId } from "@/lib/plans"
 
 export type { PlanId }
 
 export const PLAN_LABELS: Record<PlanId, string> = {
   free: "Free",
-  starter: "Starter",
-  pro: "Pro",
-  "pro-plus": "Pro Plus",
+  starter: "Starter Pass",
+  pro: "Pro Pass",
+  "pro-plus": "Pro+ Pass",
 }
 
 export type FlowStep = "signup" | "verify" | "payment" | "processing" | "done"
@@ -75,6 +75,13 @@ function goToDownload(user: User) {
   window.location.href = "/download?welcome=1"
 }
 
+/// Someone who signed up to build a resume (a template tap, "Build my resume")
+/// came for the website's resume builder, not the desktop app, so they skip
+/// the download page and go straight to what they asked for.
+function cameForResume(pendingRedirect: string | null): boolean {
+  return !!pendingRedirect && (pendingRedirect.startsWith("/resume") || pendingRedirect.includes("view=resumes"))
+}
+
 function loadRazorpayScript(): Promise<void> {
   if (window.Razorpay) return Promise.resolve()
   return new Promise((resolve, reject) => {
@@ -124,15 +131,20 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
         return
       }
 
+      const pendingRedirect = sessionStorage.getItem(PENDING_REDIRECT_KEY)
+
       // Just signed up (e.g. back from Google): the download page comes
-      // before wherever they were headed.
+      // before wherever they were headed — unless they came for a resume.
       if (shouldWelcome(data.user)) {
-        sessionStorage.removeItem(PENDING_REDIRECT_KEY)
-        goToDownload(data.user)
-        return
+        if (cameForResume(pendingRedirect)) {
+          markWelcomed(data.user)
+        } else {
+          sessionStorage.removeItem(PENDING_REDIRECT_KEY)
+          goToDownload(data.user)
+          return
+        }
       }
 
-      const pendingRedirect = sessionStorage.getItem(PENDING_REDIRECT_KEY)
       if (pendingRedirect) {
         sessionStorage.removeItem(PENDING_REDIRECT_KEY)
         window.location.href = pendingRedirect
@@ -214,13 +226,17 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
 
       const user = verifyData.user
       const paying = !!activeFlow && PAID_PLAN_IDS.has(activeFlow.plan)
+      const pendingRedirect = sessionStorage.getItem(PENDING_REDIRECT_KEY)
       if (user && !paying && shouldWelcome(user)) {
-        sessionStorage.removeItem(PENDING_REDIRECT_KEY)
-        goToDownload(user)
-        return
+        if (cameForResume(pendingRedirect)) {
+          markWelcomed(user)
+        } else {
+          sessionStorage.removeItem(PENDING_REDIRECT_KEY)
+          goToDownload(user)
+          return
+        }
       }
 
-      const pendingRedirect = sessionStorage.getItem(PENDING_REDIRECT_KEY)
       if (pendingRedirect) {
         sessionStorage.removeItem(PENDING_REDIRECT_KEY)
         window.location.href = pendingRedirect
@@ -298,8 +314,7 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
     try {
       await loadRazorpayScript()
 
-      const endpoint = SUBSCRIPTION_PLAN_IDS.has(plan) ? "/api/razorpay/create-subscription" : "/api/razorpay/create-order"
-      const response = await fetch(endpoint, {
+      const response = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ planId: plan }),
@@ -307,13 +322,14 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? "Could not start checkout")
 
-      const isSubscription = SUBSCRIPTION_PLAN_IDS.has(plan)
       const checkout = new window.Razorpay!({
         key: data.keyId,
         name: "Smallbird",
         image: `${window.location.origin}/smallbird-logo.png`,
         description: PLAN_LABELS[plan],
-        ...(isSubscription ? { subscription_id: data.subscriptionId } : { order_id: data.orderId, amount: data.amount, currency: data.currency }),
+        order_id: data.orderId,
+        amount: data.amount,
+        currency: data.currency,
         prefill: email ? { email } : undefined,
         handler: () => {
           // Razorpay confirms payment client-side here, but the actual

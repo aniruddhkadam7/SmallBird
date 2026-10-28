@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { DashboardSidebar } from "./sidebar"
 import { InterviewsList } from "./interviews-list"
+import { ResumesList, type ResumeListItem } from "./resumes-list"
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -37,17 +38,24 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect("/")
   }
 
-  const [{ data: entitlement }, { data: transcripts }] = await Promise.all([
+  const [{ data: entitlement }, { data: transcripts }, { data: resumes }] = await Promise.all([
     supabase
       .from("entitlements")
-      .select("remaining_minutes, plans(display_name, billing_type)")
+      .select("plan_id, remaining_minutes, plans(display_name, billing_type)")
       .eq("user_id", user.id)
-      .returns<{ remaining_minutes: number; plans: { display_name: string; billing_type: string } | null }[]>()
+      .returns<
+        { plan_id: string; remaining_minutes: number; plans: { display_name: string; billing_type: string } | null }[]
+      >()
       .single(),
     supabase
       .from("interview_transcripts")
       .select("id, started_at_ms, ended_at_ms, role, company, turns")
       .order("started_at_ms", { ascending: false }),
+    supabase
+      .from("resumes")
+      .select("id, title, data, updated_at")
+      .order("updated_at", { ascending: false })
+      .returns<ResumeListItem[]>(),
   ])
 
   const plan = entitlement
@@ -67,7 +75,20 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const fullName = typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name.trim() : null
 
   return (
-    <DashboardSidebar email={user.email} name={fullName || null} plan={plan}>
+    <DashboardSidebar
+      email={user.email}
+      name={fullName || null}
+      plan={plan}
+      resumesView={
+        <ResumesList
+          resumes={resumes ?? []}
+          name={fullName ?? ""}
+          email={user.email}
+          planId={entitlement?.plan_id ?? "free"}
+          planName={plan?.displayName ?? "Free"}
+        />
+      }
+    >
       <InterviewsList transcripts={transcripts ?? []} />
     </DashboardSidebar>
   )

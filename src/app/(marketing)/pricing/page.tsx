@@ -7,7 +7,7 @@ import { RelatedPages } from "@/components/blocks/related-pages"
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Smallbird pricing: a free plan with 10 minutes a month, a ₹399 one-time interview pass, and Pro plans from ₹699/month for regular use.",
+    "Smallbird pricing: a free plan with 10 minutes a month, and one-time passes from ₹299 for 60 minutes up to ₹999 for 240 minutes. No subscriptions.",
   alternates: { canonical: "/pricing" },
 }
 
@@ -18,9 +18,9 @@ const faqs = [
       "Yes — the Free plan includes 10 minutes a month of Interview Mode with no card required, so you can try Smallbird before paying for anything.",
   },
   {
-    question: "What's the difference between Starter and Pro?",
+    question: "What's the difference between the passes?",
     answer:
-      "Starter is a one-time ₹399 purchase giving you 1 hour of Interview Mode, valid until used — good for a single upcoming interview. Pro and Pro Plus are monthly subscriptions (₹699 and ₹999) with 3 and 6 hours a month respectively, for ongoing job searches.",
+      "All three are one-time purchases, valid until used — there are no subscriptions. Starter Pass is ₹299 for 60 minutes, Pro Pass is ₹559 for 120 minutes, and Pro+ Pass is ₹999 for 240 minutes. Bigger passes cost less per minute (₹4.98, ₹4.66 and ₹4.16).",
   },
   {
     question: "How is usage measured?",
@@ -40,7 +40,7 @@ export default function PricingPage() {
       <PageHeader
         eyebrow="Pricing"
         title="Simple, transparent pricing"
-        description="Priced for India. Start free, then pick a one-time pass or a monthly plan based on how often you're interviewing."
+        description="Priced for India. Start free, then pick a one-time pass sized to how much you're interviewing."
       />
 
       <Pricing />
