@@ -15,7 +15,9 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 
 const FROM_ADDRESS = "Smallbird Support <support@smallbird.in>";
 const SUBJECT = "Clear any interview with your AI interview copilot";
-const DOWNLOAD_URL = "https://github.com/aniruddhkadam7/SmallBird-releases/releases/latest/download/Smallbird-Setup.exe";
+// The website's download page, not the GitHub file -- tapping the button
+// should land on Smallbird, not GitHub.
+const DOWNLOAD_URL = "https://smallbird.in/download";
 const BATCH = 50;
 // Resend's default limit is 2 requests a second.
 const SEND_GAP_MS = 600;
