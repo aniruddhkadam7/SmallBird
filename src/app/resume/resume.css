@@ -97,6 +97,7 @@
 
 .rv-navy {
   --rv-navy: rgb(0, 54, 123);
+  padding: 0.5in 0.55in;
   font-family: var(--font-resume-serif), "Times New Roman", serif;
 }
 
@@ -700,12 +701,28 @@
   padding-left: 0.16in;
 }
 
+/* ---- Click to edit (editor only) --------------------------------------- */
+
+@media screen {
+  .rb-editable [data-edit] {
+    cursor: text;
+    border-radius: 2px;
+  }
+
+  /* Only the innermost line under the mouse, not the entry around it. */
+  .rb-editable [data-edit]:hover:not(:has([data-edit]:hover)) {
+    outline: 1px dashed #3b82f6;
+    outline-offset: 1px;
+    background: rgba(59, 130, 246, 0.06);
+  }
+}
+
 /* ---- Print ------------------------------------------------------------- */
 
 /* Margins on the page, not padding on .rv-page, so a second page gets them too. */
 @page {
   size: A4;
-  margin: 0.6in 0.75in;
+  margin: 0.5in 0.55in;
 }
 
 @page classic {

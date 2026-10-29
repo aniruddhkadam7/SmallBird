@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { editAttrs } from "@/lib/resume/edit-target"
 import {
   hasSidebar,
   type ContactItem,
@@ -25,6 +26,13 @@ import {
 //    with coloured labels, a "date | entry" timeline on the right.
 // In the two-column ones, text and table sections go in the side column and
 // entry sections in the main one, whatever order they are in.
+//
+// The flowing content is cut into blocks (a section title, a paragraph, a
+// skills table, an entry's heading, one bullet line) so a paged preview can
+// split a resume into A4 pages between any two blocks. Every block's outer
+// element carries data-b=<its index> for that measuring.
+//
+// Every line the user can click to edit carries editAttrs (lib/resume/edit-target.ts).
 //
 // Shared conventions in any line: `**text**` is bold, and a line starting
 // with "- " is a dash sub-point under the bullet before it.
@@ -84,7 +92,7 @@ function Contact({ contact, template }: { contact: ContactItem[]; template: Temp
     return (
       <div className="rv-contact">
         {contact.map((item) => (
-          <span key={item.id} className="rv-contact-item">
+          <span key={item.id} className="rv-contact-item" {...editAttrs({ kind: "contact", id: item.id })}>
             <Icon name={iconFor(item)} />
             <span className={template === "classic" && looksLikeLink(item) ? "rv-link" : undefined}>{item.value}</span>
           </span>
@@ -100,7 +108,7 @@ function Contact({ contact, template }: { contact: ContactItem[]; template: Temp
       {rows.map((row, i) => (
         <div key={i}>
           {row.map((item, j) => (
-            <span key={item.id}>
+            <span key={item.id} {...editAttrs({ kind: "contact", id: item.id })}>
               {j > 0 && <span className="rv-sep"> ✻ </span>}
               {item.label && <em className="rv-tag">{item.label}: </em>}
               {item.value}
@@ -112,66 +120,147 @@ function Contact({ contact, template }: { contact: ContactItem[]; template: Temp
   )
 }
 
-function Bullets({ items }: { items: string[] }) {
-  return (
-    <ul className="rv-bullets">
-      {items.map((item, i) =>
-        item.startsWith("- ") ? (
-          <li key={i} className="rv-sub">
-            {rich(item.slice(2))}
-          </li>
-        ) : (
-          <li key={i}>{rich(item)}</li>
-        ),
-      )}
-    </ul>
-  )
-}
-
 const DETAIL = /^\*\*([^*]+?):?\*\*:?\s*(.*)$/
 
+/** A line of entry.items with its position there (blanks included), so a click can find it again. */
+type Line = { text: string; index: number }
+type Detail = { label: string; value: string; index: number }
+
 /** The leading "**Label:** value" lines of an entry (Project:, Client:, Responsibilities: ...). */
-function splitDetails(items: string[]): { details: { label: string; value: string }[]; rest: string[] } {
-  const details: { label: string; value: string }[] = []
+function splitDetails(items: Line[]): { details: Detail[]; rest: Line[] } {
+  const details: Detail[] = []
   let i = 0
   for (; i < items.length; i++) {
-    const m = DETAIL.exec(items[i])
+    const m = DETAIL.exec(items[i].text)
     if (!m) break
-    details.push({ label: m[1], value: m[2] })
+    details.push({ label: m[1], value: m[2], index: items[i].index })
   }
   return { details, rest: items.slice(i) }
 }
 
-function ModernEntryHead({ entry }: { entry: ResumeEntry }) {
-  const place = entry.subheadingRight
-  const when = entry.headingRight
+/** An entry's detail lines and the remaining items, as drawn. */
+function entryParts(entry: ResumeEntry) {
+  const all = entry.items.map((text, index) => ({ text, index })).filter((line) => line.text)
+  const split = splitDetails(all)
+  // A single bold lead-in ("**Relevant Coursework:** ...") stays a normal line;
+  // two or more make a detail block (a grid in modern, one line elsewhere).
+  return split.details.length >= 2 ? split : { details: [] as Detail[], rest: all }
+}
+
+function visibleEntries(entries: ResumeEntry[]): ResumeEntry[] {
+  return entries.filter((e) => e.heading || e.subheading || e.items.some(Boolean))
+}
+
+/** The right-side fields hold a date and a place in either order; find which is which. */
+function dateAndPlace(entry: ResumeEntry): { date: string; place: string } {
+  const [a, b] = [entry.headingRight, entry.subheadingRight]
+  if (a && isDate(a)) return { date: a, place: b }
+  if (b && isDate(b)) return { date: b, place: a }
+  return { date: "", place: [a, b].filter(Boolean).join(" · ") }
+}
+
+// ---- Blocks ----------------------------------------------------------------
+
+type EntriesSection = Extract<ResumeSection, { kind: "entries" }>
+
+export type Block =
+  | { kind: "title"; section: ResumeSection }
+  | { kind: "text"; section: Extract<ResumeSection, { kind: "text" }> }
+  | { kind: "table"; section: Extract<ResumeSection, { kind: "table" }> }
+  /** An entry's heading lines plus its detail lines. */
+  | { kind: "head"; section: EntriesSection; entry: ResumeEntry }
+  /** One bullet / line of an entry. */
+  | { kind: "item"; section: EntriesSection; entry: ResumeEntry; line: Line }
+
+/** The blocks that flow down the page (the main column, in two-column templates). */
+export function flowBlocks(data: ResumeData): Block[] {
+  const twoCol = hasSidebar(data.template)
+  const blocks: Block[] = []
+  for (const section of data.sections) {
+    if (section.kind === "text") {
+      if (twoCol || !section.text) continue
+      blocks.push({ kind: "title", section }, { kind: "text", section })
+    } else if (section.kind === "table") {
+      if (twoCol || section.rows.every((r) => !r.label && !r.value)) continue
+      blocks.push({ kind: "title", section }, { kind: "table", section })
+    } else {
+      const entries = visibleEntries(section.entries)
+      if (entries.length === 0) continue
+      blocks.push({ kind: "title", section })
+      for (const entry of entries) {
+        const { details, rest } = entryParts(entry)
+        if (entry.heading || entry.subheading || entry.headingRight || entry.subheadingRight || details.length > 0) {
+          blocks.push({ kind: "head", section, entry })
+        }
+        for (const line of rest) blocks.push({ kind: "item", section, entry, line })
+      }
+    }
+  }
+  return blocks
+}
+
+function Details({ sectionId, entry, template }: { sectionId: string; entry: ResumeEntry; template: TemplateId }) {
+  const { details } = entryParts(entry)
+  if (details.length === 0) return null
+  const attrs = (d: Detail) => editAttrs({ kind: "item", sectionId, id: entry.id, index: d.index })
+  if (template === "modern") {
+    return (
+      <div className="rv-details">
+        {details.map((d, i) => (
+          <p key={i} className={d.value ? undefined : "rv-details-wide"} {...attrs(d)}>
+            <strong>{d.label}:</strong> {rich(d.value)}
+          </p>
+        ))}
+      </div>
+    )
+  }
+  const shown = details.filter((d) => d.value)
+  if (shown.length === 0) return null
   return (
-    <>
-      {(entry.heading || entry.subheading) && (
-        <div className="rv-line rv-caps">
-          <strong>{entry.heading}</strong>
-          <strong>{entry.subheading}</strong>
-        </div>
-      )}
-      {(place || when) && (
-        <div className="rv-line rv-meta">
-          <span>
-            {place && <Icon name={isDate(place) ? "calendar" : "location"} />}
-            {place}
-          </span>
-          <span>
-            {when && <Icon name={isDate(when) ? "calendar" : "location"} />}
-            {when}
-          </span>
-        </div>
-      )}
-    </>
+    <p className="rv-details-inline">
+      {shown.map((d, i) => (
+        <span key={i} {...attrs(d)}>
+          {i > 0 && " · "}
+          <strong>{d.label}:</strong> {rich(d.value)}
+        </span>
+      ))}
+    </p>
   )
 }
 
-function EntryHead({ entry, template }: { entry: ResumeEntry; template: TemplateId }) {
+function EntryHeadLines({ entry, template }: { entry: ResumeEntry; template: TemplateId }) {
+  if (template === "sidebar") {
+    const { place } = dateAndPlace(entry)
+    return (
+      <div className="rv-line">
+        <span>
+          <strong>{entry.heading}</strong>
+          {entry.heading && entry.subheading && " "}
+          {entry.subheading}
+        </span>
+        <span className="rv-tl-place">{place}</span>
+      </div>
+    )
+  }
+  if (template === "bold") {
+    const { place } = dateAndPlace(entry)
+    return (
+      <>
+        {entry.heading && <strong className="rv-tl-title">{entry.heading}</strong>}
+        {(entry.subheading || place) && (
+          <div className="rv-tl-sub">
+            <span className="rv-sc">{entry.subheading}</span>
+            {entry.subheading && place && " · "}
+            {place}
+            {place && <Icon name="location" />}
+          </div>
+        )}
+      </>
+    )
+  }
   // Classic/modern: an entry with nothing on the right (a project) is one line, "Name | tech stack".
   if (template !== "navy" && !entry.headingRight && !entry.subheadingRight) {
+    if (!entry.heading && !entry.subheading) return null
     return (
       <div className="rv-line">
         <span>
@@ -182,7 +271,32 @@ function EntryHead({ entry, template }: { entry: ResumeEntry; template: Template
       </div>
     )
   }
-  if (template === "modern") return <ModernEntryHead entry={entry} />
+  if (template === "modern") {
+    const place = entry.subheadingRight
+    const when = entry.headingRight
+    return (
+      <>
+        {(entry.heading || entry.subheading) && (
+          <div className="rv-line rv-caps">
+            <strong>{entry.heading}</strong>
+            <strong>{entry.subheading}</strong>
+          </div>
+        )}
+        {(place || when) && (
+          <div className="rv-line rv-meta">
+            <span>
+              {place && <Icon name={isDate(place) ? "calendar" : "location"} />}
+              {place}
+            </span>
+            <span>
+              {when && <Icon name={isDate(when) ? "calendar" : "location"} />}
+              {when}
+            </span>
+          </div>
+        )}
+      </>
+    )
+  }
   return (
     <>
       {(entry.heading || entry.headingRight) && (
@@ -201,106 +315,161 @@ function EntryHead({ entry, template }: { entry: ResumeEntry; template: Template
   )
 }
 
-function Section({ section, template }: { section: ResumeSection; template: TemplateId }) {
-  if (section.kind === "text") {
-    if (!section.text) return null
-    return (
-      <section className="rv-section">
-        <h2>{section.title}</h2>
-        <p className="rv-text">{rich(section.text)}</p>
-      </section>
-    )
-  }
+type Indexed<T> = { block: T; index: number }
 
-  if (section.kind === "table") {
-    const rows = section.rows.filter((r) => r.label || r.value)
-    if (rows.length === 0) return null
+function itemAttrs(block: Extract<Block, { kind: "item" }>) {
+  return editAttrs({ kind: "item", sectionId: block.section.id, id: block.entry.id, index: block.line.index })
+}
+
+/** The items of one entry on one page, as a bullet list or plain lines. */
+function Items({ items, listStyle }: { items: Indexed<Extract<Block, { kind: "item" }>>[]; listStyle: ListStyle }) {
+  if (items.length === 0) return null
+  if (listStyle === "bullets") {
     return (
-      <section className="rv-section">
-        <h2>{section.title}</h2>
-        {template === "navy" ? (
-          <table className="rv-table">
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id}>
-                  <th>{row.label}</th>
-                  <td>{rich(row.value)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div className="rv-skill-lines">
-            {rows.map((row) => (
-              <p key={row.id}>
-                {row.label && <strong>{row.label}: </strong>}
-                {rich(row.value)}
-              </p>
-            ))}
-          </div>
+      <ul className="rv-bullets">
+        {items.map(({ block, index }) =>
+          block.line.text.startsWith("- ") ? (
+            <li key={index} data-b={index} className="rv-sub" {...itemAttrs(block)}>
+              {rich(block.line.text.slice(2))}
+            </li>
+          ) : (
+            <li key={index} data-b={index} {...itemAttrs(block)}>
+              {rich(block.line.text)}
+            </li>
+          ),
         )}
-      </section>
+      </ul>
     )
   }
-
-  const entries = visibleEntries(section.entries)
-  if (entries.length === 0) return null
   return (
-    <section className="rv-section">
-      <h2>{section.title}</h2>
-      {entries.map((entry) => (
-        <div key={entry.id} className="rv-entry">
-          <EntryHead entry={entry} template={template} />
-          <EntryBody entry={entry} listStyle={section.listStyle} template={template} />
-        </div>
+    <div className={listStyle === "italic" ? "rv-lines rv-italic" : "rv-lines"}>
+      {items.map(({ block, index }) => (
+        <p key={index} data-b={index} {...itemAttrs(block)}>
+          {rich(block.line.text.startsWith("- ") ? block.line.text.slice(2) : block.line.text)}
+        </p>
       ))}
-    </section>
+    </div>
   )
 }
 
-function visibleEntries(entries: ResumeEntry[]): ResumeEntry[] {
-  return entries.filter((e) => e.heading || e.subheading || e.items.some(Boolean))
+/** One entry's blocks that landed on this page (the heading may be on an earlier page). */
+function EntryPart({ blocks, template }: { blocks: Indexed<Block>[]; template: TemplateId }) {
+  const first = blocks[0].block as Extract<Block, { kind: "head" | "item" }>
+  const head = blocks.find((b) => b.block.kind === "head") as Indexed<Extract<Block, { kind: "head" }>> | undefined
+  const items = blocks.filter((b) => b.block.kind === "item") as Indexed<Extract<Block, { kind: "item" }>>[]
+  const { entry, section } = first
+  const headAttrs = editAttrs({ kind: "head", sectionId: section.id, id: entry.id })
+
+  const headEl = head && (
+    <div data-b={head.index} {...headAttrs}>
+      <EntryHeadLines entry={entry} template={template} />
+      <Details sectionId={section.id} entry={entry} template={template} />
+    </div>
+  )
+
+  if (hasSidebar(template)) {
+    return (
+      <div className="rv-tl">
+        <div className="rv-tl-date" {...(head ? headAttrs : {})}>
+          {head ? dateAndPlace(entry).date : ""}
+        </div>
+        <div className="rv-tl-body">
+          {head && (
+            <div data-b={head.index} {...headAttrs}>
+              <EntryHeadLines entry={entry} template={template} />
+              <div className="rv-tl-text">
+                <Details sectionId={section.id} entry={entry} template={template} />
+              </div>
+            </div>
+          )}
+          <div className="rv-tl-text">
+            <Items items={items} listStyle={section.listStyle} />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rv-entry">
+      {headEl}
+      <Items items={items} listStyle={section.listStyle} />
+    </div>
+  )
 }
 
-/** Everything under an entry's heading lines: detail lines, then bullets or plain lines. */
-function EntryBody({ entry, listStyle, template }: { entry: ResumeEntry; listStyle: ListStyle; template: TemplateId }) {
-  const all = entry.items.filter(Boolean)
-  const split = splitDetails(all)
-  // A single bold lead-in ("**Relevant Coursework:** ...") stays a normal line;
-  // two or more make a detail block (a grid in modern, one line elsewhere).
-  const { details, rest: items } = split.details.length >= 2 ? split : { details: [], rest: all }
-  const shownDetails = details.filter((d) => d.value)
+/** Draws a run of blocks, grouping them back into sections and entries. */
+function FlowBlocks({ blocks, indexes, template }: { blocks: Block[]; indexes: number[]; template: TemplateId }) {
+  // Group consecutive blocks by section, then by entry within a section.
+  const sections: { id: string; items: Indexed<Block>[] }[] = []
+  for (const index of indexes) {
+    const block = blocks[index]
+    const last = sections[sections.length - 1]
+    if (last && last.id === block.section.id) last.items.push({ block, index })
+    else sections.push({ id: block.section.id, items: [{ block, index }] })
+  }
+
   return (
     <>
-      {template !== "modern" && shownDetails.length > 0 && (
-        <p className="rv-details-inline">
-          {shownDetails.map((d, i) => (
-            <span key={i}>
-              {i > 0 && " · "}
-              <strong>{d.label}:</strong> {rich(d.value)}
-            </span>
-          ))}
-        </p>
-      )}
-      {template === "modern" && details.length > 0 && (
-        <div className="rv-details">
-          {details.map((d, i) => (
-            <p key={i} className={d.value ? undefined : "rv-details-wide"}>
-              <strong>{d.label}:</strong> {rich(d.value)}
-            </p>
-          ))}
-        </div>
-      )}
-      {items.length > 0 &&
-        (listStyle === "bullets" ? (
-          <Bullets items={items} />
-        ) : (
-          <div className={listStyle === "italic" ? "rv-lines rv-italic" : "rv-lines"}>
-            {items.map((item, i) => (
-              <p key={i}>{rich(item.startsWith("- ") ? item.slice(2) : item)}</p>
+      {sections.map(({ id, items }) => {
+        const entryGroups: Indexed<Block>[][] = []
+        for (const it of items) {
+          if (it.block.kind !== "head" && it.block.kind !== "item") continue
+          const entryId = it.block.entry.id
+          const last = entryGroups[entryGroups.length - 1]
+          const lastBlock = last?.[0].block as Extract<Block, { kind: "head" | "item" }> | undefined
+          if (last && lastBlock?.entry.id === entryId) last.push(it)
+          else entryGroups.push([it])
+        }
+        return (
+          <section key={`${id}-${items[0].index}`} className="rv-section">
+            {items.map(({ block, index }) => {
+              if (block.kind === "title") {
+                return (
+                  <h2 key={index} data-b={index} {...editAttrs({ kind: "title", sectionId: id })}>
+                    {block.section.title}
+                  </h2>
+                )
+              }
+              if (block.kind === "text") {
+                return (
+                  <p key={index} data-b={index} className="rv-text" {...editAttrs({ kind: "text", sectionId: id })}>
+                    {rich(block.section.text)}
+                  </p>
+                )
+              }
+              if (block.kind === "table") {
+                const rows = block.section.rows.filter((r) => r.label || r.value)
+                return template === "navy" ? (
+                  <table key={index} data-b={index} className="rv-table">
+                    <tbody>
+                      {rows.map((row) => (
+                        <tr key={row.id} {...editAttrs({ kind: "row", sectionId: id, id: row.id })}>
+                          <th>{row.label}</th>
+                          <td>{rich(row.value)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div key={index} data-b={index} className="rv-skill-lines">
+                    {rows.map((row) => (
+                      <p key={row.id} {...editAttrs({ kind: "row", sectionId: id, id: row.id })}>
+                        {row.label && <strong>{row.label}: </strong>}
+                        {rich(row.value)}
+                      </p>
+                    ))}
+                  </div>
+                )
+              }
+              return null
+            })}
+            {entryGroups.map((group) => (
+              <EntryPart key={group[0].index} blocks={group} template={template} />
             ))}
-          </div>
-        ))}
+          </section>
+        )
+      })}
     </>
   )
 }
@@ -313,30 +482,22 @@ function initials(name: string): string {
   return ((words[0][0] ?? "") + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase()
 }
 
-/** The right-side fields hold a date and a place in either order; find which is which. */
-function dateAndPlace(entry: ResumeEntry): { date: string; place: string } {
-  const [a, b] = [entry.headingRight, entry.subheadingRight]
-  if (a && isDate(a)) return { date: a, place: b }
-  if (b && isDate(b)) return { date: b, place: a }
-  return { date: "", place: [a, b].filter(Boolean).join(" · ") }
-}
-
 function SideSection({ section, template }: { section: ResumeSection; template: TemplateId }) {
   if (section.kind === "entries") return null
   const empty = section.kind === "text" ? !section.text : section.rows.every((r) => !r.label && !r.value)
   if (empty) return null
   return (
     <section className="rv-side-section">
-      <h2>
+      <h2 {...editAttrs({ kind: "title", sectionId: section.id })}>
         <span>{section.title}</span>
       </h2>
       {section.kind === "text" ? (
-        <p>{rich(section.text)}</p>
+        <p {...editAttrs({ kind: "text", sectionId: section.id })}>{rich(section.text)}</p>
       ) : (
         section.rows
           .filter((r) => r.label || r.value)
           .map((row) => (
-            <p key={row.id}>
+            <p key={row.id} {...editAttrs({ kind: "row", sectionId: section.id, id: row.id })}>
               {row.label && <strong>{row.label}{template === "sidebar" ? ": " : <br />}</strong>}
               {rich(row.value)}
             </p>
@@ -346,60 +507,12 @@ function SideSection({ section, template }: { section: ResumeSection; template: 
   )
 }
 
-function TimelineSection({ section, template }: { section: ResumeSection; template: TemplateId }) {
-  if (section.kind !== "entries") return null
-  const entries = visibleEntries(section.entries)
-  if (entries.length === 0) return null
-  return (
-    <section className="rv-section">
-      <h2>{section.title}</h2>
-      {entries.map((entry) => {
-        const { date, place } = dateAndPlace(entry)
-        return (
-          <div key={entry.id} className="rv-tl">
-            <div className="rv-tl-date">{date}</div>
-            <div className="rv-tl-body">
-              {template === "sidebar" ? (
-                <>
-                  <div className="rv-line">
-                    <span>
-                      <strong>{entry.heading}</strong>
-                      {entry.heading && entry.subheading && " "}
-                      {entry.subheading}
-                    </span>
-                    <span className="rv-tl-place">{place}</span>
-                  </div>
-                </>
-              ) : (
-                <>
-                  {entry.heading && <strong className="rv-tl-title">{entry.heading}</strong>}
-                  {(entry.subheading || place) && (
-                    <div className="rv-tl-sub">
-                      <span className="rv-sc">{entry.subheading}</span>
-                      {entry.subheading && place && " · "}
-                      {place}
-                      {place && <Icon name="location" />}
-                    </div>
-                  )}
-                </>
-              )}
-              <div className="rv-tl-text">
-                <EntryBody entry={entry} listStyle={section.listStyle} template={template} />
-              </div>
-            </div>
-          </div>
-        )
-      })}
-    </section>
-  )
-}
-
 function SideContact({ contact, template }: { contact: ContactItem[]; template: TemplateId }) {
   if (contact.length === 0) return null
   return (
     <div className={template === "sidebar" ? "rv-side-contact" : "rv-side-contact rv-side-contact-bottom"}>
       {contact.map((item) => (
-        <p key={item.id}>
+        <p key={item.id} {...editAttrs({ kind: "contact", id: item.id })}>
           <span className="rv-bubble">
             <Icon name={iconFor(item)} />
           </span>
@@ -420,59 +533,102 @@ function breakable(value: string): ReactNode {
   ))
 }
 
-function SidebarLayout({ data, template }: { data: ResumeData; template: TemplateId }) {
+// ---- Pages -----------------------------------------------------------------
+
+/**
+ * One sheet. `indexes` are the flow blocks on it; the name/contact header (and
+ * in two-column templates, the band and the sidebar's content) only go on the
+ * first page. `paged` fixes the sheet to exactly one A4 page.
+ */
+export function ResumePage({
+  data,
+  blocks,
+  indexes,
+  first,
+  paged = false,
+}: {
+  data: ResumeData
+  blocks: Block[]
+  indexes: number[]
+  first: boolean
+  paged?: boolean
+}) {
+  const template = data.template ?? "navy"
   const contact = data.contact.filter((c) => c.value)
-  const nameWords = (data.name || "Your Name").trim().split(/\s+/)
-  const side = data.sections.filter((s) => s.kind !== "entries")
-  const main = data.sections.filter((s) => s.kind === "entries")
+  const className = `rv-page rv-${template}${paged ? " rv-paged" : ""}`
+
+  if (hasSidebar(template)) {
+    const nameWords = (data.name || "Your Name").trim().split(/\s+/)
+    return (
+      <article className={className}>
+        {template === "bold" && first && (
+          <header className="rv-band">
+            <h1 className="rv-name" {...editAttrs({ kind: "name" })}>
+              {nameWords.length > 1 && <span className="rv-light">{nameWords.slice(0, -1).join(" ")} </span>}
+              {nameWords[nameWords.length - 1]}
+            </h1>
+            {data.tagline && (
+              <p className="rv-tagline" {...editAttrs({ kind: "tagline" })}>
+                {data.tagline}
+              </p>
+            )}
+          </header>
+        )}
+        <div className="rv-cols">
+          <aside className="rv-side">
+            {first && (
+              <>
+                <div className="rv-avatar">{initials(data.name)}</div>
+                {template === "sidebar" && (
+                  <>
+                    <h1 className="rv-name" {...editAttrs({ kind: "name" })}>
+                      {data.name || "Your Name"}
+                    </h1>
+                    {data.tagline && (
+                      <p className="rv-tagline" {...editAttrs({ kind: "tagline" })}>
+                        {data.tagline}
+                      </p>
+                    )}
+                    <SideContact contact={contact} template={template} />
+                  </>
+                )}
+                {data.sections.map((section) => (
+                  <SideSection key={section.id} section={section} template={template} />
+                ))}
+                {template === "bold" && <SideContact contact={contact} template={template} />}
+              </>
+            )}
+          </aside>
+          <main className="rv-main">
+            <FlowBlocks blocks={blocks} indexes={indexes} template={template} />
+          </main>
+        </div>
+      </article>
+    )
+  }
+
   return (
-    <article className={`rv-page rv-${template}`}>
-      {template === "bold" && (
-        <header className="rv-band">
-          <h1 className="rv-name">
-            {nameWords.length > 1 && <span className="rv-light">{nameWords.slice(0, -1).join(" ")} </span>}
-            {nameWords[nameWords.length - 1]}
+    <article className={className}>
+      {first && (
+        <>
+          <h1 className="rv-name" {...editAttrs({ kind: "name" })}>
+            {data.name || "Your Name"}
           </h1>
-          {data.tagline && <p className="rv-tagline">{data.tagline}</p>}
-        </header>
-      )}
-      <div className="rv-cols">
-        <aside className="rv-side">
-          <div className="rv-avatar">{initials(data.name)}</div>
-          {template === "sidebar" && (
-            <>
-              <h1 className="rv-name">{data.name || "Your Name"}</h1>
-              {data.tagline && <p className="rv-tagline">{data.tagline}</p>}
-              <SideContact contact={contact} template={template} />
-            </>
+          {data.tagline && (
+            <p className="rv-tagline" {...editAttrs({ kind: "tagline" })}>
+              {data.tagline}
+            </p>
           )}
-          {side.map((section) => (
-            <SideSection key={section.id} section={section} template={template} />
-          ))}
-          {template === "bold" && <SideContact contact={contact} template={template} />}
-        </aside>
-        <main className="rv-main">
-          {main.map((section) => (
-            <TimelineSection key={section.id} section={section} template={template} />
-          ))}
-        </main>
-      </div>
+          <Contact contact={contact} template={template} />
+        </>
+      )}
+      <FlowBlocks blocks={blocks} indexes={indexes} template={template} />
     </article>
   )
 }
 
+/** The whole resume on one sheet that grows as needed (marketing previews, and paging's measuring copy). */
 export function ResumePreview({ data }: { data: ResumeData }) {
-  const contact = data.contact.filter((c) => c.value)
-  const template = data.template ?? "navy"
-  if (hasSidebar(template)) return <SidebarLayout data={data} template={template} />
-  return (
-    <article className={`rv-page rv-${template}`}>
-      <h1 className="rv-name">{data.name || "Your Name"}</h1>
-      {data.tagline && <p className="rv-tagline">{data.tagline}</p>}
-      <Contact contact={contact} template={template} />
-      {data.sections.map((section) => (
-        <Section key={section.id} section={section} template={template} />
-      ))}
-    </article>
-  )
+  const blocks = flowBlocks(data)
+  return <ResumePage data={data} blocks={blocks} indexes={blocks.map((_, i) => i)} first />
 }

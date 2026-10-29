@@ -70,9 +70,33 @@ export interface TailorResult {
   changes: string[]
 }
 
-export async function aiTailor(resume: ResumeData, jobDescription: string): Promise<TailorResult> {
-  const out = await callResumeAi({ action: "tailor", resume, jobDescription })
+export async function aiTailor(resume: ResumeData, jobDescription: string, instructions = ""): Promise<TailorResult> {
+  const out = await callResumeAi({ action: "tailor", resume, jobDescription, instructions: instructions.trim() || undefined })
   return { resume: normalizeResume(out.resume), missingSkills: strings(out.missingSkills), changes: strings(out.changes) }
+}
+
+/** Any change the user asks for in their own words ("rewrite my summary"), over the whole resume. */
+export async function aiEdit(
+  resume: ResumeData,
+  instructions: string,
+  jobDescription: string,
+): Promise<{ resume: ResumeData; changes: string[] }> {
+  const out = await callResumeAi({ action: "edit", resume, instructions, jobDescription: jobDescription || undefined })
+  return { resume: normalizeResume(out.resume), changes: strings(out.changes) }
+}
+
+/** One line or paragraph, rewritten; `context` says where it sits (e.g. "Work experience > Acme"). */
+export async function aiRewrite(text: string, instructions: string, context: string, jobDescription: string): Promise<string> {
+  const out = await callResumeAi({
+    action: "rewrite",
+    text,
+    instructions: instructions.trim() || undefined,
+    context,
+    jobDescription: jobDescription || undefined,
+  })
+  const rewritten = typeof out.text === "string" ? out.text.trim() : ""
+  if (!rewritten) throw new Error("The AI didn't return anything. Please try again.")
+  return rewritten
 }
 
 /** Rewritten items for one entry. Never more items than it had. */

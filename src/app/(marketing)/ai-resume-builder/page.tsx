@@ -5,7 +5,7 @@ import { StartResumeButton } from "@/components/blocks/start-resume-button"
 import { StartWithTemplate } from "@/components/blocks/start-with-template"
 import { RESUME_LIMITS } from "@/lib/plans"
 import { resumeFonts } from "@/lib/resume/fonts"
-import { SAMPLE_RESUME } from "@/lib/resume/sample"
+import { sampleResume } from "@/lib/resume/sample"
 import { TEMPLATES } from "@/lib/resume/types"
 import "../../resume/resume.css"
 
@@ -71,7 +71,7 @@ export default function AiResumeBuilderPage() {
 
         <div className="flex justify-center rounded-2xl border border-border bg-neutral-100 p-4 sm:p-8">
           <div className="w-fit shadow-xl" style={{ zoom: 0.62 }}>
-            <ResumePreview data={SAMPLE_RESUME} />
+            <ResumePreview data={sampleResume("navy")} />
           </div>
         </div>
       </div>
@@ -103,7 +103,7 @@ export default function AiResumeBuilderPage() {
             >
               <div className="relative">
                 <div className="w-fit shadow-lg" style={{ zoom: 0.4 }}>
-                  <ResumePreview data={{ ...SAMPLE_RESUME, template: t.id }} />
+                  <ResumePreview data={sampleResume(t.id)} />
                 </div>
                 <span className="absolute inset-x-0 bottom-4 mx-auto w-fit rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                   Use this template

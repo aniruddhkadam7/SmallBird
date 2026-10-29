@@ -1,11 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react"
 import Link from "next/link"
 import {
   ArrowLeft,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
+  ClipboardCheck,
   Download,
   FileUp,
   Loader2,
@@ -14,10 +16,14 @@ import {
   Target,
   Trash2,
   Undo2,
+  Wand2,
   X,
 } from "lucide-react"
 import { ResumePreview } from "@/components/resume/resume-preview"
-import { aiImport, aiImprove, aiTailor, saveResume } from "@/lib/resume/api"
+import { aiEdit, aiImport, aiImprove, aiTailor, saveResume } from "@/lib/resume/api"
+import { resumeTips } from "@/lib/resume/checks"
+import { readEditTarget, type EditTarget } from "@/lib/resume/edit-target"
+import { sampleResume } from "@/lib/resume/sample"
 import {
   emptyEntry,
   emptySection,
@@ -32,6 +38,7 @@ import {
   TEMPLATES,
 } from "@/lib/resume/types"
 import { DOCUMENT_ACCEPT, readDocument } from "@/lib/mobile/documents"
+import { LineEditor } from "./line-editor"
 
 type SaveStatus = "saved" | "pending" | "saving" | "failed"
 
@@ -193,6 +200,10 @@ export function ResumeEditor({
   const [jobDescription, setJobDescription] = useState("")
   const [busy, setBusy] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
+  const [tailorInstructions, setTailorInstructions] = useState("")
+  const [editRequest, setEditRequest] = useState("")
+  const [tailored, setTailored] = useState(false)
+  const [lineEdit, setLineEdit] = useState<{ target: EditTarget; anchor: DOMRect } | null>(null)
   const [tailorNotes, setTailorNotes] = useState<{ changes: string[]; missingSkills: string[] } | null>(null)
   const [mobileTab, setMobileTab] = useState<"edit" | "preview">("edit")
   const [previewRef, scale] = useFitScale()
@@ -205,6 +216,7 @@ export function ResumeEditor({
   }, [title, data])
 
   const jdKey = `smallbird-resume-jd-${id}`
+  const tailoredKey = `smallbird-resume-tailored-${id}`
 
   useEffect(() => {
     try {
@@ -213,10 +225,11 @@ export function ResumeEditor({
       // The job description is only needed while tailoring, so it stays in
       // this browser instead of being saved with the resume.
       setJobDescription(window.localStorage.getItem(jdKey) ?? "")
+      setTailored(window.localStorage.getItem(tailoredKey) === "1")
     } catch {
       // Storage blocked — defaults are fine.
     }
-  }, [jdKey])
+  }, [jdKey, tailoredKey])
 
   useEffect(() => {
     try {
@@ -305,10 +318,33 @@ export function ResumeEditor({
 
   const tailor = () =>
     runAi("tailor", async () => {
-      const result = await aiTailor(data, jobDescription)
+      const result = await aiTailor(data, jobDescription, tailorInstructions)
       applyAi(result.resume)
       setTailorNotes({ changes: result.changes, missingSkills: result.missingSkills })
+      setTailored(true)
+      try {
+        window.localStorage.setItem(tailoredKey, "1")
+      } catch {
+        // Storage blocked — "Ask AI to edit" shows again after the next tailoring.
+      }
     })
+
+  const askAi = () =>
+    runAi("edit", async () => {
+      const result = await aiEdit(data, editRequest.trim(), jobDescription)
+      applyAi(result.resume)
+      setTailorNotes({ changes: result.changes, missingSkills: [] })
+      setEditRequest("")
+    })
+
+  /** A click on a line of the preview opens the line editor on it. */
+  const onPreviewClick = (e: MouseEvent) => {
+    if (showSample) return
+    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-edit]")
+    const target = el && readEditTarget(el)
+    if (!el || !target) return
+    setLineEdit({ target, anchor: el.getBoundingClientRect() })
+  }
 
   const improve = (sectionId: string, entry: ResumeEntry) =>
     runAi(`improve:${entry.id}`, async () => {
@@ -326,6 +362,11 @@ export function ResumeEditor({
     })
 
   const downloadPdf = async () => {
+    // The preview shows sample content then, which must never end up in the PDF.
+    if (isBlank(data)) {
+      window.alert("Add your details first. The preview is only showing sample content.")
+      return
+    }
     if (status !== "saved") await save()
     const previous = document.title
     // Chrome and Edge use the page title as the PDF's file name.
@@ -340,6 +381,12 @@ export function ResumeEditor({
       d.sections.push(emptySection(kind, titles[kind]))
     })
   }
+
+  // An empty resume would show only a name, so preview the sample in the
+  // chosen template until the user types something of their own.
+  const showSample = isBlank(data)
+  const previewData = showSample ? sampleResume(data.template) : data
+  const tips = showSample ? [] : resumeTips(data)
 
   const statusText: Record<SaveStatus, string> = {
     saved: "Saved",
@@ -434,13 +481,27 @@ export function ResumeEditor({
                 {busy === "import" ? "Reading your resume…" : "Import my old resume (PDF / DOCX)"}
               </button>
 
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-muted-foreground">Job description (to tailor this resume)</span>
+              <label className="flex flex-col gap-1 border-t border-border pt-3">
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                  <Target className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                  Tailor to a job
+                </span>
+                <span className="text-xs text-muted-foreground">Job description</span>
                 <textarea
                   className={`${inputClass} min-h-20 resize-y`}
                   value={jobDescription}
                   placeholder="Paste the job description here"
                   onChange={(e) => setJobDescription(e.target.value)}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-muted-foreground">Custom instructions to AI (optional)</span>
+                <textarea
+                  className={`${inputClass} min-h-16 resize-y`}
+                  value={tailorInstructions}
+                  maxLength={1000}
+                  placeholder="e.g. Focus on my AWS work"
+                  onChange={(e) => setTailorInstructions(e.target.value)}
                 />
               </label>
               <button
@@ -455,6 +516,34 @@ export function ResumeEditor({
               <p className="text-xs text-muted-foreground">
                 AI only rewords and reorders what you really did. It never adds jobs, skills or numbers you don&apos;t have.
               </p>
+
+              {/* Fine edits come after the resume is in and tailored to the job. */}
+              {tailored && (
+                <div className="flex flex-col gap-2 border-t border-border pt-3">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                    <Wand2 className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                    Ask AI to edit
+                  </span>
+                  <textarea
+                    className={`${inputClass} min-h-16 resize-y`}
+                    value={editRequest}
+                    placeholder="Tell AI what to change, e.g. Rewrite my summary for a data analyst role"
+                    onChange={(e) => setEditRequest(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && editRequest.trim() && busy === null) askAi()
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={busy !== null || !editRequest.trim() || showSample}
+                    onClick={askAi}
+                    className="flex items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                  >
+                    {busy === "edit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    {busy === "edit" ? "Making the change…" : "Apply with AI"}
+                  </button>
+                </div>
+              )}
 
               {aiError && (
                 <div className="flex items-start justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -496,6 +585,27 @@ export function ResumeEditor({
                 </div>
               )}
             </div>
+
+            {/* Resume check */}
+            {!showSample && (
+              <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <ClipboardCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  Resume check
+                </div>
+                {tips.length === 0 ? (
+                  <p className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Looks good. Nothing obvious to fix.
+                  </p>
+                ) : (
+                  <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+                    {tips.map((tip) => (
+                      <li key={tip}>{tip}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
 
             {/* Template */}
             <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
@@ -770,14 +880,37 @@ export function ResumeEditor({
           className={`rb-print-area min-w-0 flex-1 overflow-y-auto bg-neutral-200 p-3 sm:p-6 lg:block dark:bg-neutral-900 ${
             mobileTab === "preview" ? "block" : "hidden"
           }`}
+          // The line editor is placed by where the line was; once the page moves, close it.
+          onScroll={() => setLineEdit(null)}
         >
           <div ref={previewRef} className="mx-auto w-full max-w-[794px]">
-            <div className="rb-scale w-fit shadow-xl" style={{ zoom: scale }}>
-              <ResumePreview data={data} />
+            <p className="rb-chrome mb-3 text-center text-xs text-muted-foreground">
+              {showSample
+                ? "Sample content, to show how this template looks. Fill in the form or import your old resume to replace it."
+                : "Tip: click any line on the resume to edit it."}
+            </p>
+            <div
+              className={`rb-scale w-fit shadow-xl ${showSample ? "" : "rb-editable"}`}
+              style={{ zoom: scale }}
+              onClick={onPreviewClick}
+            >
+              <ResumePreview data={previewData} />
             </div>
           </div>
         </div>
       </div>
+
+      {lineEdit && (
+        <LineEditor
+          key={JSON.stringify(lineEdit.target)}
+          target={lineEdit.target}
+          anchor={lineEdit.anchor}
+          data={data}
+          jobDescription={jobDescription}
+          onSave={update}
+          onClose={() => setLineEdit(null)}
+        />
+      )}
     </div>
   )
 }
