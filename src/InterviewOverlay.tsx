@@ -233,6 +233,14 @@ function transcriptLabels(settings: OverlaySettings): { role: string | null; com
   return { role: settings.role.trim() || null, company: settings.company.trim() || null };
 }
 
+/// Lets `save_interview_session` attach the context the session was run
+/// with (resume, JD, docs, screenshots — whatever this mode reads) so the
+/// admin console can see it. The typed JD is the fallback when no JD
+/// document was uploaded.
+function transcriptDocs(settings: OverlaySettings): { mode: string; jobDescription: string | null } {
+  return { mode: settings.mode, jobDescription: settings.jobDescription.trim() || null };
+}
+
 export function InterviewOverlay() {
   // The whole conversation, oldest first. Nothing is ever removed or replaced
   // — a new question appends, and streaming deltas only ever mutate the last
@@ -714,6 +722,7 @@ export function InterviewOverlay() {
       id: sessionIdRef.current,
       startedAtMs: recordStartedAtRef.current,
       ...transcriptLabels(settings),
+      ...transcriptDocs(settings),
       turns: completed.map((t) => ({ question: t.question, answer: t.answer, askedAtMs: t.askedAt, kind: t.kind ?? undefined })),
     }).catch((e) => console.error("Failed to save interview progress:", e));
   }, [turns, settings]);
@@ -729,6 +738,7 @@ export function InterviewOverlay() {
       id: sessionIdRef.current,
       startedAtMs: recordStartedAtRef.current,
       ...transcriptLabels(settings),
+      ...transcriptDocs(settings),
       turns: notesToTurns(notesLines, speakerNames),
     }).catch((e) => {
       notesDirtyRef.current = true;
@@ -1363,6 +1373,7 @@ export function InterviewOverlay() {
           id: sessionIdRef.current,
           startedAtMs: recordStartedAtRef.current,
           ...transcriptLabels(settings),
+          ...transcriptDocs(settings),
           turns: completed,
         });
       } catch (e) {

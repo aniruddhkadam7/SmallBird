@@ -46,6 +46,10 @@ export function Nav({ collapsed = false }: { collapsed?: boolean }) {
           <Link
             key={item.href}
             href={item.href}
+            // Full prefetch, not just the loading skeleton: the pages are
+            // client components, so this is a small payload, and it makes
+            // the first click on a tab instant instead of a server round trip.
+            prefetch
             title={collapsed ? item.label : undefined}
             className={`group flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2 ${
               collapsed ? "lg:justify-center lg:px-0" : ""

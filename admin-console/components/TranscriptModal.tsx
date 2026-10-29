@@ -5,6 +5,7 @@ import Link from "next/link";
 import { X } from "lucide-react";
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { formatDuration } from "@/lib/format";
+import { TranscriptDocs, type ContextDoc } from "@/components/TranscriptDocs";
 
 interface Turn {
   question: string;
@@ -22,6 +23,7 @@ interface TranscriptDetail {
   endedAtMs: number;
   turns: Turn[];
   createdAt: string;
+  contextDocs?: ContextDoc[];
 }
 
 export function TranscriptModal({ transcriptId, onClose }: { transcriptId: string | null; onClose: () => void }) {
@@ -75,6 +77,7 @@ export function TranscriptModal({ transcriptId, onClose }: { transcriptId: strin
         <div className="space-y-4 p-4">
           {error instanceof AdminApiError && <p className="text-sm text-danger">{error.message}</p>}
           {!transcript && !error && <p className="text-sm text-muted">Loading...</p>}
+          {transcript && <TranscriptDocs docs={transcript.contextDocs} />}
           {transcript?.turns.map((turn, i) => (
             <div key={i} className="card">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted">Question {i + 1}</p>

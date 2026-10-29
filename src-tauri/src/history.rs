@@ -92,6 +92,101 @@ pub struct InterviewHistoryEntry {
     /// else who later signs in on the same machine. `None` = recorded here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_email: Option<String>,
+    /// Everything the user gave the AI as context during the session —
+    /// resume, JD, custom instructions, meeting docs, files, screenshots (as
+    /// the text read from them) — uploaded with the transcript so the admin
+    /// console can see it. Captured at save time: uploaded documents live
+    /// only in memory (see `documents.rs`), so a later retry after a restart
+    /// would have nothing to read. Only ever grows within a session (see
+    /// `merge_context_docs`), so an item removed mid-session is still kept.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context_docs: Vec<ContextDoc>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextDoc {
+    pub id: String,
+    /// The section it was added to, e.g. `RESUME`, `MEETING_AGENDA`,
+    /// `CUSTOM_CONTEXT:<id>`.
+    pub doc_type: String,
+    /// The file's name, `<section>.txt` for typed text, or the screenshot's name.
+    pub filename: String,
+    pub text: String,
+}
+
+/// Longest text stored per item. Real ones are a few thousand characters;
+/// this only stops a wrong, huge file bloating every row.
+const MAX_CONTEXT_DOC_CHARS: usize = 60_000;
+/// Most items stored per session.
+const MAX_CONTEXT_DOCS: usize = 40;
+
+/// The document types a session in `mode` reads — the same split as the
+/// frontend's context sections (headerPopups.ts, customModes.ts) and
+/// `interview_mode::commands::build_ask_request`. Notes Mode has none.
+fn mode_doc_types(mode: &str) -> Vec<String> {
+    let types: &[&str] = match mode {
+        "interview" => &["INTERVIEW_INSTRUCTIONS", "RESUME", "JOB_DESCRIPTION", "ADDITIONAL_CONTEXT"],
+        "meeting" => &[
+            "MEETING_INSTRUCTIONS",
+            "MEETING_AGENDA",
+            "MEETING_DOCUMENTS",
+            "KNOWLEDGE_BASE",
+            "PREVIOUS_MEETING_NOTES",
+        ],
+        "assistant" => &["ASSISTANT_INSTRUCTIONS", "ASSISTANT_CONTEXT"],
+        _ => {
+            return match mode.strip_prefix("custom:").filter(|id| !id.is_empty()) {
+                Some(id) => vec![format!("CUSTOM_INSTRUCTIONS:{id}"), format!("CUSTOM_CONTEXT:{id}")],
+                None => Vec::new(),
+            };
+        }
+    };
+    types.iter().map(|t| t.to_string()).collect()
+}
+
+/// The session's context as it stands right now. `typed_job_description` is
+/// the overlay settings' JD field, used (as Ask AI does) only when no JD
+/// document was added.
+fn collect_context_docs(state: &AppState, mode: &str, typed_job_description: Option<String>) -> Vec<ContextDoc> {
+    let types = mode_doc_types(mode);
+    let mut docs: Vec<ContextDoc> = crate::documents::ready_documents(state, |t| types.iter().any(|x| x == t))
+        .into_iter()
+        .map(|(id, doc_type, filename, text)| ContextDoc { id, doc_type, filename, text })
+        .collect();
+    if mode == "interview" && !docs.iter().any(|d| d.doc_type == "JOB_DESCRIPTION") {
+        if let Some(text) = typed_job_description {
+            docs.push(ContextDoc {
+                id: "typed-job-description".into(),
+                doc_type: "JOB_DESCRIPTION".into(),
+                filename: "Typed in overlay settings".into(),
+                text,
+            });
+        }
+    }
+    docs.retain_mut(|d| {
+        let trimmed = d.text.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+        d.text = trimmed.chars().take(MAX_CONTEXT_DOC_CHARS).collect();
+        true
+    });
+    docs
+}
+
+/// Adds `new` to what a session already captured: an id seen before is
+/// updated in place, anything removed since is kept.
+fn merge_context_docs(existing: &[ContextDoc], new: Vec<ContextDoc>) -> Vec<ContextDoc> {
+    let mut merged = existing.to_vec();
+    for doc in new {
+        match merged.iter_mut().find(|d| d.id == doc.id) {
+            Some(d) => *d = doc,
+            None => merged.push(doc),
+        }
+    }
+    merged.truncate(MAX_CONTEXT_DOCS);
+    merged
 }
 
 pub struct HistoryStore(
@@ -290,10 +385,16 @@ pub async fn save_interview_session(
     role: Option<String>,
     company: Option<String>,
     turns: Vec<HistoryTurn>,
+    mode: Option<String>,
+    job_description: Option<String>,
 ) -> Result<Option<InterviewHistoryEntry>, String> {
     if turns.is_empty() {
         return Ok(None);
     }
+    let context_docs = mode
+        .as_deref()
+        .map(|m| collect_context_docs(&app.state::<AppState>(), m, job_description))
+        .unwrap_or_default();
     let entry = InterviewHistoryEntry {
         id: id.clone(),
         started_at_ms,
@@ -304,6 +405,7 @@ pub async fn save_interview_session(
         synced: false,
         revision: 0,
         owner_email: None,
+        context_docs,
     };
 
     let saved = upsert_local(&app, &store, entry)?;
@@ -340,6 +442,7 @@ fn apply_upsert(entries: &mut Vec<InterviewHistoryEntry>, mut entry: InterviewHi
     match entries.iter_mut().find(|e| e.id == entry.id) {
         Some(existing) => {
             entry.revision = existing.revision + 1;
+            entry.context_docs = merge_context_docs(&existing.context_docs, std::mem::take(&mut entry.context_docs));
             *existing = entry.clone();
         }
         None => {
@@ -474,6 +577,7 @@ async fn sync_to_backend(access_token: &str, entry: &InterviewHistoryEntry) -> R
         "role": entry.role,
         "company": entry.company,
         "turns": entry.turns,
+        "context_docs": entry.context_docs,
     });
 
     let response = reqwest::Client::builder()
@@ -647,6 +751,7 @@ fn apply_remote(entries: &mut Vec<InterviewHistoryEntry>, rows: Vec<RemoteRow>, 
             synced: true,
             revision: 1,
             owner_email: Some(email.to_string()),
+            context_docs: Vec::new(),
         };
         match entries.iter_mut().find(|e| e.id == entry.id) {
             Some(local) => {
@@ -656,6 +761,7 @@ fn apply_remote(entries: &mut Vec<InterviewHistoryEntry>, rows: Vec<RemoteRow>, 
                 entry.revision = local.revision + 1;
                 // Recorded here first: still this device's entry.
                 entry.owner_email = local.owner_email.clone();
+                entry.context_docs = local.context_docs.clone();
                 *local = entry;
             }
             None => entries.push(entry),
@@ -813,6 +919,7 @@ fn recover_entry(entries: &mut Vec<InterviewHistoryEntry>, j: &LoadedJournal) ->
         synced: false,
         revision: 0,
         owner_email: None,
+        context_docs: Vec::new(),
     };
     Some(apply_upsert(entries, entry))
 }
@@ -957,6 +1064,7 @@ mod tests {
             synced: false,
             revision: 0,
             owner_email: None,
+            context_docs: Vec::new(),
         }
     }
 

@@ -8,6 +8,7 @@ import { Menu, X, ChevronsLeft, ChevronsRight, LayoutDashboard, Users, Video, Re
 import { Nav } from "@/components/Nav";
 import { SignOutButton } from "@/components/SignOutButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { NotificationBell } from "@/components/NotificationBell";
 import { Wordmark } from "@/components/Wordmark";
 
 const COLLAPSE_KEY = "admin-sidebar-collapsed";
@@ -46,7 +47,7 @@ function useTableCellLabels() {
 
 function Brand({ collapsed = false }: { collapsed?: boolean }) {
   return (
-    <div className="flex min-w-0 items-center gap-2.5">
+    <Link href="/dashboard" prefetch aria-label="Home" className="flex min-w-0 items-center gap-2.5">
       <Image src="/smallbird-logo.png" alt="" width={32} height={32} className="h-8 w-8 flex-shrink-0" />
       <div className={`min-w-0 ${collapsed ? "lg:hidden" : ""}`}>
         <p className="whitespace-nowrap leading-tight">
@@ -54,7 +55,7 @@ function Brand({ collapsed = false }: { collapsed?: boolean }) {
         </p>
         <p className="text-[11px] text-muted">Admin console</p>
       </div>
-    </div>
+    </Link>
   );
 }
 
@@ -120,7 +121,10 @@ export function AdminShell({ email, children }: { email: string; children: React
         <div className="min-w-0 flex-1">
           <Brand />
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-1">
+          <NotificationBell placement="below" />
+          <ThemeToggle />
+        </div>
       </header>
 
       <div
@@ -145,8 +149,13 @@ export function AdminShell({ email, children }: { email: string; children: React
           {collapsed ? <ChevronsRight size={13} /> : <ChevronsLeft size={13} />}
         </button>
 
-        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-4">
+        <div
+          className={`flex items-center justify-between gap-2 border-b border-border px-4 py-4 ${
+            collapsed ? "lg:flex-col lg:px-2" : "lg:pl-4 lg:pr-2"
+          }`}
+        >
           <Brand collapsed={collapsed} />
+          <NotificationBell placement="side" className="hidden lg:block" />
           <button
             onClick={() => setOpen(false)}
             aria-label="Close menu"
@@ -187,6 +196,7 @@ export function AdminShell({ email, children }: { email: string; children: React
             <Link
               key={href}
               href={href}
+              prefetch
               className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${active ? "text-accent" : "text-muted"}`}
             >
               <Icon size={21} strokeWidth={active ? 2.4 : 2} />

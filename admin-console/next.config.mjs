@@ -10,6 +10,14 @@ const nextConfig = {
   // lockfile -- pin the trace root to this directory so Next doesn't guess
   // wrong and pull unrelated files into the build.
   outputFileTracingRoot: __dirname,
+  // Every admin page is dynamic (the layout reads the session cookie), and
+  // Next 15 keeps dynamic pages in the client router cache for 0s by default
+  // -- so every tab switch went back to the server, even to a tab just
+  // visited. Keep visited/prefetched pages for 5 minutes; the data itself
+  // still refreshes in the background via SWR.
+  experimental: {
+    staleTimes: { dynamic: 300, static: 300 },
+  },
   // Pages folded into others -- keep old bookmarks working.
   async redirects() {
     return [

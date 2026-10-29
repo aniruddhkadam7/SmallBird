@@ -6,6 +6,7 @@ import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
 import { PageLoading } from "@/components/PageLoading";
 import { formatDuration } from "@/lib/format";
+import { TranscriptDocs, type ContextDoc } from "@/components/TranscriptDocs";
 
 interface Turn {
   question: string;
@@ -23,6 +24,7 @@ interface TranscriptDetail {
   endedAtMs: number;
   turns: Turn[];
   createdAt: string;
+  contextDocs?: ContextDoc[];
 }
 
 export default function TranscriptDetailPage() {
@@ -52,6 +54,8 @@ export default function TranscriptDetailPage() {
           {formatDuration((transcript.endedAtMs - transcript.startedAtMs) / 1000)} &middot; {transcript.turns.length} turns
         </p>
       </div>
+
+      <TranscriptDocs docs={transcript.contextDocs} />
 
       <div className="space-y-4">
         {transcript.turns.map((turn, i) => (

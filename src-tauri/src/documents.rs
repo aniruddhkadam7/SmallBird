@@ -65,6 +65,25 @@ pub fn latest_ready_text(state: &AppState, document_type: &str) -> Option<String
     Some(ready.iter().map(|r| r.text.as_str()).collect::<Vec<_>>().join("\n\n---\n\n"))
 }
 
+/// Every successfully-extracted document whose type passes `matches`,
+/// oldest first, as `(id, type, filename, text)` — what
+/// `history::save_interview_session` stores with a transcript.
+pub fn ready_documents(state: &AppState, matches: impl Fn(&str) -> bool) -> Vec<(String, String, String, String)> {
+    let store = state.documents.lock_safe();
+    let mut ready: Vec<&DocumentRecord> = store
+        .values()
+        .filter(|r| r.metadata.status == "READY" && matches(&r.metadata.document_type))
+        .collect();
+    ready.sort_by(|a, b| a.metadata.created_at.total_cmp(&b.metadata.created_at));
+    ready
+        .into_iter()
+        .map(|r| {
+            let m = &r.metadata;
+            (m.document_id.clone(), m.document_type.clone(), m.filename.clone(), r.text.clone())
+        })
+        .collect()
+}
+
 /// Largest file accepted for text extraction. Resumes/JDs are a few hundred
 /// KB; anything far past this is almost certainly the wrong file, and parsing
 /// it would stall the upload for a long time.
