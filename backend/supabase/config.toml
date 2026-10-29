@@ -27,6 +27,9 @@ verify_jwt = true
 [functions.dashboard-handoff]
 verify_jwt = true
 
+[functions.resume-ai]
+verify_jwt = true
+
 [functions.razorpay-webhook]
 verify_jwt = false
 
