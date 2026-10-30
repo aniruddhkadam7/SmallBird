@@ -262,6 +262,20 @@ Deno.serve(withCors(async (req) => {
       })
       .then(({ error }) => error && console.error("usage_costs insert failed", error));
 
+    // What the user gave the AI, for the admin console's Resume Builder page
+    // (migration 0052). Capped like the prompt itself.
+    const str = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+    admin
+      .from("resume_ai_requests")
+      .insert({
+        user_id: userId,
+        action,
+        uploaded_text: action === "import" ? str(body.text, MAX_TEXT_CHARS) : null,
+        job_description: str(body.jobDescription, MAX_JD_CHARS),
+        instructions: str(body.instructions, MAX_INSTRUCTION_CHARS),
+      })
+      .then(({ error }) => error && console.error("resume_ai_requests insert failed", error));
+
     let parsed: unknown;
     try {
       parsed = JSON.parse(result.choices?.[0]?.message?.content ?? "");
