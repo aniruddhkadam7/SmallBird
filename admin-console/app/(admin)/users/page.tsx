@@ -17,6 +17,8 @@ interface UserRow {
   user_id: string;
   email: string;
   display_name: string | null;
+  // Profile photo, else the Google one (0064); absent before that.
+  avatar_url?: string | null;
   // From Razorpay checkout or the user's newest CV (0062); absent before that.
   phone?: string | null;
   created_at: string;
@@ -197,10 +199,21 @@ export default function UsersPage() {
                 className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-subtle active:bg-subtle"
               >
                 <div
-                  className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-sm font-semibold text-white shadow-sm ${avatarGradient(u.email)}`}
+                  className={`relative flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br text-sm font-semibold text-white shadow-sm ${avatarGradient(u.email)}`}
                   aria-hidden
                 >
                   {(u.display_name || u.email).charAt(0).toUpperCase()}
+                  {u.avatar_url && (
+                    // Google profile photo over the initial; hidden if it fails to load.
+                    <img
+                      src={u.avatar_url}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                      loading="lazy"
+                      onError={(e) => (e.currentTarget.style.display = "none")}
+                      className="absolute inset-0 h-full w-full object-cover"
+                    />
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-ink">{u.display_name || u.email}</p>
