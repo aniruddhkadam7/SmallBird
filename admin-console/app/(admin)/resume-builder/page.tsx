@@ -189,37 +189,99 @@ function Tile({
   );
 }
 
-// People who used the builder each day, last 30 days. One series, so no
-// legend; each bar's tooltip has the day's numbers, and a tap lists that
-// day's people. The whole column is the tap target, so short bars are easy
-// to hit.
+// People who used the builder each day. One series, so no legend. Starts a
+// couple of days before the first day anyone used it (at least a week), so a
+// young feature isn't a month of empty space. Each bar has its count on top;
+// the line under the chart gives the hovered / tapped / latest day's
+// numbers, and a tap lists that day's people. The whole column is the tap
+// target, so short bars are easy to hit.
 function DailyBars({ daily, selected, onPick }: { daily: Stats["daily"]; selected: string | null; onPick: (day: string) => void }) {
-  const max = Math.max(1, ...daily.map((d) => d.users));
+  const [hover, setHover] = useState<string | null>(null);
+  const firstUsed = daily.findIndex((d) => d.users > 0);
+  const days = firstUsed < 0 ? daily.slice(-7) : daily.slice(Math.max(0, Math.min(firstUsed - 2, daily.length - 7)));
+  const max = Math.max(1, ...days.map((d) => d.users));
+  const top = max <= 4 ? max : Math.ceil(max / 2) * 2;
+  const ticks = top <= 4 ? Array.from({ length: top + 1 }, (_, i) => i) : [0, top / 2, top];
+  const labelEvery = days.length <= 10 ? 1 : days.length <= 20 ? 3 : 5;
+  const today = daily[daily.length - 1]?.day;
+
+  const focus =
+    days.find((d) => d.day === (hover ?? selected)) ?? [...days].reverse().find((d) => d.users > 0) ?? days[days.length - 1];
+  const totals = days.reduce((t, d) => ({ ai: t.ai + d.aiActions, resumes: t.resumes + d.resumesCreated }), { ai: 0, resumes: 0 });
+
   return (
     <div>
-      <div className="flex h-32 items-end gap-[3px]">
-        {daily.map((d) => (
-          <button
-            key={d.day}
-            disabled={!d.users}
-            onClick={() => onPick(d.day)}
-            className="group flex h-full flex-1 items-end rounded-t disabled:cursor-default"
-            title={`${shortDay(d.day)}: ${d.users} people, ${d.aiActions} AI actions, ${d.resumesCreated} new resumes`}
-            aria-label={`${shortDay(d.day)}: ${d.users} people`}
-          >
-            <span
-              className={`block w-full rounded-t transition-colors ${
-                selected === d.day ? "bg-accent" : selected ? "bg-accent/30 group-hover:bg-accent/60" : "bg-accent/80 group-hover:bg-accent"
-              }`}
-              style={{ height: `${d.users ? Math.max((d.users / max) * 100, 4) : 0}%` }}
-            />
-          </button>
-        ))}
+      <div className="flex gap-2">
+        {/* Y axis */}
+        <div className="relative h-36 w-5 flex-shrink-0 text-right text-[10px] tabular-nums text-muted">
+          {ticks.map((t) => (
+            <span key={t} className="absolute right-0 -translate-y-1/2" style={{ top: `${100 - (t / top) * 100}%` }}>
+              {t}
+            </span>
+          ))}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="relative h-36">
+            {ticks.map((t) => (
+              <div key={t} className="absolute inset-x-0 border-t border-dashed border-border" style={{ top: `${100 - (t / top) * 100}%` }} />
+            ))}
+            <div className="relative flex h-full items-end gap-1" onMouseLeave={() => setHover(null)}>
+              {days.map((d) => (
+                <button
+                  key={d.day}
+                  disabled={!d.users}
+                  onClick={() => onPick(d.day)}
+                  onMouseEnter={() => setHover(d.day)}
+                  className="group relative flex h-full flex-1 flex-col items-center justify-end rounded-t disabled:cursor-default"
+                  aria-label={`${shortDay(d.day)}: ${d.users} people, ${d.aiActions} AI actions, ${d.resumesCreated} new resumes`}
+                >
+                  {d.users > 0 && (
+                    <span className={`mb-0.5 text-[10px] font-semibold tabular-nums ${selected === d.day ? "text-accent" : "text-ink"}`}>
+                      {d.users}
+                    </span>
+                  )}
+                  <span
+                    className={`block w-full max-w-10 rounded-t transition-colors ${
+                      selected === d.day
+                        ? "bg-accent"
+                        : selected
+                          ? "bg-accent/30 group-hover:bg-accent/60"
+                          : focus?.day === d.day && hover
+                            ? "bg-accent"
+                            : "bg-accent/75 group-hover:bg-accent"
+                    }`}
+                    style={{ height: `${d.users ? Math.max((d.users / top) * 100, 3) : 0}%` }}
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* X axis */}
+          <div className="mt-1 flex gap-1 border-t border-border pt-1">
+            {days.map((d, i) => (
+              <span key={d.day} className="flex-1 truncate text-center text-[10px] text-muted">
+                {d.day === today ? "Today" : i % labelEvery === 0 || i === days.length - 1 ? shortDay(d.day) : ""}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
-      <div className="mt-1 flex justify-between text-[11px] text-muted">
-        <span>{daily[0] ? shortDay(daily[0].day) : ""}</span>
-        <span>today</span>
-      </div>
+
+      {focus && (
+        <div className="mt-3 rounded-lg bg-subtle px-3 py-2 text-sm">
+          <p className="font-medium text-ink">
+            {focus.day === today ? "Today" : new Date(focus.day).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+          </p>
+          <p className="text-xs text-muted">
+            <span className="font-semibold text-ink">{focus.users}</span> people ·{" "}
+            <span className="font-semibold text-ink">{focus.aiActions}</span> AI actions ·{" "}
+            <span className="font-semibold text-ink">{focus.resumesCreated}</span> new resumes
+          </p>
+        </div>
+      )}
+      <p className="mt-2 text-[11px] text-muted">
+        {shortDay(days[0].day)} – today: {totals.ai} AI actions, {totals.resumes} new resumes. Hover a bar for its numbers, tap to see who.
+      </p>
     </div>
   );
 }
@@ -523,13 +585,12 @@ export default function ResumeBuilderPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="card">
-          <h2 className="mb-4 text-sm font-semibold text-ink">People using it per day · last 30 days</h2>
+          <h2 className="mb-4 text-sm font-semibold text-ink">People using it per day</h2>
           <DailyBars
             daily={s.daily}
             selected={filter?.kind === "day" ? filter.day : null}
             onPick={(day) => pick({ kind: "day", day })}
           />
-          <p className="mt-2 text-[11px] text-muted">Tap a bar to see who used it that day.</p>
         </section>
         <section className="card">
           <h2 className="mb-4 text-sm font-semibold text-ink">Which AI features they use</h2>
