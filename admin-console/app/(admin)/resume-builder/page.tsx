@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { ChevronRight, ExternalLink, FileText, X } from "lucide-react";
 import { ResumeViewer } from "@/components/resume/ResumeViewer";
@@ -35,10 +35,60 @@ interface Stats {
     resumes: number;
     aiActions: number;
     jdCount: number;
+    // AI feature -> how many times they used it (migration 0055).
+    actions?: Record<string, number>;
+    // India-time days (YYYY-MM-DD) they used the builder on.
+    days?: string[];
     firstUsed: string;
     lastActive: string;
   }[];
 }
+
+// What the People list is narrowed to, picked by tapping a tile or a chart.
+type Filter =
+  | { kind: "resumes" }
+  | { kind: "ai" }
+  | { kind: "active7d" }
+  | { kind: "day"; day: string }
+  | { kind: "action"; action: string };
+
+type BuilderUser = Stats["users"][number];
+
+const WEEK_MS = 7 * 86_400_000;
+
+function matches(u: BuilderUser, f: Filter): boolean {
+  switch (f.kind) {
+    case "resumes":
+      return u.resumes > 0;
+    case "ai":
+      return u.aiActions > 0;
+    case "active7d":
+      return Date.now() - new Date(u.lastActive).getTime() <= WEEK_MS;
+    case "day":
+      return (u.days ?? []).includes(f.day);
+    case "action":
+      return (u.actions?.[f.action] ?? 0) > 0;
+  }
+}
+
+const shortDay = (day: string) => new Date(day).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+
+function filterLabel(f: Filter): string {
+  switch (f.kind) {
+    case "resumes":
+      return "Saved a resume";
+    case "ai":
+      return "Used the AI";
+    case "active7d":
+      return "Active in the last 7 days";
+    case "day":
+      return `Used it on ${shortDay(f.day)}`;
+    case "action":
+      return actionLabel(f.action);
+  }
+}
+
+const sameFilter = (a: Filter | null, b: Filter) => JSON.stringify(a) === JSON.stringify(b);
 
 interface ResumeData {
   name?: string;
@@ -109,36 +159,65 @@ function pct(part: number, whole: number) {
   return whole > 0 ? `${Math.round((part / whole) * 100)}%` : "0%";
 }
 
-function Tile({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+function Tile({
+  label,
+  value,
+  sub,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
-    <div className="card">
-      <p className="text-xs font-medium text-muted">{label}</p>
+    <button
+      onClick={onClick}
+      className={`card text-left transition hover:border-accent/40 hover:shadow-md active:scale-[0.98] ${active ? "!border-accent ring-1 ring-accent" : ""}`}
+    >
+      <p className="flex items-center justify-between gap-1 text-xs font-medium text-muted">
+        {label}
+        <ChevronRight size={14} className="text-muted/60" aria-hidden />
+      </p>
       <p className="mt-1 text-2xl font-semibold tabular-nums text-ink">
         {typeof value === "number" ? value.toLocaleString() : value}
       </p>
       {sub && <p className="mt-0.5 text-xs text-muted">{sub}</p>}
-    </div>
+    </button>
   );
 }
 
 // People who used the builder each day, last 30 days. One series, so no
-// legend; each bar's tooltip has the day's numbers.
-function DailyBars({ daily }: { daily: Stats["daily"] }) {
+// legend; each bar's tooltip has the day's numbers, and a tap lists that
+// day's people. The whole column is the tap target, so short bars are easy
+// to hit.
+function DailyBars({ daily, selected, onPick }: { daily: Stats["daily"]; selected: string | null; onPick: (day: string) => void }) {
   const max = Math.max(1, ...daily.map((d) => d.users));
   return (
     <div>
       <div className="flex h-32 items-end gap-[3px]">
         {daily.map((d) => (
-          <div
+          <button
             key={d.day}
-            className="flex-1 rounded-t bg-accent/80 hover:bg-accent"
-            style={{ height: `${d.users ? Math.max((d.users / max) * 100, 4) : 0}%` }}
-            title={`${new Date(d.day).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}: ${d.users} people, ${d.aiActions} AI actions, ${d.resumesCreated} new resumes`}
-          />
+            disabled={!d.users}
+            onClick={() => onPick(d.day)}
+            className="group flex h-full flex-1 items-end rounded-t disabled:cursor-default"
+            title={`${shortDay(d.day)}: ${d.users} people, ${d.aiActions} AI actions, ${d.resumesCreated} new resumes`}
+            aria-label={`${shortDay(d.day)}: ${d.users} people`}
+          >
+            <span
+              className={`block w-full rounded-t transition-colors ${
+                selected === d.day ? "bg-accent" : selected ? "bg-accent/30 group-hover:bg-accent/60" : "bg-accent/80 group-hover:bg-accent"
+              }`}
+              style={{ height: `${d.users ? Math.max((d.users / max) * 100, 4) : 0}%` }}
+            />
+          </button>
         ))}
       </div>
       <div className="mt-1 flex justify-between text-[11px] text-muted">
-        <span>{new Date(daily[0]?.day).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
+        <span>{daily[0] ? shortDay(daily[0].day) : ""}</span>
         <span>today</span>
       </div>
     </div>
@@ -387,12 +466,22 @@ function UserModal({ user, onClose }: { user: Stats["users"][number]; onClose: (
 export default function ResumeBuilderPage() {
   const { data: s, error } = useSWR("admin_resume_builder_stats", () => rpc<Stats>("admin_resume_builder_stats"));
   const [open, setOpen] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter | null>(null);
+  const peopleRef = useRef<HTMLElement>(null);
 
   if ((error as { code?: string } | undefined)?.code === "42501") return <Unauthorized />;
   if (!s) return <PageLoading error={error} />;
 
   const openUser = s.users.find((u) => u.userId === open);
-  const maxAction =Math.max(1, ...s.byAction.map((a) => a.count));
+  const maxAction = Math.max(1, ...s.byAction.map((a) => a.count));
+  const people = filter ? s.users.filter((u) => matches(u, filter)) : s.users;
+
+  // Tapping the active filter again clears it; a new one scrolls to the list.
+  const pick = (f: Filter | null) => {
+    const next = f && !sameFilter(filter, f) ? f : null;
+    setFilter(next);
+    if (next) requestAnimationFrame(() => peopleRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -402,43 +491,94 @@ export default function ResumeBuilderPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile label="People who used it" value={s.builderUsers} sub={`${pct(s.builderUsers, s.totalUsers)} of all ${s.totalUsers} users`} />
-        <Tile label="Resumes saved" value={s.resumes} sub={`by ${s.usersWithResume} people`} />
-        <Tile label="AI actions" value={s.aiActions} sub={`by ${s.aiUsers} people · $${Number(s.aiCostUsd).toFixed(2)}`} />
-        <Tile label="Active in last 7 days" value={s.activeUsers7d} sub={`${s.newUsers7d} used it for the first time`} />
+        <Tile
+          label="People who used it"
+          value={s.builderUsers}
+          sub={`${pct(s.builderUsers, s.totalUsers)} of all ${s.totalUsers} users`}
+          active={filter === null}
+          onClick={() => pick(null)}
+        />
+        <Tile
+          label="Resumes saved"
+          value={s.resumes}
+          sub={`by ${s.usersWithResume} people`}
+          active={sameFilter(filter, { kind: "resumes" })}
+          onClick={() => pick({ kind: "resumes" })}
+        />
+        <Tile
+          label="AI actions"
+          value={s.aiActions}
+          sub={`by ${s.aiUsers} people · $${Number(s.aiCostUsd).toFixed(2)}`}
+          active={sameFilter(filter, { kind: "ai" })}
+          onClick={() => pick({ kind: "ai" })}
+        />
+        <Tile
+          label="Active in last 7 days"
+          value={s.activeUsers7d}
+          sub={`${s.newUsers7d} used it for the first time`}
+          active={sameFilter(filter, { kind: "active7d" })}
+          onClick={() => pick({ kind: "active7d" })}
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="card">
           <h2 className="mb-4 text-sm font-semibold text-ink">People using it per day · last 30 days</h2>
-          <DailyBars daily={s.daily} />
+          <DailyBars
+            daily={s.daily}
+            selected={filter?.kind === "day" ? filter.day : null}
+            onPick={(day) => pick({ kind: "day", day })}
+          />
+          <p className="mt-2 text-[11px] text-muted">Tap a bar to see who used it that day.</p>
         </section>
         <section className="card">
           <h2 className="mb-4 text-sm font-semibold text-ink">Which AI features they use</h2>
           {s.byAction.length === 0 && <p className="text-sm text-muted">No AI actions yet.</p>}
-          <ul className="space-y-2">
-            {s.byAction.map((a) => (
-              <li key={a.action}>
-                <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
-                  <span className="text-ink">{actionLabel(a.action)}</span>
-                  <span className="tabular-nums text-ink">
-                    <span className="font-semibold">{a.count}</span>
-                    <span className="ml-1 text-xs text-muted">by {a.users} people</span>
-                  </span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-ink/[0.06]">
-                  <div className="h-full rounded-full bg-accent" style={{ width: `${(a.count / maxAction) * 100}%` }} />
-                </div>
-              </li>
-            ))}
+          <ul className="-mx-2 space-y-1">
+            {s.byAction.map((a) => {
+              const active = sameFilter(filter, { kind: "action", action: a.action });
+              return (
+                <li key={a.action}>
+                  <button
+                    onClick={() => pick({ kind: "action", action: a.action })}
+                    className={`block w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-subtle ${active ? "bg-accent/10" : ""}`}
+                  >
+                    <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
+                      <span className={active ? "font-medium text-accent" : "text-ink"}>{actionLabel(a.action)}</span>
+                      <span className="flex items-center gap-1 tabular-nums text-ink">
+                        <span className="font-semibold">{a.count}</span>
+                        <span className="text-xs text-muted">by {a.users} people</span>
+                        <ChevronRight size={13} className="text-muted/60" aria-hidden />
+                      </span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-ink/[0.06]">
+                      <div className="h-full rounded-full bg-accent" style={{ width: `${(a.count / maxAction) * 100}%` }} />
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </section>
       </div>
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-ink">People ({s.users.length})</h2>
+      <section ref={peopleRef} className="scroll-mt-4 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-sm font-semibold text-ink">
+            People ({people.length}
+            {filter ? ` of ${s.users.length}` : ""})
+          </h2>
+          {filter && (
+            <button
+              onClick={() => setFilter(null)}
+              className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2.5 py-0.5 text-xs font-medium text-accent hover:bg-accent/20"
+            >
+              {filterLabel(filter)} <X size={12} />
+            </button>
+          )}
+        </div>
         <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface shadow-card">
-          {s.users.map((u) => (
+          {people.map((u) => (
               <li key={u.userId}>
                 <button
                   onClick={() => setOpen(u.userId)}
@@ -457,7 +597,11 @@ export default function ResumeBuilderPage() {
                 </button>
               </li>
           ))}
-          {s.users.length === 0 && <li className="py-8 text-center text-sm text-muted">Nobody has used the resume builder yet.</li>}
+          {people.length === 0 && (
+            <li className="py-8 text-center text-sm text-muted">
+              {filter ? "Nobody matches this filter." : "Nobody has used the resume builder yet."}
+            </li>
+          )}
         </ul>
       </section>
       {openUser && <UserModal user={openUser} onClose={() => setOpen(null)} />}
