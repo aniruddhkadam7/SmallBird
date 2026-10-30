@@ -262,9 +262,23 @@ Deno.serve(withCors(async (req) => {
       })
       .then(({ error }) => error && console.error("usage_costs insert failed", error));
 
-    // What the user gave the AI, for the admin console's Resume Builder page
-    // (migration 0052). Capped like the prompt itself.
+    let parsed: unknown = null;
+    let cutOff = false;
+    try {
+      parsed = JSON.parse(result.choices?.[0]?.message?.content ?? "");
+    } catch {
+      cutOff = true;
+    }
+
+    // What the user gave the AI and what it gave back, for the admin
+    // console's Resume Builder page (migrations 0052, 0053). Capped like the
+    // prompt itself; result is null when the reply couldn't be read.
     const str = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+    const where = str(body.context, 300);
+    const inputText =
+      action === "rewrite" ? str(body.text, 3_000)
+      : action === "improve" && body.entry ? JSON.stringify(body.entry).slice(0, MAX_TEXT_CHARS)
+      : null;
     admin
       .from("resume_ai_requests")
       .insert({
@@ -273,15 +287,12 @@ Deno.serve(withCors(async (req) => {
         uploaded_text: action === "import" ? str(body.text, MAX_TEXT_CHARS) : null,
         job_description: str(body.jobDescription, MAX_JD_CHARS),
         instructions: str(body.instructions, MAX_INSTRUCTION_CHARS),
+        input_text: inputText && where ? `${where}\n\n${inputText}` : inputText,
+        result: parsed && typeof parsed === "object" ? parsed : null,
       })
       .then(({ error }) => error && console.error("resume_ai_requests insert failed", error));
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(result.choices?.[0]?.message?.content ?? "");
-    } catch {
-      return json({ error: "The AI's reply was cut off. Please try again." }, 502);
-    }
+    if (cutOff) return json({ error: "The AI's reply was cut off. Please try again." }, 502);
     if (!parsed || typeof parsed !== "object") return json({ error: "The AI's reply was empty. Please try again." }, 502);
     return json(parsed);
   } catch (err) {

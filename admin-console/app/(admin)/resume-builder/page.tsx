@@ -60,7 +60,29 @@ interface UserDetail {
     uploadedText: string | null;
     jobDescription: string | null;
     instructions: string | null;
+    inputText: string | null;
+    // The AI's reply: import -> the resume; tailor/edit -> { resume, changes,
+    // missingSkills? }; rewrite -> { text }; improve -> { items }.
+    result: Record<string, unknown> | null;
     createdAt: string;
+  }[];
+  versions: {
+    id: string;
+    resumeId: string;
+    title: string;
+    data: ResumeData;
+    createdAt: string;
+    savedAt: string;
+    deleted: boolean;
+  }[];
+  desktopDocs: {
+    transcriptId: string;
+    sessionAt: string;
+    role: string | null;
+    company: string | null;
+    docType: string;
+    filename: string;
+    text: string;
   }[];
 }
 
@@ -184,6 +206,54 @@ function TextBlock({ label, text }: { label: string; text: string }) {
   );
 }
 
+// "30 Oct, 3:45 pm" -- the timeline needs the time on older days too.
+function when(iso: string) {
+  return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+}
+
+function ResumeBlock({ label, data, note }: { label: string; data: ResumeData; note?: string }) {
+  return (
+    <details className="group rounded-lg border border-border bg-surface px-3 py-2">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm">
+        <span className="min-w-0">
+          <span className="font-medium text-ink">{label}</span>
+          {note && <span className="ml-2 text-xs text-muted">{note}</span>}
+        </span>
+        <span className="text-xs text-accent group-open:hidden">Show</span>
+        <span className="hidden text-xs text-accent group-open:inline">Hide</span>
+      </summary>
+      <div className="mt-3 max-h-[32rem] overflow-y-auto">
+        <ResumeView data={data ?? {}} />
+      </div>
+    </details>
+  );
+}
+
+const asStrings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+
+// What the AI gave back for one action.
+function AiResult({ action, result }: { action: string; result: Record<string, unknown> | null }) {
+  if (!result) return <p className="text-xs text-muted">AI reply not saved (from before 30 Oct, or it failed).</p>;
+  if (action === "import") return <ResumeBlock label="CV the AI built from it" data={result as ResumeData} />;
+  if (action === "rewrite") return <TextBlock label="AI rewrote it to" text={String(result.text ?? "")} />;
+  if (action === "improve") return <TextBlock label="AI rewrote it to" text={asStrings(result.items).map((i) => `• ${i}`).join("\n")} />;
+  const changes = asStrings(result.changes);
+  const missing = asStrings(result.missingSkills);
+  return (
+    <div className="space-y-1.5">
+      {!!result.resume && <ResumeBlock label="CV the AI generated" data={result.resume as ResumeData} />}
+      {changes.length > 0 && <TextBlock label={`What the AI changed (${changes.length})`} text={changes.map((c) => `• ${c}`).join("\n")} />}
+      {missing.length > 0 && <TextBlock label={`Skills the JD wants that the CV lacks (${missing.length})`} text={missing.join(", ")} />}
+    </div>
+  );
+}
+
+const DESKTOP_DOC_LABELS: Record<string, string> = { RESUME: "CV", JOB_DESCRIPTION: "Job description" };
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <p className="text-xs font-semibold uppercase tracking-wide text-muted">{children}</p>;
+}
+
 function UserPanel({ userId }: { userId: string }) {
   const { data, error } = useSWR(["admin_user_resume_builder", userId], () =>
     rpc<UserDetail>("admin_user_resume_builder", { p_user_id: userId }),
@@ -191,47 +261,85 @@ function UserPanel({ userId }: { userId: string }) {
   if (error) return <p className="text-sm text-danger">Couldn&apos;t load: {error.message}</p>;
   if (!data) return <p className="text-sm text-muted">Loading...</p>;
 
+  // Everything they did while building, newest first: each AI action and
+  // each saved stretch of work on a resume.
+  const timeline = [
+    ...data.requests.map((q) => ({ kind: "ai" as const, at: q.createdAt, q })),
+    ...(data.versions ?? []).map((v) => ({ kind: "save" as const, at: v.savedAt, v })),
+  ].sort((a, b) => b.at.localeCompare(a.at));
+
+  const uploads = [
+    ...data.requests
+      .filter((q) => q.uploadedText)
+      .map((q) => ({ id: q.id, at: q.createdAt, label: "CV uploaded to the resume builder", text: q.uploadedText! })),
+    ...data.requests
+      .filter((q) => q.jobDescription)
+      .map((q) => ({ id: `${q.id}-jd`, at: q.createdAt, label: `JD used to ${q.action} in the resume builder`, text: q.jobDescription! })),
+    ...(data.desktopDocs ?? []).map((d, i) => ({
+      id: `${d.transcriptId}-${i}`,
+      at: d.sessionAt,
+      label: `${DESKTOP_DOC_LABELS[d.docType] ?? d.docType} in a desktop session${d.role || d.company ? ` (${[d.role, d.company].filter(Boolean).join(", ")})` : ""}`,
+      text: d.text,
+    })),
+  ]
+    .sort((a, b) => b.at.localeCompare(a.at))
+    // The same JD is often sent with several actions in a row.
+    .filter((u, i, all) => all.findIndex((x) => x.text === u.text) === i);
+
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <div className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Resumes ({data.resumes.length})</p>
-        {data.resumes.length === 0 && <p className="text-sm text-muted">No saved resumes (deleted, or only used the AI).</p>}
-        {data.resumes.map((r) => (
-          <details key={r.id} className="group rounded-lg border border-border px-3 py-2">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
-              <span className="min-w-0">
-                <span className="text-sm font-medium text-ink">{r.title}</span>
-                <span className="ml-2 text-xs text-muted">updated {formatJoined(r.updatedAt)}</span>
-              </span>
-              <span className="text-xs text-accent group-open:hidden">Show</span>
-              <span className="hidden text-xs text-accent group-open:inline">Hide</span>
-            </summary>
-            <div className="mt-3 max-h-[32rem] overflow-y-auto">
-              <ResumeView data={r.data ?? {}} />
-            </div>
-          </details>
-        ))}
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <SectionTitle>Resumes now ({data.resumes.length})</SectionTitle>
+          {data.resumes.length === 0 && <p className="text-sm text-muted">No saved resumes (deleted, or only used the AI).</p>}
+          {data.resumes.map((r) => (
+            <ResumeBlock key={r.id} label={r.title} data={r.data} note={`updated ${formatJoined(r.updatedAt)}`} />
+          ))}
+        </div>
+        <div className="space-y-2">
+          <SectionTitle>CVs & JDs they uploaded ({uploads.length})</SectionTitle>
+          {uploads.length === 0 && <p className="text-sm text-muted">None saved yet. Kept from 30 Oct 2026 on.</p>}
+          {uploads.map((u) => (
+            <TextBlock key={u.id} label={`${u.label} · ${when(u.at)}`} text={u.text} />
+          ))}
+        </div>
       </div>
       <div className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">What they gave the AI ({data.requests.length})</p>
-        {data.requests.length === 0 && (
-          <p className="text-sm text-muted">Nothing saved yet. CVs and JDs are kept from 30 Oct 2026 on.</p>
-        )}
-        {data.requests.map((q) => (
-          <div key={q.id} className="space-y-1.5 rounded-lg bg-subtle px-3 py-2">
-            <p className="flex justify-between gap-2 text-sm">
-              <span className="font-medium text-ink">{actionLabel(q.action)}</span>
-              <span className="text-xs text-muted">{formatJoined(q.createdAt)}</span>
-            </p>
-            {q.instructions && <p className="text-sm text-ink">&ldquo;{q.instructions}&rdquo;</p>}
-            {q.uploadedText && <TextBlock label="CV they uploaded" text={q.uploadedText} />}
-            {q.jobDescription && <TextBlock label="Job description" text={q.jobDescription} />}
-          </div>
-        ))}
+        <SectionTitle>How they built it ({timeline.length})</SectionTitle>
+        {timeline.length === 0 && <p className="text-sm text-muted">No history yet.</p>}
+        <ol className="space-y-2 border-l-2 border-border pl-3">
+          {timeline.map((t) =>
+            t.kind === "ai" ? (
+              <li key={t.q.id} className="space-y-1.5 rounded-lg bg-subtle px-3 py-2">
+                <p className="flex justify-between gap-2 text-sm">
+                  <span className="font-medium text-ink">AI · {actionLabel(t.q.action)}</span>
+                  <span className="flex-shrink-0 text-xs text-muted">{when(t.at)}</span>
+                </p>
+                {t.q.instructions && <p className="text-sm text-ink">They asked: &ldquo;{t.q.instructions}&rdquo;</p>}
+                {t.q.uploadedText && <TextBlock label="CV they uploaded" text={t.q.uploadedText} />}
+                {t.q.jobDescription && <TextBlock label="Job description" text={t.q.jobDescription} />}
+                {t.q.inputText && <TextBlock label="What they asked to change" text={t.q.inputText} />}
+                <AiResult action={t.q.action} result={t.q.result} />
+              </li>
+            ) : (
+              <li key={t.v.id} className="space-y-1.5 rounded-lg border border-border px-3 py-2">
+                <p className="flex justify-between gap-2 text-sm">
+                  <span className="font-medium text-ink">
+                    Saved &ldquo;{t.v.title}&rdquo;
+                    {t.v.deleted && <span className="badge badge-muted ml-2">deleted later</span>}
+                  </span>
+                  <span className="flex-shrink-0 text-xs text-muted">{when(t.at)}</span>
+                </p>
+                <ResumeBlock label="The resume at this point" data={t.v.data} note={`edited ${when(t.v.createdAt)} – ${when(t.v.savedAt)}`} />
+              </li>
+            ),
+          )}
+        </ol>
       </div>
     </div>
   );
 }
+
 
 export default function ResumeBuilderPage() {
   const { data: s, error } = useSWR("admin_resume_builder_stats", () => rpc<Stats>("admin_resume_builder_stats"));
