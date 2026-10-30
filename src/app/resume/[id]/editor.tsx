@@ -309,7 +309,7 @@ export function ResumeEditor({
   const importFile = (file: File) =>
     runAi("import", async () => {
       const { text } = await readDocument(file)
-      const imported = await aiImport(text)
+      const imported = await aiImport(text, file)
       if (isBlank(imported) && !imported.name) throw new Error("We couldn't find resume details in that file.")
       applyAi(imported)
       if (!title.trim() || title === "Untitled resume") setTitle(imported.name ? `${imported.name} resume` : file.name)

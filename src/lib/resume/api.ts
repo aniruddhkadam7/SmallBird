@@ -59,9 +59,31 @@ async function callResumeAi(body: Record<string, unknown>): Promise<Record<strin
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((s): s is string => typeof s === "string" && !!s.trim()) : [])
 
+/**
+ * Keeps the original file in the private resume-uploads bucket (Smallbird
+ * staff can open it from the admin console; the user can't read it back).
+ * Returns its path, or null if the upload failed -- importing goes on anyway.
+ */
+async function uploadOriginal(file: File): Promise<string | null> {
+  const supabase = createClient()
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session) return null
+  const safeName = file.name.replace(/[^\w.-]+/g, "_").slice(-100) || "resume"
+  const path = `${session.user.id}/${crypto.randomUUID()}-${safeName}`
+  const { error } = await supabase.storage
+    .from("resume-uploads")
+    .upload(path, file, { contentType: file.type || undefined, upsert: false })
+  return error ? null : path
+}
+
 /** Old resume text (from a PDF/DOCX) -> a structured resume. */
-export async function aiImport(text: string): Promise<ResumeData> {
-  return normalizeResume(await callResumeAi({ action: "import", text }))
+export async function aiImport(text: string, file?: File): Promise<ResumeData> {
+  const filePath = file ? await uploadOriginal(file).catch(() => null) : null
+  return normalizeResume(
+    await callResumeAi({ action: "import", text, filePath: filePath ?? undefined, fileName: file?.name }),
+  )
 }
 
 export interface TailorResult {
