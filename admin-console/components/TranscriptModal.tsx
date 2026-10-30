@@ -6,6 +6,7 @@ import { X } from "lucide-react";
 import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { formatDuration } from "@/lib/format";
 import { TranscriptDocs, type ContextDoc } from "@/components/TranscriptDocs";
+import { Markdown } from "@/components/Markdown";
 
 interface Turn {
   question: string;
@@ -83,7 +84,7 @@ export function TranscriptModal({ transcriptId, onClose }: { transcriptId: strin
               <p className="text-xs font-semibold uppercase tracking-wide text-muted">Question {i + 1}</p>
               <p className="mt-1 whitespace-pre-wrap text-sm text-ink">{turn.question}</p>
               <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted">Answer</p>
-              <p className="mt-1 whitespace-pre-wrap text-sm text-ink">{turn.answer}</p>
+              <Markdown className="mt-1 text-sm text-ink">{turn.answer}</Markdown>
             </div>
           ))}
           {transcript && transcript.turns.length === 0 && <p className="text-sm text-muted">No turns recorded.</p>}

@@ -7,6 +7,7 @@ import { Unauthorized } from "@/components/Unauthorized";
 import { PageLoading } from "@/components/PageLoading";
 import { formatDuration } from "@/lib/format";
 import { TranscriptDocs, type ContextDoc } from "@/components/TranscriptDocs";
+import { Markdown } from "@/components/Markdown";
 
 interface Turn {
   question: string;
@@ -63,7 +64,7 @@ export default function TranscriptDetailPage() {
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">Question {i + 1}</p>
             <p className="mt-1 whitespace-pre-wrap text-sm text-ink">{turn.question}</p>
             <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted">Answer</p>
-            <p className="mt-1 whitespace-pre-wrap text-sm text-ink">{turn.answer}</p>
+            <Markdown className="mt-1 text-sm text-ink">{turn.answer}</Markdown>
             {turn.askedAtMs && <p className="mt-2 text-xs text-muted">{new Date(turn.askedAtMs).toLocaleTimeString()}</p>}
           </div>
         ))}

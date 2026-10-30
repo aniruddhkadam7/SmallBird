@@ -211,3 +211,85 @@ tbody tr:hover {
 ::-webkit-scrollbar-thumb {
   @apply rounded-full bg-ink/15;
 }
+
+/* AI answers in transcripts (components/Markdown.tsx), spaced like the
+   desktop app's answer view. Preflight strips list markers and heading
+   sizes, so they're put back here. */
+.md-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+  overflow-wrap: anywhere;
+}
+.md-answer p,
+.md-answer ul,
+.md-answer ol,
+.md-answer pre,
+.md-answer table,
+.md-answer blockquote {
+  margin: 0;
+}
+.md-answer ul,
+.md-answer ol {
+  padding-left: 1.3em;
+}
+.md-answer ul {
+  list-style: disc;
+}
+.md-answer ol {
+  list-style: decimal;
+}
+.md-answer li + li {
+  margin-top: 0.25em;
+}
+.md-answer li > p {
+  display: inline;
+}
+.md-answer h1,
+.md-answer h2,
+.md-answer h3,
+.md-answer h4 {
+  margin: 0.4em 0 0;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.md-answer h1 {
+  font-size: 1.3em;
+}
+.md-answer h2 {
+  font-size: 1.15em;
+}
+.md-answer h3,
+.md-answer h4 {
+  font-size: 1.05em;
+}
+.md-answer > :first-child {
+  margin-top: 0;
+}
+.md-answer strong {
+  font-weight: 700;
+}
+.md-answer a {
+  @apply text-accent underline;
+}
+.md-answer :not(pre) > code {
+  @apply rounded bg-ink/10 px-1 py-px;
+  font-size: 0.9em;
+  font-family: "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+}
+.md-answer blockquote {
+  @apply border-l-2 border-border pl-3 text-muted;
+}
+.md-answer hr {
+  @apply border-border;
+}
+.md-answer table {
+  @apply block max-w-full overflow-x-auto border-collapse text-[0.95em];
+}
+.md-answer th,
+.md-answer td {
+  @apply border border-border px-2 py-1 text-left align-top;
+}
+.md-answer th {
+  @apply bg-subtle font-semibold;
+}
