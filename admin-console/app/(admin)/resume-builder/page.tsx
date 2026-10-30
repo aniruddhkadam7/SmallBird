@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import useSWR from "swr";
-import { ChevronDown, ExternalLink } from "lucide-react";
+import { ChevronDown, ExternalLink, FileText } from "lucide-react";
+import { ResumeViewer } from "@/components/resume/ResumeViewer";
 import { createClient } from "@/lib/supabase/client";
 import { Unauthorized } from "@/components/Unauthorized";
 import { PageLoading } from "@/components/PageLoading";
@@ -144,57 +145,6 @@ function DailyBars({ daily }: { daily: Stats["daily"] }) {
   );
 }
 
-function ResumeView({ data }: { data: ResumeData }) {
-  return (
-    <div className="space-y-3 text-sm text-ink">
-      <div>
-        <p className="text-base font-semibold">{data.name || "No name"}</p>
-        {data.tagline && <p className="text-muted">{data.tagline}</p>}
-        {!!data.contact?.length && (
-          <p className="text-xs text-muted">{data.contact.map((c) => c.value).filter(Boolean).join(" · ")}</p>
-        )}
-      </div>
-      {data.sections?.map((s, i) => (
-        <div key={i}>
-          <p className="border-b border-border pb-0.5 text-xs font-semibold uppercase tracking-wide text-muted">{s.title}</p>
-          {s.kind === "text" && <p className="mt-1 whitespace-pre-wrap">{s.text}</p>}
-          {s.kind === "table" && (
-            <ul className="mt-1 space-y-0.5">
-              {s.rows?.map((r, j) => (
-                <li key={j}>
-                  <span className="font-medium">{r.label}:</span> {r.value}
-                </li>
-              ))}
-            </ul>
-          )}
-          {s.kind === "entries" &&
-            s.entries?.map((e, j) => (
-              <div key={j} className="mt-1.5">
-                <p className="flex justify-between gap-3">
-                  <span className="font-medium">{e.heading}</span>
-                  <span className="text-xs text-muted">{e.headingRight}</span>
-                </p>
-                {(e.subheading || e.subheadingRight) && (
-                  <p className="flex justify-between gap-3 text-xs text-muted">
-                    <span>{e.subheading}</span>
-                    <span>{e.subheadingRight}</span>
-                  </p>
-                )}
-                {!!e.items?.length && (
-                  <ul className="ml-4 list-disc">
-                    {e.items.map((it, k) => (
-                      <li key={k}>{it.replace(/\*\*/g, "")}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ))}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // Opens the original upload from the private resume-uploads bucket (0054)
 // through a 5-minute signed URL. The tab is opened before the request so the
 // browser doesn't block it as a pop-up.
@@ -239,21 +189,23 @@ function when(iso: string) {
   return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 }
 
+// A resume as a row; "Open CV" shows it on an A4 sheet in its template.
 function ResumeBlock({ label, data, note }: { label: string; data: ResumeData; note?: string }) {
+  const [open, setOpen] = useState(false);
   return (
-    <details className="group rounded-lg border border-border bg-surface px-3 py-2">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm">
-        <span className="min-w-0">
-          <span className="font-medium text-ink">{label}</span>
-          {note && <span className="ml-2 text-xs text-muted">{note}</span>}
-        </span>
-        <span className="text-xs text-accent group-open:hidden">Show</span>
-        <span className="hidden text-xs text-accent group-open:inline">Hide</span>
-      </summary>
-      <div className="mt-3 max-h-[32rem] overflow-y-auto">
-        <ResumeView data={data ?? {}} />
-      </div>
-    </details>
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
+      <span className="min-w-0">
+        <span className="font-medium text-ink">{label}</span>
+        {note && <span className="ml-2 text-xs text-muted">{note}</span>}
+      </span>
+      <button
+        onClick={() => setOpen(true)}
+        className="inline-flex flex-shrink-0 items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs font-medium text-accent hover:bg-subtle"
+      >
+        <FileText size={12} /> Open CV
+      </button>
+      {open && <ResumeViewer title={label} subtitle={note} data={data} onClose={() => setOpen(false)} />}
+    </div>
   );
 }
 
