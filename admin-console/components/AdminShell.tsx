@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
-import { Menu, X, ChevronsLeft, ChevronsRight, LayoutDashboard, Users, Video, Receipt, type LucideIcon } from "lucide-react";
+import { Menu, X, ChevronsLeft, ChevronsRight, LayoutDashboard, Users, Video, Receipt, FileText, type LucideIcon } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { SignOutButton } from "@/components/SignOutButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -19,6 +19,8 @@ const TABS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/users", label: "Users", icon: Users },
   { href: "/sessions", label: "Sessions", icon: Video },
   { href: "/payments", label: "Payments", icon: Receipt },
+  // Every other page is in the menu behind the top bar's ☰ button.
+  { href: "/resume-builder", label: "Resumes", icon: FileText },
 ];
 
 // On phones every table is shown as a stack of cards (see globals.css), and
@@ -204,16 +206,6 @@ export function AdminShell({ email, children }: { email: string; children: React
             </Link>
           );
         })}
-        <button
-          onClick={() => setOpen(true)}
-          aria-label="More pages"
-          className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${
-            TABS.some((t) => pathname === t.href || pathname.startsWith(t.href + "/")) ? "text-muted" : "text-accent"
-          }`}
-        >
-          <Menu size={21} />
-          More
-        </button>
       </nav>
     </div>
   );
