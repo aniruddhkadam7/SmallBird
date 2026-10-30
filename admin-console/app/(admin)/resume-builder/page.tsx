@@ -259,8 +259,23 @@ function DailyBars({ daily, selected, onPick }: { daily: Stats["daily"]; selecte
           {/* X axis */}
           <div className="mt-1 flex gap-1 border-t border-border pt-1">
             {days.map((d, i) => (
-              <span key={d.day} className="flex-1 truncate text-center text-[10px] text-muted">
-                {d.day === today ? "Today" : i % labelEvery === 0 || i === days.length - 1 ? shortDay(d.day) : ""}
+              <span key={d.day} className="flex-1 overflow-hidden whitespace-nowrap text-center text-[10px] text-muted">
+                {d.day === today ? (
+                  <>
+                    <span className="sm:hidden">Now</span>
+                    <span className="hidden sm:inline">Today</span>
+                  </>
+                ) : i % labelEvery === 0 || i === days.length - 1 ? (
+                  <>
+                    {/* Phones: just the day number, with the month on the first label and the 1st. */}
+                    <span className="sm:hidden">
+                      {i === 0 || d.day.endsWith("-01") ? shortDay(d.day) : Number(d.day.slice(8))}
+                    </span>
+                    <span className="hidden sm:inline">{shortDay(d.day)}</span>
+                  </>
+                ) : (
+                  ""
+                )}
               </span>
             ))}
           </div>
@@ -304,15 +319,15 @@ async function openOriginal(path: string) {
 function TextBlock({ label, text, filePath }: { label: string; text: string; filePath?: string | null }) {
   return (
     <details className="group rounded-lg border border-border px-3 py-2">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm">
-        <span className="font-medium text-ink">{label}</span>
+      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 text-sm">
+        <span className="min-w-0 flex-1 break-words font-medium text-ink">{label}</span>
         {filePath && (
           <button
             onClick={(e) => {
               e.preventDefault();
               openOriginal(filePath);
             }}
-            className="ml-auto inline-flex flex-shrink-0 items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs font-medium text-accent hover:bg-subtle"
+            className="inline-flex flex-shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-accent hover:bg-subtle"
           >
             Open original file <ExternalLink size={12} />
           </button>
@@ -445,7 +460,7 @@ function UserPanel({ userId }: { userId: string }) {
           {timeline.map((t) =>
             t.kind === "ai" ? (
               <li key={t.q.id} className="space-y-1.5 rounded-lg bg-subtle px-3 py-2">
-                <p className="flex justify-between gap-2 text-sm">
+                <p className="flex flex-wrap justify-between gap-x-2 text-sm">
                   <span className="font-medium text-ink">AI · {actionLabel(t.q.action)}</span>
                   <span className="flex-shrink-0 text-xs text-muted">{when(t.at)}</span>
                 </p>
@@ -459,7 +474,7 @@ function UserPanel({ userId }: { userId: string }) {
               </li>
             ) : (
               <li key={t.v.id} className="space-y-1.5 rounded-lg border border-border px-3 py-2">
-                <p className="flex justify-between gap-2 text-sm">
+                <p className="flex flex-wrap justify-between gap-x-2 text-sm">
                   <span className="font-medium text-ink">
                     Saved &ldquo;{t.v.title}&rdquo;
                     {t.v.deleted && <span className="badge badge-muted ml-2">deleted later</span>}
@@ -493,13 +508,13 @@ function UserModal({ user, onClose }: { user: Stats["users"][number]; onClose: (
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-6" onClick={onClose}>
+    // Full screen on phones (safe-area padded), a large centred card from sm up.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 sm:p-6" onClick={onClose}>
       <div
-        className="flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
-        style={{ height: "min(92vh, 100%)" }}
+        className="flex h-full w-full max-w-6xl flex-col overflow-hidden bg-surface pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-2xl sm:h-[min(92vh,100%)] sm:rounded-2xl sm:border sm:border-border sm:pb-0 sm:pt-0"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
+        <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5 sm:py-4">
           <div className="min-w-0">
             <p className="truncate text-base font-semibold text-ink">{user.email}</p>
             <p className="text-xs text-muted">
@@ -512,12 +527,12 @@ function UserModal({ user, onClose }: { user: Stats["users"][number]; onClose: (
           </div>
           <div className="flex flex-shrink-0 items-center gap-2">
             <span className={`badge ${user.planId && user.planId !== "free" ? "badge-ok" : "badge-muted"}`}>{user.planId ?? "free"}</span>
-            <button onClick={onClose} className="rounded-lg p-1.5 text-muted hover:bg-subtle hover:text-ink" aria-label="Close">
-              <X size={18} />
+            <button onClick={onClose} className="rounded-lg p-2 text-muted hover:bg-subtle hover:text-ink" aria-label="Close">
+              <X size={20} />
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-5">
+        <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 sm:py-5">
           <UserPanel userId={user.userId} />
         </div>
       </div>

@@ -48,18 +48,20 @@ export function ResumeViewer({ title, subtitle, data, onClose }: { title: string
   return (
     <div data-resume-viewer className="fixed inset-0 z-50 flex flex-col bg-black/70" onClick={onClose}>
       <div
-        className="flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-3"
+        className="safe-x flex items-center justify-between gap-3 border-b border-border bg-surface pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-ink">{title}</p>
           {subtitle && <p className="truncate text-xs text-muted">{subtitle}</p>}
         </div>
-        <button onClick={onClose} className="rounded-lg p-1.5 text-muted hover:bg-subtle hover:text-ink" aria-label="Close">
-          <X size={18} />
+        <button onClick={onClose} className="rounded-lg p-2 text-muted hover:bg-subtle hover:text-ink" aria-label="Close">
+          <X size={20} />
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-6">
+      {/* overflow-x-hidden: the sheet is laid out 210mm wide before it's
+          scaled down, which would otherwise let a phone scroll sideways. */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-2 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-4 sm:px-4 sm:pt-6">
         <div ref={frame} className="mx-auto w-full max-w-[210mm]" style={{ height }} onClick={(e) => e.stopPropagation()}>
           <div
             ref={sheet}
