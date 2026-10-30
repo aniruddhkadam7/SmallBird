@@ -2,37 +2,17 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
+import { AdminApiError } from "@/lib/adminApi";
+import { useTranscript } from "@/lib/transcript";
 import { Unauthorized } from "@/components/Unauthorized";
 import { PageLoading } from "@/components/PageLoading";
 import { formatDuration } from "@/lib/format";
-import { TranscriptDocs, type ContextDoc } from "@/components/TranscriptDocs";
+import { TranscriptDocs } from "@/components/TranscriptDocs";
 import { Markdown } from "@/components/Markdown";
-
-interface Turn {
-  question: string;
-  answer: string;
-  askedAtMs?: number;
-}
-
-interface TranscriptDetail {
-  id: string;
-  userId: string;
-  email: string;
-  role: string | null;
-  company: string | null;
-  startedAtMs: number;
-  endedAtMs: number;
-  turns: Turn[];
-  createdAt: string;
-  contextDocs?: ContextDoc[];
-}
 
 export default function TranscriptDetailPage() {
   const params = useParams<{ id: string }>();
-  const { data: transcript, error } = useAdminQuery<TranscriptDetail>("admin-transcript-detail", {
-    transcriptId: params.id,
-  });
+  const { data: transcript, error } = useTranscript(params.id);
 
   if (error instanceof AdminApiError && error.status === 403) return <Unauthorized />;
   if (error instanceof AdminApiError && error.status === 404) return <p className="text-sm text-muted">Transcript not found.</p>;

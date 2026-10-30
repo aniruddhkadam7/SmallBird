@@ -3,36 +3,14 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { X } from "lucide-react";
-import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
+import { AdminApiError } from "@/lib/adminApi";
+import { useTranscript } from "@/lib/transcript";
 import { formatDuration } from "@/lib/format";
-import { TranscriptDocs, type ContextDoc } from "@/components/TranscriptDocs";
+import { TranscriptDocs } from "@/components/TranscriptDocs";
 import { Markdown } from "@/components/Markdown";
 
-interface Turn {
-  question: string;
-  answer: string;
-  askedAtMs?: number;
-}
-
-interface TranscriptDetail {
-  id: string;
-  userId: string;
-  email: string;
-  role: string | null;
-  company: string | null;
-  startedAtMs: number;
-  endedAtMs: number;
-  turns: Turn[];
-  createdAt: string;
-  contextDocs?: ContextDoc[];
-}
-
 export function TranscriptModal({ transcriptId, onClose }: { transcriptId: string | null; onClose: () => void }) {
-  const { data: transcript, error } = useAdminQuery<TranscriptDetail>(
-    "admin-transcript-detail",
-    { transcriptId: transcriptId ?? "" },
-    { isPaused: () => !transcriptId },
-  );
+  const { data: transcript, error } = useTranscript(transcriptId);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {

@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { Ban, ChevronDown, Clock, Copy, Phone, Receipt, Ticket } from "lucide-react";
 import { useParams } from "next/navigation";
-import { useAdminQuery, AdminApiError, prefetchAdminQuery } from "@/lib/useAdminQuery";
+import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
 import { PageLoading } from "@/components/PageLoading";
 import { ManageMinutesPanel } from "@/components/ManageMinutesPanel";
 import { GrantPassPanel } from "@/components/GrantPassPanel";
 import { TranscriptModal } from "@/components/TranscriptModal";
+import { prefetchTranscript } from "@/lib/transcript";
 import { BanUserPanel } from "@/components/BanUserPanel";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { Modal } from "@/components/Modal";
@@ -725,7 +726,7 @@ export default function UserDetailPage() {
                       {s.transcript_id ? (
                         <button
                           onClick={() => setOpenTranscriptId(s.transcript_id)}
-                          onMouseEnter={() => prefetchAdminQuery("admin-transcript-detail", { transcriptId: s.transcript_id })}
+                          onMouseEnter={() => prefetchTranscript(s.transcript_id!)}
                           className="btn-secondary px-2 py-1 text-xs"
                         >
                           {s.transcript_turn_count} turn{s.transcript_turn_count === 1 ? "" : "s"}
@@ -793,7 +794,7 @@ export default function UserDetailPage() {
                     <td>
                       <button
                         onClick={() => setOpenTranscriptId(t.id)}
-                        onMouseEnter={() => prefetchAdminQuery("admin-transcript-detail", { transcriptId: t.id })}
+                        onMouseEnter={() => prefetchTranscript(t.id)}
                         className="font-medium text-accent hover:underline"
                       >
                         {t.role ?? "Interview"} {t.company ? `@ ${t.company}` : ""}
