@@ -163,6 +163,58 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+// Lists show this many rows at first, then grow by this much per "Show more".
+const PAGE = 30;
+
+// "30 Oct, 3:01 pm" (adds the year when it isn't this year).
+function shortDateTime(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    ...(d.getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }),
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function MoreButton({ total, shown, onMore }: { total: number; shown: number; onMore: () => void }) {
+  if (total <= shown) return null;
+  return (
+    <button onClick={onMore} className="block w-full border-t border-border py-2.5 text-center text-sm font-medium text-accent hover:bg-subtle">
+      Show more ({total - shown} left)
+    </button>
+  );
+}
+
+// The phone/tablet version of a tab's table: one short row per item in a
+// single card (below lg, where tables would otherwise become a tall card
+// per row).
+function CompactList({
+  children,
+  empty,
+  total,
+  shown,
+  onMore,
+}: {
+  children: React.ReactNode;
+  empty: string;
+  total: number;
+  shown: number;
+  onMore: () => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-card lg:hidden">
+      {total === 0 ? (
+        <p className="py-6 text-center text-sm text-muted">{empty}</p>
+      ) : (
+        <ul className="divide-y divide-border">{children}</ul>
+      )}
+      <MoreButton total={total} shown={shown} onMore={onMore} />
+    </div>
+  );
+}
+
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="min-w-0">
@@ -188,12 +240,15 @@ export default function UserDetailPage() {
   const lastIp = detail?.devices.find((d) => d.lastIp)?.lastIp ?? null;
   const ipLocation = useIpLocation(lastIp);
   const [tab, setTab] = useState<Tab>("overview");
+  const [shown, setShown] = useState(PAGE);
+  const showMore = () => setShown((n) => n + PAGE);
   useEffect(() => {
     const fromHash = window.location.hash.slice(1) as Tab;
     if (TABS.includes(fromHash)) setTab(fromHash);
   }, []);
   const selectTab = (t: Tab) => {
     setTab(t);
+    setShown(PAGE);
     history.replaceState(null, "", t === "overview" ? window.location.pathname + window.location.search : `#${t}`);
   };
 
@@ -513,7 +568,27 @@ export default function UserDetailPage() {
 
       {tab === "minutes" && (
         <section>
-          <div className="table-wrap">
+          <CompactList empty="No ledger history." total={detail.ledger.length} shown={shown} onMore={showMore}>
+            {detail.ledger.slice(0, shown).map((l) => (
+              <li key={l.id} className="flex items-center gap-3 px-3 py-2.5">
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className={`badge ${SOURCE_BADGE[l.source] ?? "badge-muted"}`}>{l.source.replace(/_/g, " ").toLowerCase()}</span>
+                    <span className="truncate text-xs text-muted">{shortDateTime(l.created_at)}</span>
+                  </span>
+                  {(l.reason ?? l.reference_id) && <span className="mt-0.5 block truncate text-xs text-muted">{l.reason ?? l.reference_id}</span>}
+                </span>
+                <span className="flex-shrink-0 text-right">
+                  <span className={`block text-sm font-semibold tabular-nums ${Number(l.delta) >= 0 ? "text-ok" : "text-danger"}`}>
+                    {Number(l.delta) >= 0 ? "+" : ""}
+                    {Number(l.delta).toFixed(1)}
+                  </span>
+                  <span className="block text-[11px] tabular-nums text-muted">→ {Number(l.balance_after).toFixed(1)}</span>
+                </span>
+              </li>
+            ))}
+          </CompactList>
+          <div className="table-wrap hidden lg:block">
             <table>
               <thead>
                 <tr>
@@ -525,7 +600,7 @@ export default function UserDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {detail.ledger.map((l) => (
+                {detail.ledger.slice(0, shown).map((l) => (
                   <tr key={l.id}>
                     <td className="whitespace-nowrap">{new Date(l.created_at).toLocaleString()}</td>
                     <td>
@@ -552,6 +627,7 @@ export default function UserDetailPage() {
                 )}
               </tbody>
             </table>
+            <MoreButton total={detail.ledger.length} shown={shown} onMore={showMore} />
           </div>
         </section>
       )}
@@ -564,7 +640,51 @@ export default function UserDetailPage() {
             {" · "}Deepgram in total:{" "}
             <span className="font-medium text-ink">{formatDeepgramCost(userAiCost?.deepgramUsd ?? 0, aiCosts)}</span>
           </p>
-          <div className="table-wrap">
+          {/* Phones/tablets: one compact row per session. */}
+          <CompactList empty="No sessions." total={detail.sessions.length} shown={shown} onMore={showMore}>
+            {detail.sessions.slice(0, shown).map((s) => {
+              const ai = userAiCost?.sessions[s.id];
+              return (
+                <li key={s.id} className="flex items-center gap-3 px-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-1.5 text-sm font-medium text-ink">
+                      <span className="truncate">{shortDateTime(s.started_at)}</span>
+                      <span
+                        className={`h-2 w-2 flex-shrink-0 rounded-full ${
+                          s.status === "completed" ? "bg-ok" : s.status === "active" ? "bg-warn" : "bg-danger"
+                        }`}
+                        title={s.status + (s.termination_reason ? ` (${s.termination_reason})` : "")}
+                      />
+                      {s.status !== "completed" && <span className="text-xs font-normal text-muted">{s.status}</span>}
+                    </p>
+                    <p className="truncate text-xs text-muted">
+                      {[
+                        s.client_kind ? deviceLabel({ kind: s.client_kind, os: s.client_os ?? "unknown" }) : null,
+                        s.actual_duration_seconds != null ? formatDuration(s.actual_duration_seconds) : null,
+                        s.minutes_consumed != null ? `${Number(s.minutes_consumed).toFixed(1)} min${s.usage_deducted ? "" : " (not deducted)"}` : null,
+                        aiCosts ? `AI ${formatAiCost(ai?.costUsd ?? 0, aiCosts)} · DG ${formatDeepgramCost(ai?.deepgramUsd ?? 0, aiCosts)}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  </div>
+                  {s.transcript_id ? (
+                    <button
+                      onClick={() => setOpenTranscriptId(s.transcript_id)}
+                      className="flex-shrink-0 rounded-md border border-border px-2 py-1 text-xs font-medium text-accent"
+                    >
+                      {s.transcript_turn_count} turn{s.transcript_turn_count === 1 ? "" : "s"}
+                    </button>
+                  ) : s.ai_answers > 0 ? (
+                    <span className="badge badge-danger flex-shrink-0">Missing</span>
+                  ) : (
+                    <span className="flex-shrink-0 text-[11px] text-muted">No questions</span>
+                  )}
+                </li>
+              );
+            })}
+          </CompactList>
+          <div className="table-wrap hidden lg:block">
             <table>
               <thead>
                 <tr>
@@ -580,7 +700,7 @@ export default function UserDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {detail.sessions.map((s) => (
+                {detail.sessions.slice(0, shown).map((s) => (
                   <tr key={s.id}>
                     <td className="whitespace-nowrap">{new Date(s.started_at).toLocaleString()}</td>
                     <td>
@@ -631,13 +751,33 @@ export default function UserDetailPage() {
                 )}
               </tbody>
             </table>
+            <MoreButton total={detail.sessions.length} shown={shown} onMore={showMore} />
           </div>
         </section>
       )}
 
       {tab === "transcripts" && (
         <section>
-          <div className="table-wrap">
+          <CompactList empty="No transcripts." total={detail.transcripts.length} shown={shown} onMore={showMore}>
+            {detail.transcripts.slice(0, shown).map((t) => (
+              <li key={t.id}>
+                <button onClick={() => setOpenTranscriptId(t.id)} className="flex w-full items-center gap-3 px-3 py-2.5 text-left">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-ink">
+                      {t.role ?? "Interview"} {t.company ? `@ ${t.company}` : ""}
+                    </span>
+                    <span className="block truncate text-xs text-muted">
+                      {shortDateTime(t.created_at)} · {formatDuration((t.ended_at_ms - t.started_at_ms) / 1000)}
+                    </span>
+                  </span>
+                  <span className="flex-shrink-0 text-xs font-medium text-accent">
+                    {t.turn_count} turn{t.turn_count === 1 ? "" : "s"}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </CompactList>
+          <div className="table-wrap hidden lg:block">
             <table>
               <thead>
                 <tr>
@@ -648,7 +788,7 @@ export default function UserDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {detail.transcripts.map((t) => (
+                {detail.transcripts.slice(0, shown).map((t) => (
                   <tr key={t.id}>
                     <td>
                       <button
@@ -673,6 +813,7 @@ export default function UserDetailPage() {
                 )}
               </tbody>
             </table>
+            <MoreButton total={detail.transcripts.length} shown={shown} onMore={showMore} />
           </div>
         </section>
       )}
