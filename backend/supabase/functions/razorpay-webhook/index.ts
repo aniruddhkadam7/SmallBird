@@ -52,6 +52,32 @@ async function alreadyProcessed(eventType: string, entityId: string): Promise<bo
   return error?.code === "23505";
 }
 
+// Keeps the phone number, email and payment method the payer gave Razorpay
+// at checkout, so the admin console can show how to reach a customer
+// (migration 0062). Saved for failed payments too -- that's someone who
+// tried to buy. Best-effort: a failure here must never fail the webhook,
+// and the upsert on the payment id makes Razorpay's retries harmless.
+async function savePaymentContact(userId: string, payment: any, status: string): Promise<void> {
+  if (!payment?.id) return;
+  const { error } = await admin.from("payment_contacts").upsert(
+    {
+      user_id: userId,
+      razorpay_payment_id: payment.id,
+      razorpay_order_id: payment.order_id ?? null,
+      contact: payment.contact || null,
+      email: payment.email || null,
+      method: payment.method ?? null,
+      vpa: payment.vpa ?? payment.upi?.vpa ?? null,
+      bank: payment.bank ?? null,
+      wallet: payment.wallet ?? null,
+      amount_paise: payment.amount ?? null,
+      status,
+    },
+    { onConflict: "razorpay_payment_id" },
+  );
+  if (error) console.error("Failed to save payment contact", payment.id, error);
+}
+
 async function getPlan(planId: string): Promise<{ minutes: number; pricePaise: number }> {
   const { data, error } = await admin
     .from("plans")
@@ -217,6 +243,7 @@ Deno.serve(async (req) => {
           console.error("order.paid missing notes.user_id/plan_id", order.id);
           break;
         }
+        await savePaymentContact(userId, body.payload.payment?.entity, "paid");
         const plan = await getPlan(planId);
         if (!(await amountMatchesPlan(planId, plan.pricePaise, order.amount_paid, userId, order.id))) break;
         if (await alreadyProcessed(eventType, order.id)) break;
@@ -260,6 +287,7 @@ Deno.serve(async (req) => {
             <li>Plan: ${planId}</li>
             <li>Amount: ${formatRupees(order.amount)}</li>
             <li>Buyer: ${buyerEmail ?? userId}</li>
+            <li>Phone: ${escapeHtml(body.payload.payment?.entity?.contact || "--")}</li>
             <li>Order: ${order.id}</li>
           </ul>`,
         );
@@ -278,6 +306,7 @@ Deno.serve(async (req) => {
           console.error("subscription.charged missing notes.user_id/plan_id", subscription.id);
           break;
         }
+        await savePaymentContact(userId, payment, "paid");
         const plan = await getPlan(planId);
         if (!(await amountMatchesPlan(planId, plan.pricePaise, payment.amount, userId, payment.id))) break;
         if (await alreadyProcessed(eventType, payment.id)) break;
@@ -423,6 +452,7 @@ Deno.serve(async (req) => {
         if (await alreadyProcessed(eventType, payment.id)) break;
 
         const userId = payment.notes?.user_id;
+        if (userId) await savePaymentContact(userId, payment, "failed");
         const failedEmail = userId ? await lookupUserEmail(userId) : null;
         await notifyOwner(
           `❌ Payment failed — ${formatRupees(payment.amount)}`,
@@ -430,6 +460,7 @@ Deno.serve(async (req) => {
             <li>Amount: ${formatRupees(payment.amount)}</li>
             <li>Reason: ${payment.error_description ?? payment.error_reason ?? "unknown"}</li>
             <li>Customer: ${failedEmail ?? userId ?? "unknown"}</li>
+            <li>Phone: ${escapeHtml(payment.contact || "--")}</li>
             <li>Payment: ${payment.id}</li>
           </ul>`,
         );

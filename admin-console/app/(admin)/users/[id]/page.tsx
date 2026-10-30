@@ -12,7 +12,9 @@ import { BanUserPanel } from "@/components/BanUserPanel";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { Modal } from "@/components/Modal";
 import { formatDuration } from "@/lib/format";
+import { formatAiCost, formatDeepgramCost, useUserAiCosts } from "@/lib/userAiCosts";
 import { deviceBadge, deviceLabel, userStage, type DeviceKind, type DeviceOs } from "@/lib/devices";
+import { formatIpLocation, useIpLocation } from "@/lib/ipLocation";
 
 interface LedgerRow {
   id: number;
@@ -80,8 +82,50 @@ interface DeviceRow {
   sessionCount: number;
 }
 
+// What we know about reaching the user: what they typed at Razorpay checkout,
+// then their CVs (0062). Missing until that migration is applied, so every
+// use is optional.
+interface ContactInfo {
+  phones: { value: string; source: string }[];
+  locations: string[];
+  linkedin: string[];
+  links: { label: string; value: string }[];
+  emails: string[];
+  cvNames: string[];
+  payments?: {
+    paymentId: string;
+    method: string | null;
+    vpa: string | null;
+    bank: string | null;
+    wallet: string | null;
+    amountPaise: number | null;
+    status: string;
+    createdAt: string;
+  }[];
+}
+
 interface UserDetail {
-  profile: { userId: string; email: string; displayName: string | null; createdAt: string; lastSignInAt: string | null; signUpProvider: string | null; welcomeEmailSentAt: string | null; isOwner: boolean; isBanned: boolean; banReason: string | null; bannedAt: string | null; bannedByEmail: string | null };
+  profile: {
+    userId: string;
+    email: string;
+    displayName: string | null;
+    fullName?: string | null;
+    avatarUrl?: string | null;
+    createdAt: string;
+    lastSignInAt: string | null;
+    updatedAt?: string | null;
+    emailConfirmedAt?: string | null;
+    signUpProvider: string | null;
+    providers?: string[];
+    welcomeEmailSentAt: string | null;
+    isOwner: boolean;
+    isBanned: boolean;
+    banReason: string | null;
+    bannedAt: string | null;
+    bannedByEmail: string | null;
+  };
+  contact?: ContactInfo;
+  resumeBuilder?: { resumes: number; aiRequests: number; lastUsedAt: string | null };
   devices: DeviceRow[];
   entitlement: { planId: string; remainingMinutes: number; periodStart: string; periodEnd: string | null; updatedAt: string };
   ledger: LedgerRow[];
@@ -108,17 +152,26 @@ export default function UserDetailPage() {
   const userId = params.id;
 
   const { data: detail, error, mutate } = useAdminQuery<UserDetail>("admin-user-detail", { userId });
+  const aiCosts = useUserAiCosts([userId]);
+  const userAiCost = aiCosts?.users[userId];
   const [openTranscriptId, setOpenTranscriptId] = useState<string | null>(null);
   const [manageMinutesOpen, setManageMinutesOpen] = useState(false);
   const [grantPassOpen, setGrantPassOpen] = useState(false);
   const [banOpen, setBanOpen] = useState(false);
   const [billingOpen, setBillingOpen] = useState(false);
+  // Devices are newest first, so this is where the user was last seen.
+  const lastIp = detail?.devices.find((d) => d.lastIp)?.lastIp ?? null;
+  const ipLocation = useIpLocation(lastIp);
 
   if (error instanceof AdminApiError && error.status === 403) return <Unauthorized />;
   if (error instanceof AdminApiError && error.status === 404) return <p className="text-sm text-muted">User not found.</p>;
   if (!detail) return <PageLoading error={error} />;
 
   const hasBilling = detail.purchases.length > 0 || detail.subscriptions.length > 0;
+  const contact = detail.contact;
+  const phone = contact?.phones[0];
+  const fmt = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString() : "--");
+  const ipPlace = formatIpLocation(ipLocation);
 
   return (
     <div className="space-y-6">
@@ -135,6 +188,13 @@ export default function UserDetailPage() {
             {detail.profile.lastSignInAt && <> &middot; last sign-in {new Date(detail.profile.lastSignInAt).toLocaleString()}</>}
             {detail.profile.signUpProvider && <> &middot; signed up with {detail.profile.signUpProvider === "google" ? "Google" : detail.profile.signUpProvider}</>}
           </p>
+          {phone && (
+            <p className="mt-1 text-sm text-ink">
+              <a href={`tel:${phone.value.replace(/[^\d+]/g, "")}`} className="font-medium text-accent hover:underline">
+                {phone.value}
+              </a>
+            </p>
+          )}
           <p className="mt-1 text-sm font-medium text-ink">{userStage(detail.devices, detail.sessionsSummary.total)}</p>
           <p className="mt-1 break-all font-mono text-xs text-muted">{detail.profile.userId}</p>
         </div>
@@ -160,6 +220,165 @@ export default function UserDetailPage() {
       </div>
 
       <div className="space-y-6">
+        <section className="card">
+          <div className="flex items-center gap-3">
+            {detail.profile.avatarUrl && (
+              // Google profile photo; plain img so no remote-image config is needed.
+              <img src={detail.profile.avatarUrl} alt="" referrerPolicy="no-referrer" className="h-10 w-10 rounded-full" />
+            )}
+            <div>
+              <h2 className="text-sm font-semibold text-ink">Contact &amp; profile</h2>
+              <p className="text-xs text-muted">Phone comes from Razorpay checkout or the user&apos;s CVs; location and links from CVs.</p>
+            </div>
+          </div>
+          <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <dt className="text-xs text-muted">Mobile number</dt>
+              <dd className="text-sm font-medium">
+                {contact?.phones.length ? (
+                  <ul className="space-y-0.5">
+                    {contact.phones.map((p) => (
+                      <li key={p.value}>
+                        <a href={`tel:${p.value.replace(/[^\d+]/g, "")}`} className="text-accent hover:underline">
+                          {p.value}
+                        </a>{" "}
+                        <span className="text-xs font-normal text-muted">({p.source})</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <span className="text-muted">{contact ? "Not given" : "--"}</span>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">Name</dt>
+              <dd className="text-sm font-medium">
+                {[detail.profile.fullName, detail.profile.displayName, ...(contact?.cvNames ?? [])]
+                  .filter((n, i, all): n is string => !!n && all.indexOf(n) === i)
+                  .join(" · ") || "--"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">Email</dt>
+              <dd className="break-all text-sm font-medium">
+                {detail.profile.email}
+                {contact?.emails.map((e) => (
+                  <span key={e} className="block text-xs font-normal text-muted">
+                    {e} (CV)
+                  </span>
+                ))}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">Location</dt>
+              <dd className="text-sm font-medium">
+                {ipPlace && (
+                  <span className="block">
+                    {ipPlace} <span className="text-xs font-normal text-muted">(from IP)</span>
+                  </span>
+                )}
+                {contact?.locations.map((l) => (
+                  <span key={l} className="block">
+                    {l} <span className="text-xs font-normal text-muted">(CV)</span>
+                  </span>
+                ))}
+                {!ipPlace && !contact?.locations.length && "--"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">LinkedIn</dt>
+              <dd className="break-all text-sm font-medium">
+                {contact?.linkedin.length
+                  ? contact.linkedin.map((l) => (
+                      <a
+                        key={l}
+                        href={/^https?:\/\//i.test(l) ? l : `https://${l}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block text-accent hover:underline"
+                      >
+                        {l}
+                      </a>
+                    ))
+                  : "--"}
+              </dd>
+            </div>
+            {contact?.links.map((l) => (
+              <div key={l.value}>
+                <dt className="text-xs capitalize text-muted">{l.label || "Link"}</dt>
+                <dd className="break-all text-sm font-medium">{l.value}</dd>
+              </div>
+            ))}
+            <div>
+              <dt className="text-xs text-muted">Sign-in methods</dt>
+              <dd className="text-sm font-medium capitalize">
+                {(detail.profile.providers?.length ? detail.profile.providers : [detail.profile.signUpProvider])
+                  .filter(Boolean)
+                  .join(", ") || "--"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">Email confirmed</dt>
+              <dd className="text-sm font-medium">{fmt(detail.profile.emailConfirmedAt)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">Welcome email sent</dt>
+              <dd className="text-sm font-medium">{fmt(detail.profile.welcomeEmailSentAt)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">Account updated</dt>
+              <dd className="text-sm font-medium">{fmt(detail.profile.updatedAt)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted">Last IP</dt>
+              <dd className="font-mono text-sm">{lastIp ?? "--"}</dd>
+            </div>
+            {!!contact?.payments?.length && (
+              <div>
+                <dt className="text-xs text-muted">Razorpay payments</dt>
+                <dd className="break-words text-sm font-medium">
+                  <ul className="space-y-0.5">
+                    {contact.payments.map((p) => (
+                      <li key={p.paymentId}>
+                        <span className={p.status === "paid" ? "text-ok" : "text-danger"}>{p.status}</span>
+                        {p.amountPaise != null && <> &middot; ₹{(p.amountPaise / 100).toFixed(0)}</>}
+                        {p.method && <> &middot; {p.method}</>}
+                        {(p.vpa || p.bank || p.wallet) && (
+                          <span className="text-xs font-normal text-muted"> ({p.vpa ?? p.bank ?? p.wallet})</span>
+                        )}
+                        <span className="block text-xs font-normal text-muted">{fmt(p.createdAt)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </div>
+            )}
+            {detail.resumeBuilder && (
+              <div>
+                <dt className="text-xs text-muted">Resume builder</dt>
+                <dd className="text-sm font-medium">
+                  {detail.resumeBuilder.resumes} CV{detail.resumeBuilder.resumes === 1 ? "" : "s"} &middot;{" "}
+                  {detail.resumeBuilder.aiRequests} AI request{detail.resumeBuilder.aiRequests === 1 ? "" : "s"}
+                  {detail.resumeBuilder.lastUsedAt && (
+                    <span className="block text-xs font-normal text-muted">last used {fmt(detail.resumeBuilder.lastUsedAt)}</span>
+                  )}
+                </dd>
+              </div>
+            )}
+            {detail.profile.isBanned && (
+              <div>
+                <dt className="text-xs text-muted">Banned</dt>
+                <dd className="text-sm font-medium text-danger">
+                  {fmt(detail.profile.bannedAt)}
+                  {detail.profile.bannedByEmail && <> by {detail.profile.bannedByEmail}</>}
+                  {detail.profile.banReason && <span className="block text-xs font-normal text-muted">{detail.profile.banReason}</span>}
+                </dd>
+              </div>
+            )}
+          </dl>
+        </section>
+
         <ActivityTimeline detail={detail} />
 
         <section className="card">
@@ -307,6 +526,12 @@ export default function UserDetailPage() {
 
         <section>
           <h2 className="mb-2 text-sm font-semibold text-ink">Interview sessions ({detail.sessions.length})</h2>
+          <p className="-mt-1 mb-2 text-xs text-muted">
+            AI spent in total: <span className="font-medium text-ink">{formatAiCost(userAiCost?.totalUsd ?? 0, aiCosts)}</span>
+            {aiCosts && ` (${userAiCost?.calls ?? 0} AI calls, including ones outside interviews like Resume Builder)`}
+            {" · "}Deepgram in total:{" "}
+            <span className="font-medium text-ink">{formatDeepgramCost(userAiCost?.deepgramUsd ?? 0, aiCosts)}</span>
+          </p>
           <div className="table-wrap max-h-96 overflow-y-auto">
             <table>
               <thead>
@@ -317,6 +542,8 @@ export default function UserDetailPage() {
                   <th>Duration</th>
                   <th>Minutes consumed</th>
                   <th>Deducted</th>
+                  <th>AI spent</th>
+                  <th>Deepgram</th>
                   <th>Transcript</th>
                 </tr>
               </thead>
@@ -344,6 +571,12 @@ export default function UserDetailPage() {
                     <td>{s.actual_duration_seconds != null ? formatDuration(s.actual_duration_seconds) : "--"}</td>
                     <td>{s.minutes_consumed != null ? Number(s.minutes_consumed).toFixed(2) : "--"}</td>
                     <td>{s.usage_deducted ? "Yes" : "No"}</td>
+                    <td className="whitespace-nowrap">
+                      {formatAiCost(userAiCost?.sessions[s.id]?.costUsd ?? 0, aiCosts)}
+                    </td>
+                    <td className="whitespace-nowrap">
+                      {formatDeepgramCost(userAiCost?.sessions[s.id]?.deepgramUsd ?? 0, aiCosts)}
+                    </td>
                     <td>
                       {s.transcript_id ? (
                         <button
@@ -370,7 +603,7 @@ export default function UserDetailPage() {
                 ))}
                 {detail.sessions.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-6 text-center text-muted">
+                    <td colSpan={9} className="py-6 text-center text-muted">
                       No sessions.
                     </td>
                   </tr>

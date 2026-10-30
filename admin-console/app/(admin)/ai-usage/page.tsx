@@ -7,12 +7,18 @@ import { callAdminFunction } from "@/lib/adminApi";
 import { createClient } from "@/lib/supabase/client";
 import { Unauthorized } from "@/components/Unauthorized";
 import { PageLoading } from "@/components/PageLoading";
+import { OpenAiBalancePanel } from "@/components/OpenAiBalancePanel";
+import { DeepgramUsagePanel } from "@/components/DeepgramUsagePanel";
 
 interface AiUsageSummary {
   tokensToday: number;
   tokensThisWeek: number;
   tokensThisMonth: number;
   estimatedCostUsd: number;
+  costThisMonthUsd: number;
+  unattributedCostUsd: number;
+  costSource: "openai" | "estimate";
+  usdToInr?: number;
   byModel: { model: string; provider: string; calls: number; totalTokens: number; estimatedCostUsd: number }[];
   byUser: { userId: string; email: string; calls: number; totalTokens: number; estimatedCostUsd: number }[];
 }
@@ -41,7 +47,8 @@ const MODEL_PRICES = [
 
 type ModelOption = (typeof MODEL_PRICES)[number];
 
-const usd = (n: number) => `$${n.toFixed(2)}`;
+const usd = (n: number) => `${n.toFixed(2)}`;
+const inr = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const ALL_MODELS: readonly ModelOption[] = MODEL_PRICES;
 
@@ -225,14 +232,25 @@ export default function AiUsagePage() {
   const mainModel     = extractValue(settings, "llm_main_model",     "gpt-6-luna");
   const trackingModel = extractValue(settings, "llm_tracking_model", "gpt-6-luna");
 
+  const inrRate = summary.usdToInr ?? 95;
+  const toInr = (dollars: number) => inr(dollars * inrRate);
+  const costLabel = (label: string) => (summary.costSource === "openai" ? label : `Est. ${label.toLowerCase()}`);
+
   const empty = summary.byModel.length === 0 && summary.byUser.length === 0;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-lg font-semibold text-ink">AI usage &amp; models</h1>
-        <p className="text-sm text-muted">From llm-proxy&apos;s usage_costs logging.</p>
+        <p className="text-sm text-muted">
+          {summary.costSource === "openai"
+            ? "Costs are OpenAI’s real bill for the SmallBird key, shared out by each call’s usage that day (UTC)."
+            : "Costs are list-price estimates from usage_costs (set OPENAI_ADMIN_KEY for OpenAI’s real bill)."}
+        </p>
       </div>
+
+      <OpenAiBalancePanel />
+      <DeepgramUsagePanel />
 
       {/* Active model selector */}
       <section className="card">
@@ -266,8 +284,14 @@ export default function AiUsagePage() {
         <Stat label="Tokens today" value={summary.tokensToday.toLocaleString()} />
         <Stat label="Tokens this week" value={summary.tokensThisWeek.toLocaleString()} />
         <Stat label="Tokens this month" value={summary.tokensThisMonth.toLocaleString()} />
-        <Stat label="Estimated cost" value={`$${summary.estimatedCostUsd.toFixed(2)}`} />
+        <Stat label={costLabel("Cost this month")} value={`$${summary.costThisMonthUsd.toFixed(2)} ·${toInr(summary.costThisMonthUsd)}`} />
       </div>
+
+      <p className="-mt-3 text-xs text-muted">
+        All-time {costLabel("cost").toLowerCase()}: ${summary.estimatedCostUsd.toFixed(2)} ({toInr(summary.estimatedCostUsd)}) · $1 = ₹{inrRate.toFixed(2)}
+        {summary.unattributedCostUsd > 0.005 &&
+          ` · $${summary.unattributedCostUsd.toFixed(2)} of it was on days with no logged calls, so it isn’t in the tables below`}
+      </p>
 
       {summary.byModel.length > 0 && (
         <section>
@@ -280,7 +304,8 @@ export default function AiUsagePage() {
                   <th>Provider</th>
                   <th>Calls</th>
                   <th>Tokens</th>
-                  <th>Estimated cost</th>
+                  <th>{costLabel("Cost")} ($)</th>
+                  <th>{costLabel("Cost")} (₹)</th>
                 </tr>
               </thead>
               <tbody>
@@ -296,6 +321,7 @@ export default function AiUsagePage() {
                     <td>{m.calls}</td>
                     <td>{m.totalTokens.toLocaleString()}</td>
                     <td>${m.estimatedCostUsd.toFixed(4)}</td>
+                    <td>{toInr(m.estimatedCostUsd)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -314,7 +340,8 @@ export default function AiUsagePage() {
                   <th>User</th>
                   <th>Calls</th>
                   <th>Tokens</th>
-                  <th>Estimated cost</th>
+                  <th>{costLabel("Cost")} ($)</th>
+                  <th>{costLabel("Cost")} (₹)</th>
                 </tr>
               </thead>
               <tbody>
@@ -328,6 +355,7 @@ export default function AiUsagePage() {
                     <td>{u.calls}</td>
                     <td>{u.totalTokens.toLocaleString()}</td>
                     <td>${u.estimatedCostUsd.toFixed(4)}</td>
+                    <td>{toInr(u.estimatedCostUsd)}</td>
                   </tr>
                 ))}
               </tbody>

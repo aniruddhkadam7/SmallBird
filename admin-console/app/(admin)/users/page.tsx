@@ -11,11 +11,14 @@ import { appStatus, type DeviceSummary } from "@/lib/devices";
 import { avatarGradient, formatJoined, formatMinutes } from "@/lib/format";
 import { USER_SEGMENTS } from "@/lib/segments";
 import { FilterChip } from "@/components/FilterChip";
+import { formatAiCost, formatDeepgramCost, useUserAiCosts } from "@/lib/userAiCosts";
 
 interface UserRow {
   user_id: string;
   email: string;
   display_name: string | null;
+  // From Razorpay checkout or the user's newest CV (0062); absent before that.
+  phone?: string | null;
   created_at: string;
   last_sign_in_at: string | null;
   plan_id: string;
@@ -62,6 +65,8 @@ export default function UsersPage() {
     limit: PAGE_SIZE,
     offset,
   });
+  // Loads after the list itself, so the list never waits on OpenAI.
+  const aiCosts = useUserAiCosts(result?.users.map((u) => u.user_id) ?? []);
 
   if (error instanceof AdminApiError && error.status === 403) return <Unauthorized />;
   if (!result) return <PageLoading error={error} />;
@@ -122,7 +127,7 @@ export default function UsersPage() {
               enterKeyHint="search"
               defaultValue={search ?? ""}
               className="input !pl-9"
-              placeholder="Search email or user id"
+              placeholder="Search name, email, phone or user id"
               aria-label="Search users"
             />
           </div>
@@ -200,11 +205,22 @@ export default function UsersPage() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-ink">{u.display_name || u.email}</p>
                   {u.display_name && <p className="truncate text-xs text-muted">{u.email}</p>}
+                  {u.phone && <p className="truncate text-xs text-muted">{u.phone}</p>}
                   <p className="truncate text-xs text-muted">Joined {formatJoined(u.created_at)}</p>
                   <p className="truncate text-xs text-muted">
                     <span className="font-medium text-ink">{formatMinutes(u.remaining_minutes)} min left</span>
                     {" · "}
                     {formatMinutes(u.total_consumed_minutes)} used
+                  </p>
+                  <p className="text-xs text-muted">
+                    AI spent{" "}
+                    <span className="font-medium text-ink">
+                      {formatAiCost(aiCosts?.users[u.user_id]?.totalUsd ?? 0, aiCosts)}
+                    </span>
+                    {" · "}Deepgram{" "}
+                    <span className="font-medium text-ink">
+                      {formatDeepgramCost(aiCosts?.users[u.user_id]?.deepgramUsd ?? 0, aiCosts)}
+                    </span>
                   </p>
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {u.is_owner ? (
