@@ -80,6 +80,7 @@ const SHAPE = `RESUME JSON SHAPE
 - A project is an entry with "heading": project name, "subheading": its tech stack, and both right sides "" (unless it has dates).
 - Wrap a short lead-in in **double asterisks** to make it bold, e.g. "**Relevant Coursework:** DSA, OS".
 - An item starting with "- " is a sub-point under the item before it.
+- Links: keep every URL the person has (LinkedIn, GitHub, portfolio, project or demo links) — never drop or invent one. A profile or site goes in "contact" with its URL as the value (e.g. { "label": "GitHub", "value": "github.com/name" }). A link inside a line is written [words](https://url), e.g. "**Smart Parking** | [Live demo](https://parking.app)".
 - Details of a job's project go first in its items as "**Project:** ...", "**Client:** ...", "**Role(s):** ...", "**Technologies:** ...", then the achievements.
 - Leave a field as "" when the information isn't there. Never invent it.`;
 
