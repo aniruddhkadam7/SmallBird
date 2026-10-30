@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
-import { ChevronDown, ExternalLink, FileText } from "lucide-react";
+import { ChevronRight, ExternalLink, FileText, X } from "lucide-react";
 import { ResumeViewer } from "@/components/resume/ResumeViewer";
 import { createClient } from "@/lib/supabase/client";
 import { Unauthorized } from "@/components/Unauthorized";
@@ -335,6 +335,54 @@ function UserPanel({ userId }: { userId: string }) {
   );
 }
 
+// One person's resume builder use, in a large dialog over the page.
+function UserModal({ user, onClose }: { user: Stats["users"][number]; onClose: () => void }) {
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      // The CV viewer on top handles its own Escape.
+      if (e.key === "Escape" && !document.querySelector("[data-resume-viewer]")) onClose();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = overflow;
+    };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-6" onClick={onClose}>
+      <div
+        className="flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+        style={{ height: "min(92vh, 100%)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
+          <div className="min-w-0">
+            <p className="truncate text-base font-semibold text-ink">{user.email}</p>
+            <p className="text-xs text-muted">
+              {user.resumes} resumes · {user.aiActions} AI actions · {user.jdCount} JDs · first used {formatJoined(user.firstUsed)} · last used{" "}
+              {formatJoined(user.lastActive)}
+            </p>
+            <Link href={`/users/${user.userId}`} className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">
+              Open user profile <ExternalLink size={12} />
+            </Link>
+          </div>
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <span className={`badge ${user.planId && user.planId !== "free" ? "badge-ok" : "badge-muted"}`}>{user.planId ?? "free"}</span>
+            <button onClick={onClose} className="rounded-lg p-1.5 text-muted hover:bg-subtle hover:text-ink" aria-label="Close">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-5">
+          <UserPanel userId={user.userId} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function ResumeBuilderPage() {
   const { data: s, error } = useSWR("admin_resume_builder_stats", () => rpc<Stats>("admin_resume_builder_stats"));
@@ -343,7 +391,8 @@ export default function ResumeBuilderPage() {
   if ((error as { code?: string } | undefined)?.code === "42501") return <Unauthorized />;
   if (!s) return <PageLoading error={error} />;
 
-  const maxAction = Math.max(1, ...s.byAction.map((a) => a.count));
+  const openUser = s.users.find((u) => u.userId === open);
+  const maxAction =Math.max(1, ...s.byAction.map((a) => a.count));
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -389,12 +438,10 @@ export default function ResumeBuilderPage() {
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-ink">People ({s.users.length})</h2>
         <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface shadow-card">
-          {s.users.map((u) => {
-            const isOpen = open === u.userId;
-            return (
+          {s.users.map((u) => (
               <li key={u.userId}>
                 <button
-                  onClick={() => setOpen(isOpen ? null : u.userId)}
+                  onClick={() => setOpen(u.userId)}
                   className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-subtle"
                 >
                   <span className="min-w-0 flex-1">
@@ -406,22 +453,14 @@ export default function ResumeBuilderPage() {
                   <span className={`badge ${u.planId && u.planId !== "free" ? "badge-ok" : "badge-muted"}`}>
                     {u.planId ?? "free"}
                   </span>
-                  <ChevronDown size={16} className={`flex-shrink-0 text-muted transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                  <ChevronRight size={16} className="flex-shrink-0 text-muted" />
                 </button>
-                {isOpen && (
-                  <div className="space-y-3 border-t border-border bg-subtle/40 px-4 py-4">
-                    <Link href={`/users/${u.userId}`} className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">
-                      Open user <ExternalLink size={12} />
-                    </Link>
-                    <UserPanel userId={u.userId} />
-                  </div>
-                )}
               </li>
-            );
-          })}
+          ))}
           {s.users.length === 0 && <li className="py-8 text-center text-sm text-muted">Nobody has used the resume builder yet.</li>}
         </ul>
       </section>
+      {openUser && <UserModal user={openUser} onClose={() => setOpen(null)} />}
     </div>
   );
 }

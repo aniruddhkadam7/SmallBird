@@ -46,7 +46,7 @@ export function ResumeViewer({ title, subtitle, data, onClose }: { title: string
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black/70" onClick={onClose}>
+    <div data-resume-viewer className="fixed inset-0 z-50 flex flex-col bg-black/70" onClick={onClose}>
       <div
         className="flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-3"
         onClick={(e) => e.stopPropagation()}
