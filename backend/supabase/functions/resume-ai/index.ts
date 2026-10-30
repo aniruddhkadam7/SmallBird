@@ -8,7 +8,9 @@
 // .resume_ai_per_day, migration 0050).
 //
 // Request body, one of:
-//   { action: "import", text }                    old resume text -> resume JSON
+//   { action: "import", text, filePath?, fileName? }
+//                                                 old resume text -> resume JSON
+//                                                 (filePath: the original in resume-uploads, kept for admins)
 //   { action: "tailor", resume, jobDescription, instructions? }
 //                                                 resume JSON + JD -> rewritten resume JSON
 //   { action: "improve", entry, jobDescription? } one entry -> rewritten items
@@ -285,6 +287,13 @@ Deno.serve(withCors(async (req) => {
         user_id: userId,
         action,
         uploaded_text: action === "import" ? str(body.text, MAX_TEXT_CHARS) : null,
+        // The original file in the resume-uploads bucket (migration 0054);
+        // only a path in the user's own folder is kept.
+        uploaded_file_path:
+          action === "import" && typeof body.filePath === "string" && body.filePath.startsWith(`${userId}/`)
+            ? body.filePath.slice(0, 500)
+            : null,
+        uploaded_file_name: action === "import" ? str(body.fileName, 300) : null,
         job_description: str(body.jobDescription, MAX_JD_CHARS),
         instructions: str(body.instructions, MAX_INSTRUCTION_CHARS),
         input_text: inputText && where ? `${where}\n\n${inputText}` : inputText,

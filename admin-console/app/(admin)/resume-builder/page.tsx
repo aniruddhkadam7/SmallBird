@@ -58,6 +58,8 @@ interface UserDetail {
     id: string;
     action: string;
     uploadedText: string | null;
+    uploadedFilePath?: string | null;
+    uploadedFileName?: string | null;
     jobDescription: string | null;
     instructions: string | null;
     inputText: string | null;
@@ -193,11 +195,37 @@ function ResumeView({ data }: { data: ResumeData }) {
   );
 }
 
-function TextBlock({ label, text }: { label: string; text: string }) {
+// Opens the original upload from the private resume-uploads bucket (0054)
+// through a 5-minute signed URL. The tab is opened before the request so the
+// browser doesn't block it as a pop-up.
+async function openOriginal(path: string) {
+  const tab = window.open("", "_blank");
+  const { data, error } = await createClient().storage.from("resume-uploads").createSignedUrl(path, 300);
+  if (error || !data) {
+    tab?.close();
+    alert(`Couldn't open the file: ${error?.message ?? "unknown error"}`);
+    return;
+  }
+  if (tab) tab.location.href = data.signedUrl;
+  else window.location.href = data.signedUrl;
+}
+
+function TextBlock({ label, text, filePath }: { label: string; text: string; filePath?: string | null }) {
   return (
     <details className="group rounded-lg border border-border px-3 py-2">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm">
         <span className="font-medium text-ink">{label}</span>
+        {filePath && (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              openOriginal(filePath);
+            }}
+            className="ml-auto inline-flex flex-shrink-0 items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs font-medium text-accent hover:bg-subtle"
+          >
+            Open original file <ExternalLink size={12} />
+          </button>
+        )}
         <span className="text-xs text-accent group-open:hidden">Show</span>
         <span className="hidden text-xs text-accent group-open:inline">Hide</span>
       </summary>
@@ -271,15 +299,28 @@ function UserPanel({ userId }: { userId: string }) {
   const uploads = [
     ...data.requests
       .filter((q) => q.uploadedText)
-      .map((q) => ({ id: q.id, at: q.createdAt, label: "CV uploaded to the resume builder", text: q.uploadedText! })),
+      .map((q) => ({
+        id: q.id,
+        at: q.createdAt,
+        label: `CV uploaded to the resume builder${q.uploadedFileName ? ` (${q.uploadedFileName})` : ""}`,
+        text: q.uploadedText!,
+        filePath: q.uploadedFilePath,
+      })),
     ...data.requests
       .filter((q) => q.jobDescription)
-      .map((q) => ({ id: `${q.id}-jd`, at: q.createdAt, label: `JD used to ${q.action} in the resume builder`, text: q.jobDescription! })),
+      .map((q) => ({
+        id: `${q.id}-jd`,
+        at: q.createdAt,
+        label: `JD used to ${q.action} in the resume builder`,
+        text: q.jobDescription!,
+        filePath: null,
+      })),
     ...(data.desktopDocs ?? []).map((d, i) => ({
       id: `${d.transcriptId}-${i}`,
       at: d.sessionAt,
       label: `${DESKTOP_DOC_LABELS[d.docType] ?? d.docType} in a desktop session${d.role || d.company ? ` (${[d.role, d.company].filter(Boolean).join(", ")})` : ""}`,
       text: d.text,
+      filePath: null,
     })),
   ]
     .sort((a, b) => b.at.localeCompare(a.at))
@@ -300,7 +341,7 @@ function UserPanel({ userId }: { userId: string }) {
           <SectionTitle>CVs & JDs they uploaded ({uploads.length})</SectionTitle>
           {uploads.length === 0 && <p className="text-sm text-muted">None saved yet. Kept from 30 Oct 2026 on.</p>}
           {uploads.map((u) => (
-            <TextBlock key={u.id} label={`${u.label} · ${when(u.at)}`} text={u.text} />
+            <TextBlock key={u.id} label={`${u.label} · ${when(u.at)}`} text={u.text} filePath={u.filePath} />
           ))}
         </div>
       </div>
@@ -316,7 +357,9 @@ function UserPanel({ userId }: { userId: string }) {
                   <span className="flex-shrink-0 text-xs text-muted">{when(t.at)}</span>
                 </p>
                 {t.q.instructions && <p className="text-sm text-ink">They asked: &ldquo;{t.q.instructions}&rdquo;</p>}
-                {t.q.uploadedText && <TextBlock label="CV they uploaded" text={t.q.uploadedText} />}
+                {t.q.uploadedText && (
+                  <TextBlock label="CV they uploaded" text={t.q.uploadedText} filePath={t.q.uploadedFilePath} />
+                )}
                 {t.q.jobDescription && <TextBlock label="Job description" text={t.q.jobDescription} />}
                 {t.q.inputText && <TextBlock label="What they asked to change" text={t.q.inputText} />}
                 <AiResult action={t.q.action} result={t.q.result} />
