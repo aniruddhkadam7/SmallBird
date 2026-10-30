@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import type { User } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/client"
 import { PAID_PLAN_IDS, type PlanId } from "@/lib/plans"
+import { trackEvent } from "@/lib/analytics"
 
 export type { PlanId }
 
@@ -159,6 +160,7 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const startFlow = (plan: PlanId, authMode: AuthMode = "signup") => {
+    trackEvent(`buy_start_${plan}`)
     setError(null)
     setSelectedPlan(plan)
     const step: FlowStep = signedUp ? (PAID_PLAN_IDS.has(plan) ? "payment" : "done") : "signup"
@@ -337,15 +339,18 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
           // Function, which may land a few seconds later — the download
           // page re-checks server-side rather than trusting this callback
           // as the source of truth.
+          trackEvent("payment_success")
           setPurchased(true)
           setActiveFlow((prev) => (prev ? { ...prev, step: "done" } : prev))
         },
         modal: {
           ondismiss: () => {
+            trackEvent("checkout_closed")
             setBusy(false)
           },
         },
       })
+      trackEvent("checkout_open")
       checkout.open()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

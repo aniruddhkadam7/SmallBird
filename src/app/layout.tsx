@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Playfair_Display } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import { Suspense } from "react";
+import { AnalyticsTracker } from "@/components/analytics-tracker";
 import "./globals.css";
 import { GlassFilter } from "@/components/ui/liquid-glass-button";
 import { PurchaseFlowDialog } from "@/components/blocks/purchase-flow-dialog";
@@ -85,6 +87,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           </div>
         </PurchaseFlowProvider>
         <Analytics />
+        <Suspense fallback={null}>
+          <AnalyticsTracker />
+        </Suspense>
       </body>
     </html>
   );
