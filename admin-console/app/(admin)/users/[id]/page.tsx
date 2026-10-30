@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Ban, ChevronDown, Clock, Copy, Phone, Receipt, Ticket } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useAdminQuery, AdminApiError, prefetchAdminQuery } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
@@ -11,7 +12,7 @@ import { TranscriptModal } from "@/components/TranscriptModal";
 import { BanUserPanel } from "@/components/BanUserPanel";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { Modal } from "@/components/Modal";
-import { formatDuration } from "@/lib/format";
+import { avatarGradient, formatDuration, formatJoined, formatRupees } from "@/lib/format";
 import { formatAiCost, formatDeepgramCost, useUserAiCosts } from "@/lib/userAiCosts";
 import { deviceBadge, deviceLabel, userStage, type DeviceKind, type DeviceOs } from "@/lib/devices";
 import { formatIpLocation, useIpLocation } from "@/lib/ipLocation";
@@ -147,6 +148,30 @@ const SOURCE_BADGE: Record<string, string> = {
   REFUND_ADJUSTMENT: "badge-danger",
 };
 
+// The page is split into tabs so each part is one short screen instead of
+// one very long scroll; the open tab is kept in the URL hash, so a refresh or
+// the back button returns to it.
+const TABS = ["overview", "activity", "sessions", "transcripts", "devices", "minutes"] as const;
+type Tab = (typeof TABS)[number];
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs text-muted">{label}</dt>
+      <dd className="text-sm font-medium text-ink">{children}</dd>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs text-muted">{label}</p>
+      <p className="truncate text-base font-medium text-ink">{value}</p>
+    </div>
+  );
+}
+
 export default function UserDetailPage() {
   const params = useParams<{ id: string }>();
   const userId = params.id;
@@ -162,6 +187,15 @@ export default function UserDetailPage() {
   // Devices are newest first, so this is where the user was last seen.
   const lastIp = detail?.devices.find((d) => d.lastIp)?.lastIp ?? null;
   const ipLocation = useIpLocation(lastIp);
+  const [tab, setTab] = useState<Tab>("overview");
+  useEffect(() => {
+    const fromHash = window.location.hash.slice(1) as Tab;
+    if (TABS.includes(fromHash)) setTab(fromHash);
+  }, []);
+  const selectTab = (t: Tab) => {
+    setTab(t);
+    history.replaceState(null, "", t === "overview" ? window.location.pathname + window.location.search : `#${t}`);
+  };
 
   if (error instanceof AdminApiError && error.status === 403) return <Unauthorized />;
   if (error instanceof AdminApiError && error.status === 404) return <p className="text-sm text-muted">User not found.</p>;
@@ -172,69 +206,122 @@ export default function UserDetailPage() {
   const phone = contact?.phones[0];
   const fmt = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString() : "--");
   const ipPlace = formatIpLocation(ipLocation);
+  const name = [detail.profile.fullName, detail.profile.displayName, ...(contact?.cvNames ?? [])].filter(
+    (n, i, all): n is string => !!n && all.indexOf(n) === i,
+  );
+  const paidPaise = detail.purchases.reduce((sum, p) => sum + p.amount_paise, 0);
+  const lastSeen = detail.devices[0]?.lastSeenAt ?? detail.profile.lastSignInAt;
+
+  const tabs: { id: Tab; label: string; count?: number }[] = [
+    { id: "overview", label: "Overview" },
+    { id: "activity", label: "Activity" },
+    { id: "sessions", label: "Sessions", count: detail.sessions.length },
+    { id: "transcripts", label: "Transcripts", count: detail.transcripts.length },
+    { id: "devices", label: "Devices", count: detail.devices.length },
+    { id: "minutes", label: "Minutes", count: detail.ledger.length },
+  ];
+
+  const actions = [
+    { label: "Manage minutes", icon: Clock, onClick: () => setManageMinutesOpen(true) },
+    { label: "Grant a pass", icon: Ticket, onClick: () => setGrantPassOpen(true) },
+    { label: detail.profile.isBanned ? "Unban user" : "Ban user", icon: Ban, onClick: () => setBanOpen(true), danger: !detail.profile.isBanned },
+    ...(hasBilling ? [{ label: "Billing", icon: Receipt, onClick: () => setBillingOpen(true) }] : []),
+  ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="break-all text-lg font-semibold text-ink">{detail.profile.email}</h1>
-            {detail.profile.isOwner && <span className="badge badge-ok">Owner</span>}
-            {detail.profile.isBanned && <span className="badge badge-danger">Banned</span>}
-          </div>
-          <p className="text-sm text-muted">
-            {detail.profile.displayName ?? "No display name"} &middot; joined{" "}
-            {new Date(detail.profile.createdAt).toLocaleString()}
-            {detail.profile.lastSignInAt && <> &middot; last sign-in {new Date(detail.profile.lastSignInAt).toLocaleString()}</>}
-            {detail.profile.signUpProvider && <> &middot; signed up with {detail.profile.signUpProvider === "google" ? "Google" : detail.profile.signUpProvider}</>}
-          </p>
-          {phone && (
-            <p className="mt-1 text-sm text-ink">
-              <a href={`tel:${phone.value.replace(/[^\d+]/g, "")}`} className="font-medium text-accent hover:underline">
-                {phone.value}
-              </a>
+    <div className="mx-auto max-w-6xl space-y-4">
+      {/* Who this is, how to reach them, and what an admin can do. */}
+      <section className="card">
+        <div className="flex items-start gap-3">
+          {detail.profile.avatarUrl ? (
+            // Google profile photo; plain img so no remote-image config is needed.
+            <img src={detail.profile.avatarUrl} alt="" referrerPolicy="no-referrer" className="h-12 w-12 flex-shrink-0 rounded-full" />
+          ) : (
+            <span
+              className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-lg font-semibold text-white ${avatarGradient(detail.profile.email)}`}
+            >
+              {(name[0] ?? detail.profile.email).charAt(0).toUpperCase()}
+            </span>
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <h1 className="min-w-0 break-all text-base font-semibold text-ink sm:text-lg">{name[0] ?? detail.profile.email}</h1>
+              {detail.profile.isOwner && <span className="badge badge-ok">Owner</span>}
+              {detail.profile.isBanned && <span className="badge badge-danger">Banned</span>}
+              <span className={`badge ${detail.entitlement.planId !== "free" ? "badge-ok" : "badge-muted"}`}>{detail.entitlement.planId}</span>
+            </div>
+            {name[0] && <p className="break-all text-sm text-muted">{detail.profile.email}</p>}
+            <p className="mt-0.5 text-xs text-muted">
+              {userStage(detail.devices, detail.sessionsSummary.total)} · joined {formatJoined(detail.profile.createdAt)}
+              {lastSeen && <> · last seen {formatJoined(lastSeen)}</>}
             </p>
-          )}
-          <p className="mt-1 text-sm font-medium text-ink">{userStage(detail.devices, detail.sessionsSummary.total)}</p>
-          <p className="mt-1 break-all font-mono text-xs text-muted">{detail.profile.userId}</p>
+            {phone && (
+              <a
+                href={`tel:${phone.value.replace(/[^\d+]/g, "")}`}
+                className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1 text-sm font-medium text-accent hover:bg-accent/20"
+              >
+                <Phone size={13} /> {phone.value}
+              </a>
+            )}
+          </div>
         </div>
-        {/* All admin actions and secondary info live behind these buttons instead
-            of a permanent right-hand column, so the tables below get the page's
-            full width. */}
-        <div className="flex flex-shrink-0 flex-wrap gap-2">
-          <button type="button" onClick={() => setManageMinutesOpen(true)} className="btn-secondary px-2.5 py-1.5 text-xs">
-            Manage minutes
-          </button>
-          <button type="button" onClick={() => setGrantPassOpen(true)} className="btn-secondary px-2.5 py-1.5 text-xs">
-            Grant a pass
-          </button>
-          <button type="button" onClick={() => setBanOpen(true)} className="btn-secondary px-2.5 py-1.5 text-xs">
-            {detail.profile.isBanned ? "Unban user" : "Ban user"}
-          </button>
-          {hasBilling && (
-            <button type="button" onClick={() => setBillingOpen(true)} className="btn-secondary px-2.5 py-1.5 text-xs">
-              Billing
+
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+          {actions.map(({ label, icon: Icon, onClick, danger }) => (
+            <button
+              key={label}
+              type="button"
+              onClick={onClick}
+              className={`btn-secondary flex items-center justify-center gap-1.5 px-3 py-2 text-xs ${danger ? "text-danger" : ""}`}
+            >
+              <Icon size={14} /> {label}
             </button>
-          )}
+          ))}
         </div>
+      </section>
+
+      {/* The numbers an admin looks for first. */}
+      <div className="grid grid-cols-3 gap-2 lg:grid-cols-6">
+        {[
+          { label: "Minutes left", value: Number(detail.entitlement.remainingMinutes).toFixed(1) },
+          { label: "Interviews", value: detail.sessionsSummary.total },
+          { label: "Transcripts", value: detail.transcriptCount },
+          { label: "Paid", value: paidPaise ? formatRupees(paidPaise) : "₹0" },
+          { label: "AI cost", value: formatAiCost(userAiCost?.totalUsd ?? 0, aiCosts) },
+          { label: "Resumes", value: detail.resumeBuilder?.resumes ?? 0 },
+        ].map((s) => (
+          <div key={s.label} className="rounded-xl border border-border bg-surface px-3 py-2.5 shadow-card">
+            <p className="truncate text-[11px] text-muted">{s.label}</p>
+            <p className="truncate text-base font-semibold tabular-nums text-ink">{s.value}</p>
+          </div>
+        ))}
       </div>
 
-      <div className="space-y-6">
-        <section className="card">
-          <div className="flex items-center gap-3">
-            {detail.profile.avatarUrl && (
-              // Google profile photo; plain img so no remote-image config is needed.
-              <img src={detail.profile.avatarUrl} alt="" referrerPolicy="no-referrer" className="h-10 w-10 rounded-full" />
-            )}
-            <div>
-              <h2 className="text-sm font-semibold text-ink">Contact &amp; profile</h2>
-              <p className="text-xs text-muted">Phone comes from Razorpay checkout or the user&apos;s CVs; location and links from CVs.</p>
-            </div>
-          </div>
-          <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-            <div>
-              <dt className="text-xs text-muted">Mobile number</dt>
-              <dd className="text-sm font-medium">
+      {/* Tabs stay in reach while scrolling (below the phone top bar). */}
+      <nav className="sticky top-[calc(3.75rem+env(safe-area-inset-top))] z-20 -mx-4 border-b border-border bg-subtle/95 px-4 backdrop-blur sm:-mx-6 sm:px-6 lg:top-0">
+        <div className="-mb-px flex gap-1 overflow-x-auto">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => selectTab(t.id)}
+              className={`flex-shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+                tab === t.id ? "border-accent text-accent" : "border-transparent text-muted hover:text-ink"
+              }`}
+            >
+              {t.label}
+              {t.count != null && <span className="ml-1 text-xs opacity-70">{t.count}</span>}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      {tab === "overview" && (
+        <div className="space-y-4">
+          <section className="card">
+            <h2 className="text-sm font-semibold text-ink">Contact</h2>
+            <p className="text-xs text-muted">Phone from Razorpay checkout or the user&apos;s CVs; location from IP and CVs.</p>
+            <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="Mobile number">
                 {contact?.phones.length ? (
                   <ul className="space-y-0.5">
                     {contact.phones.map((p) => (
@@ -247,32 +334,19 @@ export default function UserDetailPage() {
                     ))}
                   </ul>
                 ) : (
-                  <span className="text-muted">{contact ? "Not given" : "--"}</span>
+                  <span className="text-muted">Not given</span>
                 )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">Name</dt>
-              <dd className="text-sm font-medium">
-                {[detail.profile.fullName, detail.profile.displayName, ...(contact?.cvNames ?? [])]
-                  .filter((n, i, all): n is string => !!n && all.indexOf(n) === i)
-                  .join(" · ") || "--"}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">Email</dt>
-              <dd className="break-all text-sm font-medium">
-                {detail.profile.email}
+              </Field>
+              <Field label="Name">{name.join(" · ") || "--"}</Field>
+              <Field label="Email">
+                <span className="break-all">{detail.profile.email}</span>
                 {contact?.emails.map((e) => (
-                  <span key={e} className="block text-xs font-normal text-muted">
+                  <span key={e} className="block break-all text-xs font-normal text-muted">
                     {e} (CV)
                   </span>
                 ))}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">Location</dt>
-              <dd className="text-sm font-medium">
+              </Field>
+              <Field label="Location">
                 {ipPlace && (
                   <span className="block">
                     {ipPlace} <span className="text-xs font-normal text-muted">(from IP)</span>
@@ -284,161 +358,117 @@ export default function UserDetailPage() {
                   </span>
                 ))}
                 {!ipPlace && !contact?.locations.length && "--"}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">LinkedIn</dt>
-              <dd className="break-all text-sm font-medium">
-                {contact?.linkedin.length
-                  ? contact.linkedin.map((l) => (
-                      <a
-                        key={l}
-                        href={/^https?:\/\//i.test(l) ? l : `https://${l}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block text-accent hover:underline"
-                      >
-                        {l}
-                      </a>
-                    ))
-                  : "--"}
-              </dd>
-            </div>
-            {contact?.links.map((l) => (
-              <div key={l.value}>
-                <dt className="text-xs capitalize text-muted">{l.label || "Link"}</dt>
-                <dd className="break-all text-sm font-medium">{l.value}</dd>
-              </div>
-            ))}
-            <div>
-              <dt className="text-xs text-muted">Sign-in methods</dt>
-              <dd className="text-sm font-medium capitalize">
-                {(detail.profile.providers?.length ? detail.profile.providers : [detail.profile.signUpProvider])
-                  .filter(Boolean)
-                  .join(", ") || "--"}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">Email confirmed</dt>
-              <dd className="text-sm font-medium">{fmt(detail.profile.emailConfirmedAt)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">Welcome email sent</dt>
-              <dd className="text-sm font-medium">{fmt(detail.profile.welcomeEmailSentAt)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">Account updated</dt>
-              <dd className="text-sm font-medium">{fmt(detail.profile.updatedAt)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted">Last IP</dt>
-              <dd className="font-mono text-sm">{lastIp ?? "--"}</dd>
-            </div>
-            {!!contact?.payments?.length && (
-              <div>
-                <dt className="text-xs text-muted">Razorpay payments</dt>
-                <dd className="break-words text-sm font-medium">
+              </Field>
+              {!!contact?.linkedin.length && (
+                <Field label="LinkedIn">
+                  {contact.linkedin.map((l) => (
+                    <a
+                      key={l}
+                      href={/^https?:\/\//i.test(l) ? l : `https://${l}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block break-all text-accent hover:underline"
+                    >
+                      {l}
+                    </a>
+                  ))}
+                </Field>
+              )}
+              {contact?.links.map((l) => (
+                <Field key={l.value} label={l.label || "Link"}>
+                  <span className="break-all">{l.value}</span>
+                </Field>
+              ))}
+              {detail.resumeBuilder && (detail.resumeBuilder.resumes > 0 || detail.resumeBuilder.aiRequests > 0) && (
+                <Field label="Resume builder">
+                  {detail.resumeBuilder.resumes} CV{detail.resumeBuilder.resumes === 1 ? "" : "s"} · {detail.resumeBuilder.aiRequests} AI request
+                  {detail.resumeBuilder.aiRequests === 1 ? "" : "s"}
+                  {detail.resumeBuilder.lastUsedAt && (
+                    <span className="block text-xs font-normal text-muted">last used {formatJoined(detail.resumeBuilder.lastUsedAt)}</span>
+                  )}
+                </Field>
+              )}
+              {!!contact?.payments?.length && (
+                <Field label="Razorpay payments">
                   <ul className="space-y-0.5">
                     {contact.payments.map((p) => (
                       <li key={p.paymentId}>
                         <span className={p.status === "paid" ? "text-ok" : "text-danger"}>{p.status}</span>
-                        {p.amountPaise != null && <> &middot; ₹{(p.amountPaise / 100).toFixed(0)}</>}
-                        {p.method && <> &middot; {p.method}</>}
-                        {(p.vpa || p.bank || p.wallet) && (
-                          <span className="text-xs font-normal text-muted"> ({p.vpa ?? p.bank ?? p.wallet})</span>
-                        )}
+                        {p.amountPaise != null && <> · ₹{(p.amountPaise / 100).toFixed(0)}</>}
+                        {p.method && <> · {p.method}</>}
+                        {(p.vpa || p.bank || p.wallet) && <span className="text-xs font-normal text-muted"> ({p.vpa ?? p.bank ?? p.wallet})</span>}
                         <span className="block text-xs font-normal text-muted">{fmt(p.createdAt)}</span>
                       </li>
                     ))}
                   </ul>
-                </dd>
-              </div>
-            )}
-            {detail.resumeBuilder && (
-              <div>
-                <dt className="text-xs text-muted">Resume builder</dt>
-                <dd className="text-sm font-medium">
-                  {detail.resumeBuilder.resumes} CV{detail.resumeBuilder.resumes === 1 ? "" : "s"} &middot;{" "}
-                  {detail.resumeBuilder.aiRequests} AI request{detail.resumeBuilder.aiRequests === 1 ? "" : "s"}
-                  {detail.resumeBuilder.lastUsedAt && (
-                    <span className="block text-xs font-normal text-muted">last used {fmt(detail.resumeBuilder.lastUsedAt)}</span>
-                  )}
-                </dd>
-              </div>
-            )}
-            {detail.profile.isBanned && (
-              <div>
-                <dt className="text-xs text-muted">Banned</dt>
-                <dd className="text-sm font-medium text-danger">
-                  {fmt(detail.profile.bannedAt)}
-                  {detail.profile.bannedByEmail && <> by {detail.profile.bannedByEmail}</>}
+                </Field>
+              )}
+              {detail.profile.isBanned && (
+                <Field label="Banned">
+                  <span className="text-danger">
+                    {fmt(detail.profile.bannedAt)}
+                    {detail.profile.bannedByEmail && <> by {detail.profile.bannedByEmail}</>}
+                  </span>
                   {detail.profile.banReason && <span className="block text-xs font-normal text-muted">{detail.profile.banReason}</span>}
-                </dd>
-              </div>
-            )}
-          </dl>
-        </section>
+                </Field>
+              )}
+            </dl>
 
-        <ActivityTimeline detail={detail} />
+            <details className="group mt-4 border-t border-border pt-3">
+              <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-accent">
+                <ChevronDown size={14} className="transition-transform group-open:rotate-180" /> More details
+              </summary>
+              <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+                <Field label="Sign-in methods">
+                  <span className="capitalize">
+                    {(detail.profile.providers?.length ? detail.profile.providers : [detail.profile.signUpProvider]).filter(Boolean).join(", ") || "--"}
+                  </span>
+                </Field>
+                <Field label="Joined">{fmt(detail.profile.createdAt)}</Field>
+                <Field label="Last sign-in">{fmt(detail.profile.lastSignInAt)}</Field>
+                <Field label="Email confirmed">{fmt(detail.profile.emailConfirmedAt)}</Field>
+                <Field label="Welcome email sent">{fmt(detail.profile.welcomeEmailSentAt)}</Field>
+                <Field label="Account updated">{fmt(detail.profile.updatedAt)}</Field>
+                <Field label="Last IP">
+                  <span className="font-mono">{lastIp ?? "--"}</span>
+                </Field>
+                <Field label="User id">
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard?.writeText(detail.profile.userId)}
+                    className="inline-flex max-w-full items-center gap-1 font-mono text-xs text-muted hover:text-ink"
+                    title="Copy"
+                  >
+                    <span className="break-all">{detail.profile.userId}</span> <Copy size={12} className="flex-shrink-0" />
+                  </button>
+                </Field>
+              </dl>
+            </details>
+          </section>
 
-        <section className="card">
-          <h2 className="text-sm font-semibold text-ink">Overview</h2>
-          <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
-            <div>
-              <p className="text-xs text-muted">Plan</p>
-              <p className="text-base font-medium">{detail.entitlement.planId}</p>
+          <section className="card">
+            <h2 className="text-sm font-semibold text-ink">Usage</h2>
+            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
+              <Stat label="Plan" value={detail.entitlement.planId} />
+              <Stat label="Period end" value={detail.entitlement.periodEnd ? new Date(detail.entitlement.periodEnd).toLocaleDateString() : "--"} />
+              <Stat label="Minutes used" value={Number(detail.sessionsSummary.totalMinutesConsumed).toFixed(1)} />
+              <Stat label="Completed" value={detail.sessionsSummary.completed} />
+              <Stat label="Terminated" value={detail.sessionsSummary.terminated} />
+              <Stat label="Expired" value={detail.sessionsSummary.expired} />
+              <Stat label="LLM calls" value={detail.usageCostsSummary.totalCalls} />
+              <Stat label="Input tokens" value={detail.usageCostsSummary.totalInputTokens.toLocaleString()} />
+              <Stat label="Output tokens" value={detail.usageCostsSummary.totalOutputTokens.toLocaleString()} />
+              <Stat label="Deepgram" value={formatDeepgramCost(userAiCost?.deepgramUsd ?? 0, aiCosts)} />
+              <Stat label="Est. AI cost (list)" value={`$${detail.usageCostsSummary.estimatedCostUsd.toFixed(4)}`} />
             </div>
-            <div>
-              <p className="text-xs text-muted">Remaining</p>
-              <p className="text-base font-medium">{Number(detail.entitlement.remainingMinutes).toFixed(1)} min</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted">Period end</p>
-              <p className="text-base font-medium">
-                {detail.entitlement.periodEnd ? new Date(detail.entitlement.periodEnd).toLocaleDateString() : "--"}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted">Interviews</p>
-              <p className="text-base font-medium">{detail.sessionsSummary.total}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted">Completed</p>
-              <p className="text-base font-medium">{detail.sessionsSummary.completed}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted">Terminated</p>
-              <p className="text-base font-medium">{detail.sessionsSummary.terminated}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted">Expired</p>
-              <p className="text-base font-medium">{detail.sessionsSummary.expired}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted">Transcripts</p>
-              <p className="text-base font-medium">{detail.transcriptCount}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted">LLM calls</p>
-              <p className="text-base font-medium">{detail.usageCostsSummary.totalCalls}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted">Input tokens</p>
-              <p className="text-base font-medium">{detail.usageCostsSummary.totalInputTokens.toLocaleString()}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted">Output tokens</p>
-              <p className="text-base font-medium">{detail.usageCostsSummary.totalOutputTokens.toLocaleString()}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted">Est. AI cost</p>
-              <p className="text-base font-medium">${detail.usageCostsSummary.estimatedCostUsd.toFixed(4)}</p>
-            </div>
-          </div>
-        </section>
+          </section>
+        </div>
+      )}
 
+      {tab === "activity" && <ActivityTimeline detail={detail} />}
+
+      {tab === "devices" && (
         <section>
-          <h2 className="mb-2 text-sm font-semibold text-ink">Devices ({detail.devices.length})</h2>
           <div className="table-wrap">
             <table>
               <thead>
@@ -479,10 +509,11 @@ export default function UserDetailPage() {
             </table>
           </div>
         </section>
+      )}
 
+      {tab === "minutes" && (
         <section>
-          <h2 className="mb-2 text-sm font-semibold text-ink">Entitlement ledger ({detail.ledger.length})</h2>
-          <div className="table-wrap max-h-96 overflow-y-auto">
+          <div className="table-wrap">
             <table>
               <thead>
                 <tr>
@@ -523,16 +554,17 @@ export default function UserDetailPage() {
             </table>
           </div>
         </section>
+      )}
 
+      {tab === "sessions" && (
         <section>
-          <h2 className="mb-2 text-sm font-semibold text-ink">Interview sessions ({detail.sessions.length})</h2>
-          <p className="-mt-1 mb-2 text-xs text-muted">
+          <p className="mb-2 text-xs text-muted">
             AI spent in total: <span className="font-medium text-ink">{formatAiCost(userAiCost?.totalUsd ?? 0, aiCosts)}</span>
             {aiCosts && ` (${userAiCost?.calls ?? 0} AI calls, including ones outside interviews like Resume Builder)`}
             {" · "}Deepgram in total:{" "}
             <span className="font-medium text-ink">{formatDeepgramCost(userAiCost?.deepgramUsd ?? 0, aiCosts)}</span>
           </p>
-          <div className="table-wrap max-h-96 overflow-y-auto">
+          <div className="table-wrap">
             <table>
               <thead>
                 <tr>
@@ -554,11 +586,7 @@ export default function UserDetailPage() {
                     <td>
                       <span
                         className={`badge ${
-                          s.status === "completed"
-                            ? "badge-ok"
-                            : s.status === "active"
-                              ? "badge-warn"
-                              : "badge-danger"
+                          s.status === "completed" ? "badge-ok" : s.status === "active" ? "badge-warn" : "badge-danger"
                         }`}
                       >
                         {s.status}
@@ -571,12 +599,8 @@ export default function UserDetailPage() {
                     <td>{s.actual_duration_seconds != null ? formatDuration(s.actual_duration_seconds) : "--"}</td>
                     <td>{s.minutes_consumed != null ? Number(s.minutes_consumed).toFixed(2) : "--"}</td>
                     <td>{s.usage_deducted ? "Yes" : "No"}</td>
-                    <td className="whitespace-nowrap">
-                      {formatAiCost(userAiCost?.sessions[s.id]?.costUsd ?? 0, aiCosts)}
-                    </td>
-                    <td className="whitespace-nowrap">
-                      {formatDeepgramCost(userAiCost?.sessions[s.id]?.deepgramUsd ?? 0, aiCosts)}
-                    </td>
+                    <td className="whitespace-nowrap">{formatAiCost(userAiCost?.sessions[s.id]?.costUsd ?? 0, aiCosts)}</td>
+                    <td className="whitespace-nowrap">{formatDeepgramCost(userAiCost?.sessions[s.id]?.deepgramUsd ?? 0, aiCosts)}</td>
                     <td>
                       {s.transcript_id ? (
                         <button
@@ -591,10 +615,7 @@ export default function UserDetailPage() {
                           Missing
                         </span>
                       ) : (
-                        <span
-                          className="badge badge-muted"
-                          title="Nothing was asked in this session (e.g. a Test Audio run), so there was nothing to save"
-                        >
+                        <span className="badge badge-muted" title="Nothing was asked in this session (e.g. a Test Audio run), so there was nothing to save">
                           No questions
                         </span>
                       )}
@@ -612,10 +633,11 @@ export default function UserDetailPage() {
             </table>
           </div>
         </section>
+      )}
 
+      {tab === "transcripts" && (
         <section>
-          <h2 className="mb-2 text-sm font-semibold text-ink">Transcripts ({detail.transcripts.length})</h2>
-          <div className="table-wrap max-h-96 overflow-y-auto">
+          <div className="table-wrap">
             <table>
               <thead>
                 <tr>
@@ -653,7 +675,7 @@ export default function UserDetailPage() {
             </table>
           </div>
         </section>
-      </div>
+      )}
 
       <TranscriptModal transcriptId={openTranscriptId} onClose={() => setOpenTranscriptId(null)} />
 

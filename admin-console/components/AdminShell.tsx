@@ -182,7 +182,7 @@ export function AdminShell({ email, children }: { email: string; children: React
         </div>
       </aside>
 
-      <main className="safe-x min-w-0 flex-1 overflow-x-hidden bg-subtle pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-4 sm:pt-6 lg:p-6">
+      <main className="safe-x min-w-0 flex-1 overflow-x-clip bg-subtle pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-4 sm:pt-6 lg:p-6">
         {children}
       </main>
 
