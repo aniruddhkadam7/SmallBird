@@ -14,12 +14,14 @@ import {
   ScrollText,
   KeyRound,
   Settings,
+  BarChart3,
   FileText,
   type LucideIcon,
 } from "lucide-react";
 
 const BUILT: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/users", label: "Users", icon: Users },
   { href: "/subscriptions", label: "Subscriptions", icon: CreditCard },
   // Transcripts are shown inline under each session now (see /sessions) --
