@@ -199,6 +199,15 @@
   text-underline-offset: 1.5pt;
 }
 
+/* Links keep the template's colour; a contact line looks as before, it is
+   just clickable (also in the printed PDF). */
+.rv-page a {
+  color: inherit;
+}
+.rv-contact-link:not(.rv-link) {
+  text-decoration: none;
+}
+
 .rv-classic .rv-section {
   margin-top: 10pt;
 }

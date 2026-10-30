@@ -11,6 +11,7 @@ import {
   Download,
   FileUp,
   Loader2,
+  Link2,
   Plus,
   Sparkles,
   Target,
@@ -138,6 +139,9 @@ function EntryEditor({
           placeholder={listStyle === "bullets" ? "Built X using Y, which cut Z by 30%" : "Graduated with honours"}
           onChange={(e) => set({ items: e.target.value.split("\n") })}
         />
+        <span className="text-xs text-muted-foreground">
+          Add a link anywhere (also in the heading): paste the URL, or write [Live demo](https://your-link.com) to show just the words.
+        </span>
       </label>
       <div className="flex items-center justify-between gap-2">
         <button
@@ -339,6 +343,9 @@ export function ResumeEditor({
 
   /** A click on a line of the preview opens the line editor on it. */
   const onPreviewClick = (e: MouseEvent) => {
+    // A link in the preview edits its line like any other text; it only
+    // opens from the downloaded PDF.
+    if ((e.target as HTMLElement).closest("a")) e.preventDefault()
     if (showSample) return
     const el = (e.target as HTMLElement).closest<HTMLElement>("[data-edit]")
     const target = el && readEditTarget(el)
@@ -671,13 +678,25 @@ export function ResumeEditor({
                   </button>
                 </div>
               ))}
-              <button
-                type="button"
-                onClick={() => update((d) => void d.contact.push({ id: newId(), label: "", value: "" }))}
-                className="flex items-center gap-1.5 self-start rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
-              >
-                <Plus className="h-3.5 w-3.5" /> Add contact line
-              </button>
+              <div className="flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  onClick={() => update((d) => void d.contact.push({ id: newId(), label: "", value: "" }))}
+                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add contact line
+                </button>
+                <button
+                  type="button"
+                  onClick={() => update((d) => void d.contact.push({ id: newId(), label: "Portfolio", value: "https://" }))}
+                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+                >
+                  <Link2 className="h-3.5 w-3.5" /> Add link
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Email, phone and web addresses (like linkedin.com/in/you or github.com/you) are clickable in your PDF.
+              </p>
             </div>
 
             {/* Sections */}

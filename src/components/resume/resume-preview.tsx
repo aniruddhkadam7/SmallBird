@@ -39,8 +39,64 @@ import {
 
 function rich(text: string): ReactNode {
   const parts = text.split(/\*\*(.+?)\*\*/g)
-  if (parts.length === 1) return text
-  return parts.map((part, i) => (i % 2 === 1 ? <strong key={i}>{part}</strong> : part))
+  if (parts.length === 1) return linked(text)
+  return parts.map((part, i) => (i % 2 === 1 ? <strong key={i}>{linked(part)}</strong> : <span key={i}>{linked(part)}</span>))
+}
+
+// Links, in any line: `[text](url)` shows "text", and a bare URL
+// (https://... or www....) shows as itself. Both are real <a> links, so they
+// stay clickable in the PDF the browser prints.
+const LINK = /\[([^\]]+)\]\(([^)\s]+)\)|((?:https?:\/\/|www\.)[^\s<>()]*[^\s<>().,;:!?'"])/g
+
+function linked(text: string): ReactNode {
+  if (!text || !/\]\(|https?:\/\/|www\./i.test(text)) return text
+  const out: ReactNode[] = []
+  let last = 0
+  for (const m of text.matchAll(LINK)) {
+    const at = m.index ?? 0
+    if (at > last) out.push(text.slice(last, at))
+    out.push(
+      <a key={at} className="rv-link" href={toHref(m[2] ?? m[3])} target="_blank" rel="noreferrer">
+        {m[1] ?? m[3]}
+      </a>,
+    )
+    last = at + m[0].length
+  }
+  if (last < text.length) out.push(text.slice(last))
+  return out
+}
+
+/** "linkedin.com/in/x" -> "https://linkedin.com/in/x". Anything else (javascript: ...) becomes a plain web address. */
+function toHref(url: string): string {
+  if (/^(https?:|mailto:|tel:)/i.test(url)) return url
+  if (/^[^\s@/]+@[^\s@/]+\.[a-z]{2,}$/i.test(url)) return `mailto:${url}`
+  return `https://${url.replace(/^[a-z]+:\/*/i, "").replace(/^\/+/, "")}`
+}
+
+/** Where a contact line links to (email, phone, a profile or site), or null for plain text like a city. */
+function contactHref(item: ContactItem): string | null {
+  const v = item.value.trim()
+  const md = /^\[[^\]]+\]\(([^)\s]+)\)$/.exec(v)
+  if (md) return toHref(md[1])
+  if (/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(v)) return `mailto:${v}`
+  if (/^\+?[\d\s()-]{7,}$/.test(v)) return `tel:${v.replace(/[^\d+]/g, "")}`
+  if (/^(https?:\/\/|www\.)\S+$/i.test(v) || /^[\w-]+(\.[\w-]+)*\.[a-z]{2,}\/\S*$/i.test(v) || /^[\w-]+\.(com|in|io|dev|me|org|net|co|ai|app)$/i.test(v)) {
+    return toHref(v)
+  }
+  return null
+}
+
+/** A contact value, as a link when it is one. `[text](url)` shows only "text". */
+function ContactValue({ item, className, children }: { item: ContactItem; className?: string; children?: ReactNode }) {
+  const href = contactHref(item)
+  const md = /^\[([^\]]+)\]\([^)\s]+\)$/.exec(item.value.trim())
+  const shown = children ?? (md ? md[1] : item.value)
+  if (!href) return <span className={className}>{shown}</span>
+  return (
+    <a className={`rv-contact-link${className ? ` ${className}` : ""}`} href={href} target="_blank" rel="noreferrer">
+      {shown}
+    </a>
+  )
 }
 
 const ICON_PATHS: Record<string, string> = {
@@ -94,7 +150,7 @@ function Contact({ contact, template }: { contact: ContactItem[]; template: Temp
         {contact.map((item) => (
           <span key={item.id} className="rv-contact-item" {...editAttrs({ kind: "contact", id: item.id })}>
             <Icon name={iconFor(item)} />
-            <span className={template === "classic" && looksLikeLink(item) ? "rv-link" : undefined}>{item.value}</span>
+            <ContactValue item={item} className={template === "classic" && looksLikeLink(item) ? "rv-link" : undefined} />
           </span>
         ))}
       </div>
@@ -111,7 +167,7 @@ function Contact({ contact, template }: { contact: ContactItem[]; template: Temp
             <span key={item.id} {...editAttrs({ kind: "contact", id: item.id })}>
               {j > 0 && <span className="rv-sep"> ✻ </span>}
               {item.label && <em className="rv-tag">{item.label}: </em>}
-              {item.value}
+              <ContactValue item={item} />
             </span>
           ))}
         </div>
@@ -234,9 +290,9 @@ function EntryHeadLines({ entry, template }: { entry: ResumeEntry; template: Tem
     return (
       <div className="rv-line">
         <span>
-          <strong>{entry.heading}</strong>
+          <strong>{linked(entry.heading)}</strong>
           {entry.heading && entry.subheading && " "}
-          {entry.subheading}
+          {linked(entry.subheading)}
         </span>
         <span className="rv-tl-place">{place}</span>
       </div>
@@ -246,10 +302,10 @@ function EntryHeadLines({ entry, template }: { entry: ResumeEntry; template: Tem
     const { place } = dateAndPlace(entry)
     return (
       <>
-        {entry.heading && <strong className="rv-tl-title">{entry.heading}</strong>}
+        {entry.heading && <strong className="rv-tl-title">{linked(entry.heading)}</strong>}
         {(entry.subheading || place) && (
           <div className="rv-tl-sub">
-            <span className="rv-sc">{entry.subheading}</span>
+            <span className="rv-sc">{linked(entry.subheading)}</span>
             {entry.subheading && place && " · "}
             {place}
             {place && <Icon name="location" />}
@@ -264,9 +320,9 @@ function EntryHeadLines({ entry, template }: { entry: ResumeEntry; template: Tem
     return (
       <div className="rv-line">
         <span>
-          <strong>{entry.heading}</strong>
+          <strong>{linked(entry.heading)}</strong>
           {entry.heading && entry.subheading && <span className="rv-pipe"> | </span>}
-          <em>{entry.subheading}</em>
+          <em>{linked(entry.subheading)}</em>
         </span>
       </div>
     )
@@ -278,8 +334,8 @@ function EntryHeadLines({ entry, template }: { entry: ResumeEntry; template: Tem
       <>
         {(entry.heading || entry.subheading) && (
           <div className="rv-line rv-caps">
-            <strong>{entry.heading}</strong>
-            <strong>{entry.subheading}</strong>
+            <strong>{linked(entry.heading)}</strong>
+            <strong>{linked(entry.subheading)}</strong>
           </div>
         )}
         {(place || when) && (
@@ -301,13 +357,13 @@ function EntryHeadLines({ entry, template }: { entry: ResumeEntry; template: Tem
     <>
       {(entry.heading || entry.headingRight) && (
         <div className="rv-line">
-          <strong>{entry.heading}</strong>
+          <strong>{linked(entry.heading)}</strong>
           <span className="rv-right-top">{entry.headingRight}</span>
         </div>
       )}
       {(entry.subheading || entry.subheadingRight) && (
         <div className="rv-line">
-          <em>{entry.subheading}</em>
+          <em>{linked(entry.subheading)}</em>
           <em>{entry.subheadingRight}</em>
         </div>
       )}
@@ -516,7 +572,7 @@ function SideContact({ contact, template }: { contact: ContactItem[]; template: 
           <span className="rv-bubble">
             <Icon name={iconFor(item)} />
           </span>
-          <span>{breakable(item.value)}</span>
+          <ContactValue item={item}>{breakable(/^\[([^\]]+)\]\([^)\s]+\)$/.exec(item.value.trim())?.[1] ?? item.value)}</ContactValue>
         </p>
       ))}
     </div>
