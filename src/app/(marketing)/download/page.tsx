@@ -4,12 +4,12 @@ import { ArrowLeft, CheckCircle2, Download, Smartphone } from "lucide-react"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
 import { RelatedPages } from "@/components/blocks/related-pages"
-import { WINDOWS_INSTALLER_URL } from "@/lib/download"
+import { MAC_INSTALLER_URL, WINDOWS_INSTALLER_URL } from "@/lib/download"
 
 export const metadata: Metadata = {
-  title: "Download Smallbird for Windows",
+  title: "Download Smallbird for Windows and Mac",
   description:
-    "Download Smallbird free for Windows — real-time AI assistance for interviews, built from your CV and the job description. macOS coming soon.",
+    "Download Smallbird free for Windows and Mac — real-time AI assistance for interviews, built from your CV and the job description.",
   alternates: {
     canonical: "/download",
   },
@@ -69,7 +69,7 @@ export default async function DownloadPage({ searchParams }: { searchParams: Pro
             </p>
             <h1 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">Now download Smallbird</h1>
             <p className="mt-4 text-muted-foreground">
-              Install it on your Windows laptop and log in with the same email. Your free minutes are waiting.
+              Install it on your laptop and log in with the same email. Your free minutes are waiting.
             </p>
           </>
         ) : (
@@ -100,19 +100,27 @@ export default async function DownloadPage({ searchParams }: { searchParams: Pro
           </CardFooter>
         </Card>
 
-        <Card className="opacity-70">
+        <Card>
           <CardHeader>
             <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border">
               <AppleLogo />
             </div>
             <CardTitle className="text-lg">Mac</CardTitle>
-            <CardDescription>Coming soon.</CardDescription>
+            <CardDescription>macOS 14.6 or later, Apple Silicon and Intel.</CardDescription>
           </CardHeader>
-          <CardContent />
+          <CardContent>
+            {/* Ad-hoc signed until there's an Apple Developer ID, so Gatekeeper
+                blocks a plain double-click the first time. */}
+            <p className="text-xs text-muted-foreground">
+              First launch: right-click Smallbird in Applications and choose Open.
+            </p>
+          </CardContent>
           <CardFooter>
-            <LiquidButton className="w-full" variant="outline" disabled>
-              <AppleLogo />
-              Coming soon
+            <LiquidButton className="w-full" asChild>
+              <a href={MAC_INSTALLER_URL}>
+                <Download className="h-4 w-4" />
+                Free Download
+              </a>
             </LiquidButton>
           </CardFooter>
         </Card>

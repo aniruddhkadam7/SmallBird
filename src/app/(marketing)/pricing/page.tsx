@@ -52,7 +52,7 @@ export default function PricingPage() {
           {
             href: "/download",
             label: "Download",
-            description: "Get started free on Windows.",
+            description: "Get started free on Windows or Mac.",
           },
           {
             href: "/ai-interview-assistant",

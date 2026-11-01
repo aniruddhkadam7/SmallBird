@@ -51,7 +51,7 @@ export default function SmallbirdAlternativesPage() {
           rows={[
             { label: "Focus", values: ["Live conversation, audio-based", "Prep + live copilot, incl. coding", "Live coding rounds", "Live copilot, incl. coding mode"] },
             { label: "Reads screen/code editor", values: ["No", "Yes (coding mode)", "Yes (coding mode)", "Coding-specific mode"] },
-            { label: "Platform", values: ["Windows desktop app (macOS coming soon)", "Desktop app", "Browser/desktop", "Browser-based"] },
+            { label: "Platform", values: ["Windows and Mac desktop app", "Desktop app", "Browser/desktop", "Browser-based"] },
             { label: "Invisible on screen share", values: ["Yes", "Stealth mode available", "Stealth mode available", "Not confirmed"] },
             { label: "Free plan", values: ["Yes — 10 min/month", "Yes, limited", "Yes, limited", "Yes, limited"] },
             { label: "Pricing model", values: ["INR, one-time passes", "USD, monthly/annual subscription", "USD, monthly subscription or credits", "USD, monthly subscription"] },

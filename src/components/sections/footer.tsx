@@ -10,7 +10,7 @@ const columns = [
       { label: "Features", href: "/#features" },
       { label: "How it works", href: "/#product-demo" },
       { label: "Pricing", href: "/pricing" },
-      { label: "Download for Windows", href: "/download" },
+      { label: "Download for Windows & Mac", href: "/download" },
     ],
   },
   {
