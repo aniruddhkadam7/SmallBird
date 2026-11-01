@@ -19,7 +19,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
@@ -27,7 +27,6 @@ tauri-plugin-process = "2"
 tauri-plugin-autostart = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-wasapi = "0.24.0"
 crossbeam-channel = "0.5.16"
 log = "0.4.33"
 env_logger = "0.11.11"
@@ -36,25 +35,8 @@ tauri-plugin-dialog = "2.7.2"
 tauri-plugin-fs = "2.5.1"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "blocking", "multipart", "stream", "rustls"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
-windows = { version = "0.61", features = [
-    "Win32_UI_WindowsAndMessaging",
-    "Win32_Foundation",
-    "Win32_Graphics_Dxgi",
-    "Win32_Graphics_Dxgi_Common",
-    "Win32_Graphics_Dwm",
-    "Win32_Storage_FileSystem",
-    "Win32_System_Ioctl",
-    "Win32_System_IO",
-    "Win32_Security",
-    "Win32_Media_Audio",
-    "Media_Core",
-    "Media_SpeechSynthesis",
-    "Storage_Streams",
-    "Foundation",
-] }
 sysinfo = "0.32"
 tauri-plugin-global-shortcut = "2.3.2"
-keyring = { version = "3", features = ["windows-native"] }
 # Declared directly (not just relied on transitively) so
 # `rustls::crypto::ring::default_provider().install_default()` can be called
 # explicitly at process start — see src/tls_init.rs for why this is needed
@@ -85,3 +67,32 @@ sha2 = "0.10"
 getrandom = "0.2"
 tauri-plugin-log = "2"
 
+
+# Windows-only: WASAPI loopback/mic capture, DWM/DXGI/display-affinity calls,
+# the OneCore voice for the audio test, and the Credential Manager keyring.
+[target.'cfg(windows)'.dependencies]
+wasapi = "0.24.0"
+windows = { version = "0.61", features = [
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Foundation",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Dwm",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Ioctl",
+    "Win32_System_IO",
+    "Win32_Security",
+    "Win32_Media_Audio",
+    "Media_Core",
+    "Media_SpeechSynthesis",
+    "Storage_Streams",
+    "Foundation",
+] }
+keyring = { version = "3", features = ["windows-native"] }
+
+# macOS counterparts: Core Audio (via cpal) for the microphone, a Core Audio
+# process tap for system audio (see src/audio/macos_capture.rs), and the
+# login Keychain for the keyring.
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+cpal = "0.18.2"

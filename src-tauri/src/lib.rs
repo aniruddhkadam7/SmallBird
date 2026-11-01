@@ -29,6 +29,11 @@ mod tray;
 // recording pipeline headlessly instead of a reimplementation of it.
 pub mod stt;
 pub mod transcript;
+#[cfg(windows)]
+mod windows_capture_protection;
+// Same API, NSWindow sharingType instead of display affinity.
+#[cfg(target_os = "macos")]
+#[path = "macos_capture_protection.rs"]
 mod windows_capture_protection;
 
 use tauri::{Emitter, Manager};
@@ -140,6 +145,11 @@ pub fn run() {
         .manage(history::HistoryStore::default())
         .manage(shortcuts::ShortcutManager::default())
         .setup(|app| {
+            // macOS counterpart of `skipTaskbar`: no Dock icon or app-switcher
+            // entry — the app lives in the menu bar tray, as on Windows.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             // Hardware detection + performance mode load first, synchronously
             // — cheap (a few sysinfo/DXGI/IOCTL calls, no network/process
             // spawn).

@@ -436,7 +436,7 @@ fn run_capture_protection_watchdog(app: AppHandle, label: &'static str, uncondit
                 continue;
             }
 
-            let hwnd_value = window.hwnd().ok().map(|h| h.0 as isize);
+            let hwnd_value = windows_capture_protection::window_handle_value(&window);
             let hwnd_changed = last_hwnd.is_some() && last_hwnd != hwnd_value;
             if hwnd_changed {
                 log::info!(

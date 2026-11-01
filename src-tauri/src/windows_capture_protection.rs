@@ -68,6 +68,11 @@ pub const WDA_EXCLUDEFROMCAPTURE_VALUE: u32 = WDA_EXCLUDEFROMCAPTURE.0;
 /// call is still in effect. Returns the raw `WDA_*` value (0 = `WDA_NONE`,
 /// 0x11 = `WDA_EXCLUDEFROMCAPTURE`) so callers/logs can tell "the flag was
 /// never dropped" apart from "the flag reverted".
+/// Stable per-window identity for the watchdog's "window was recreated" check.
+pub fn window_handle_value(window: &WebviewWindow) -> Option<isize> {
+    window.hwnd().ok().map(|h| h.0 as isize)
+}
+
 pub fn get_capture_affinity(window: &WebviewWindow) -> Result<u32, String> {
     let hwnd = window.hwnd().map_err(|e| format!("failed to get window handle: {e}"))?;
     let mut affinity = 0u32;
