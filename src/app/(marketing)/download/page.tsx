@@ -110,9 +110,11 @@ export default async function DownloadPage({ searchParams }: { searchParams: Pro
           </CardHeader>
           <CardContent>
             {/* Ad-hoc signed until there's an Apple Developer ID, so Gatekeeper
-                blocks a plain double-click the first time. */}
+                blocks the first launch (macOS 15+ dropped the right-click >
+                Open bypass; Open Anyway in Settings is the way through). */}
             <p className="text-xs text-muted-foreground">
-              First launch: right-click Smallbird in Applications and choose Open.
+              First launch: if macOS says it can&apos;t verify Smallbird, open System Settings &gt; Privacy &amp;
+              Security and click Open Anyway.
             </p>
           </CardContent>
           <CardFooter>
