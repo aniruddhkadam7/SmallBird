@@ -4,12 +4,13 @@ import { useState } from "react"
 import Link from "next/link"
 import { Check, Copy, Download } from "lucide-react"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
-import { WINDOWS_INSTALLER_URL } from "@/lib/download"
+import { MAC_INSTALLER_URL, WINDOWS_INSTALLER_URL } from "@/lib/download"
 
 // What to do right after signing up or paying: the three steps from here to
 // a working interview, and a button that starts the installer download
-// straight away (not a link to another page). Smallbird only runs on a
-// Windows computer, so a phone gets the link to open there instead.
+// straight away (not a link to another page) for the visitor's own OS —
+// Windows or Mac. Smallbird is a desktop app, so a phone gets the link to
+// open on a laptop instead.
 
 const DOWNLOAD_PAGE = "https://smallbird.in/download"
 
@@ -19,11 +20,15 @@ export function DownloadNextSteps({ email, onDone }: { email: string | null; onD
   const [isPhone] = useState(
     () => typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent),
   )
+  const [isMac] = useState(() => typeof navigator !== "undefined" && /Macintosh|Mac OS X/i.test(navigator.userAgent))
   const [started, setStarted] = useState(false)
+  const platform = isMac
+    ? { name: "Mac", url: MAC_INSTALLER_URL, file: "Smallbird-Mac.dmg", note: "Free · macOS 14.6 or later" }
+    : { name: "Windows", url: WINDOWS_INSTALLER_URL, file: "Smallbird-Setup.exe", note: "Free · Windows 10 and 11" }
   const [copied, setCopied] = useState(false)
 
   const steps = [
-    isPhone ? "Open smallbird.in/download on your Windows laptop" : "Download and install Smallbird for Windows",
+    isPhone ? "Open smallbird.in/download on your laptop" : `Download and install Smallbird for ${platform.name}`,
     email ? `Open it and log in with ${email}` : "Open it and log in with the same email",
     "Start Interview Mode before your interview",
   ]
@@ -61,15 +66,15 @@ export function DownloadNextSteps({ email, onDone }: { email: string | null; onD
       ) : (
         <div className="space-y-2">
           <LiquidButton asChild size="lg" className="w-full">
-            <a href={WINDOWS_INSTALLER_URL} onClick={() => setStarted(true)}>
+            <a href={platform.url} onClick={() => setStarted(true)}>
               <Download />
-              {started ? "Download again" : "Download for Windows"}
+              {started ? "Download again" : `Download for ${platform.name}`}
             </a>
           </LiquidButton>
           <p className="text-center text-xs text-muted-foreground">
             {started
-              ? "Downloading… open Smallbird-Setup.exe when it finishes."
-              : "Free · Windows 10 and 11"}
+              ? `Downloading… open ${platform.file} when it finishes.`
+              : platform.note}
           </p>
         </div>
       )}

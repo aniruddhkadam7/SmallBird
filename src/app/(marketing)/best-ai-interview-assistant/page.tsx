@@ -46,9 +46,9 @@ const criteria = [
   },
   {
     question: "Is it available on macOS?",
-    answer: "Smallbird: not yet",
-    good: false,
-    detail: "Windows 10/11 is supported today; macOS is coming soon.",
+    answer: "Smallbird: yes",
+    good: true,
+    detail: "Runs on Mac (macOS 14.6 or later, Apple Silicon and Intel) as well as Windows 10/11.",
   },
   {
     question: "Does it have a free plan and India-friendly pricing?",

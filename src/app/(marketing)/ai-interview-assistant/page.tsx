@@ -59,7 +59,7 @@ const faqs = [
   {
     question: "Is Smallbird available for Mac?",
     answer:
-      "Smallbird is currently available for Windows 10 and 11. macOS support is coming soon.",
+      "Smallbird is available for Windows 10 and 11, and for Mac (macOS 14.6 or later, Apple Silicon and Intel).",
   },
 ]
 
