@@ -6,8 +6,8 @@
 //! references (see docs/performance-tuning.md's real-i3-latency-diagnosis
 //! section) rather than for exercising the recommended order.
 //!
-//!     DEEPGRAM_API_KEY=... cargo run --bin pipeline_test_old_order -- [seconds]
-//!     DEEPGRAM_API_KEY=... cargo run --bin pipeline_test_old_order -- 40 --lifecycle
+//!     DEEPGRAM_API_KEY=... cargo run --example pipeline_test_old_order -- [seconds]
+//!     DEEPGRAM_API_KEY=... cargo run --example pipeline_test_old_order -- 40 --lifecycle
 //!
 //! Play audio through the default output device while it runs. Partials are
 //! rewritten in place; finals print on their own line with the latency from

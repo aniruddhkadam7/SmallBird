@@ -1,6 +1,6 @@
 //! Measures the real WASAPI capture pipeline.
 //!
-//!     cargo run --bin audio_probe -- [seconds]
+//!     cargo run --example audio_probe -- [seconds]
 //!
 //! Play audio through the default output device while this runs (any source —
 //! a video, a meeting, music). It drives `SystemAudioCapture` exactly as the

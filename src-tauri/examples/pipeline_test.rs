@@ -1,7 +1,7 @@
 //! Headless end-to-end test of the production recording pipeline.
 //!
-//!     DEEPGRAM_API_KEY=... cargo run --bin pipeline_test -- [seconds]
-//!     DEEPGRAM_API_KEY=... cargo run --bin pipeline_test -- 40 --lifecycle
+//!     DEEPGRAM_API_KEY=... cargo run --example pipeline_test -- [seconds]
+//!     DEEPGRAM_API_KEY=... cargo run --example pipeline_test -- 40 --lifecycle
 //!
 //! Drives the *same* code the Tauri command runs — `SystemAudioCapture`,
 //! `run_stt_pipeline` (gap-fill included), `SttClient`, `TranscriptManager` —

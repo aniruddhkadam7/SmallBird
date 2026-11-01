@@ -1,6 +1,6 @@
 mod analyzer;
 mod autostart;
-// Public so the `audio_probe` binary (src/bin/audio_probe.rs) can drive the
+// Public so the `audio_probe` example (examples/audio_probe.rs) can drive the
 // real capture path when measuring the pipeline, rather than a copy of it that
 // could drift from what actually ships.
 pub mod audio;
@@ -12,7 +12,7 @@ mod bubble_window;
 mod commands;
 mod crash_guard;
 mod documents;
-// Public so `src/bin/hw_probe.rs` can reference `PerformanceConfig` without
+// Public so `examples/hw_probe.rs` can reference `PerformanceConfig` without
 // a re-export chain.
 pub mod hardware;
 mod history;
@@ -25,7 +25,7 @@ mod shortcuts;
 mod state;
 mod tls_init;
 mod tray;
-// Public alongside `audio` so `src/bin/pipeline_test.rs` can drive the real
+// Public alongside `audio` so `examples/pipeline_test.rs` can drive the real
 // recording pipeline headlessly instead of a reimplementation of it.
 pub mod stt;
 pub mod transcript;

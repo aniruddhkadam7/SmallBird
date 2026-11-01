@@ -1,6 +1,6 @@
 //! Fills the holes WASAPI loopback leaves in the audio timeline.
 //!
-//! Measured behaviour (see `src/bin/audio_probe.rs`): a loopback capture on an
+//! Measured behaviour (see `examples/audio_probe.rs`): a loopback capture on an
 //! *idle* render endpoint delivers no packets at all. Not silent packets —
 //! nothing. Per-second delivery during a probe run looked like this, with
 //! speech between t=5s and t=11s:
