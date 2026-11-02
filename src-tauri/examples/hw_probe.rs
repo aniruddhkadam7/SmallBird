@@ -5,7 +5,7 @@
 //! `docs/performance-tuning.md`'s STT-start-reliability section) instead of
 //! guessed at from a synthetic test profile.
 //!
-//!     cargo run --bin hw_probe
+//!     cargo run --example hw_probe
 
 fn main() {
     let profile = desktop_lib::hardware::profile::detect();

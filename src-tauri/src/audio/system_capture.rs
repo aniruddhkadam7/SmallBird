@@ -2,12 +2,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, OnceLock};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(windows)]
+use std::time::Instant;
 
 use crossbeam_channel::Sender;
+#[cfg(windows)]
 use wasapi::{AudioCaptureClient, AudioClient, Direction, Handle, SampleType, StreamMode, WaveFormat};
 
 use super::metrics::CaptureMetrics;
+#[cfg(windows)]
 use super::resample::AudioResampler;
 use super::{compute_rms, AudioChunk, AudioSource, StopSignal};
 
@@ -31,6 +35,14 @@ const DEFAULT_DEVICE_CHECK_INTERVAL: Duration = Duration::from_secs(2);
 /// second or two.
 const DEVICE_RECOVERY_WINDOW: Duration = Duration::from_secs(10);
 const DEVICE_RECOVERY_RETRY: Duration = Duration::from_millis(500);
+
+// The platform-specific half: `run_capture_loop` and its helpers. The
+// WASAPI implementation lives in this file; Core Audio's in macos_capture.rs.
+#[cfg(target_os = "macos")]
+#[path = "macos_capture.rs"]
+mod macos;
+#[cfg(target_os = "macos")]
+use macos::run_capture_loop;
 
 type FailureHandler = Box<dyn Fn(AudioSource, String) + Send + Sync>;
 static FAILURE_HANDLER: OnceLock<FailureHandler> = OnceLock::new();
@@ -75,6 +87,7 @@ impl CaptureKind {
     }
 
     /// The endpoint whose default device this kind follows.
+    #[cfg(windows)]
     fn device_direction(self) -> Direction {
         match self {
             CaptureKind::Loopback => Direction::Render,
@@ -195,6 +208,7 @@ fn start_capture(
     }
 }
 
+#[cfg(windows)]
 /// One open loopback stream on a specific output device.
 struct LoopbackStream {
     audio_client: AudioClient,
@@ -205,12 +219,14 @@ struct LoopbackStream {
     device_id: Option<String>,
 }
 
+#[cfg(windows)]
 impl Drop for LoopbackStream {
     fn drop(&mut self) {
         let _ = self.audio_client.stop_stream();
     }
 }
 
+#[cfg(windows)]
 fn default_device_id(kind: CaptureKind) -> Option<String> {
     wasapi::DeviceEnumerator::new()
         .ok()?
@@ -220,6 +236,7 @@ fn default_device_id(kind: CaptureKind) -> Option<String> {
         .ok()
 }
 
+#[cfg(windows)]
 /// Opens the default device for `kind`: loopback on the default output, or
 /// a plain capture stream on the default microphone. Both are opened in
 /// shared mode as Direction::Capture — on a render device that is what makes
@@ -278,6 +295,7 @@ fn open_default(kind: CaptureKind) -> Result<LoopbackStream, String> {
     })
 }
 
+#[cfg(windows)]
 /// Why `pump` returned.
 enum PumpEnd {
     Stopped,
@@ -287,6 +305,7 @@ enum PumpEnd {
     DefaultChanged,
 }
 
+#[cfg(windows)]
 fn run_capture_loop(
     kind: CaptureKind,
     tx: Sender<AudioChunk>,
@@ -354,6 +373,7 @@ fn run_capture_loop(
     Ok(())
 }
 
+#[cfg(windows)]
 fn reopen_with_retry(kind: CaptureKind, stop: &StopSignal) -> Option<LoopbackStream> {
     let deadline = Instant::now() + DEVICE_RECOVERY_WINDOW;
     while !stop.is_stopped() && Instant::now() < deadline {
@@ -366,6 +386,7 @@ fn reopen_with_retry(kind: CaptureKind, stop: &StopSignal) -> Option<LoopbackStr
     None
 }
 
+#[cfg(windows)]
 /// Moves audio from `stream` to `tx` until stopped or the device situation
 /// changes. Event waits time out routinely (loopback only signals while
 /// something is actually playing), so a timeout is never treated as failure.

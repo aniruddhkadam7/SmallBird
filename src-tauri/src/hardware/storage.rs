@@ -4,18 +4,25 @@
 //! STT/RAG are CPU/RAM-bound in steady state, not disk-I/O-bound; storage
 //! type only affects one-time model/document load latency.
 
+#[cfg(windows)]
 use std::ffi::c_void;
+#[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
+#[cfg(windows)]
 use std::ptr;
 
+#[cfg(windows)]
 use windows::Win32::Foundation::{CloseHandle, GENERIC_READ, HANDLE};
+#[cfg(windows)]
 use windows::Win32::Storage::FileSystem::{
     CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
 };
+#[cfg(windows)]
 use windows::Win32::System::Ioctl::{
     StorageDeviceSeekPenaltyProperty, DEVICE_SEEK_PENALTY_DESCRIPTOR, IOCTL_STORAGE_QUERY_PROPERTY,
     PropertyStandardQuery, STORAGE_PROPERTY_QUERY,
 };
+#[cfg(windows)]
 use windows::Win32::System::IO::DeviceIoControl;
 
 /// Queries the physical drive backing `C:\` (Smallbird's app data / model /
@@ -23,6 +30,7 @@ use windows::Win32::System::IO::DeviceIoControl;
 /// `None` on any failure — permission denial, an unusual storage stack
 /// (e.g. some virtualized/cloud-mounted drives), or an unsupported query —
 /// so callers must treat `None` as "unknown", not "HDD".
+#[cfg(windows)]
 pub fn detect_system_drive_is_ssd() -> Option<bool> {
     // SAFETY: standard CreateFileW + DeviceIoControl sequence for
     // IOCTL_STORAGE_QUERY_PROPERTY, matching Microsoft's documented usage.
@@ -73,4 +81,10 @@ pub fn detect_system_drive_is_ssd() -> Option<bool> {
             Err(_) => None,
         }
     }
+}
+
+/// Every Mac that can run this app (macOS 13+) boots from an SSD.
+#[cfg(target_os = "macos")]
+pub fn detect_system_drive_is_ssd() -> Option<bool> {
+    Some(true)
 }

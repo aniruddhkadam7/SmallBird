@@ -2,7 +2,7 @@
 //!
 //! Extracted from `commands::start_system_audio_capture` so that the exact code
 //! the application runs can also be driven headlessly by
-//! `src/bin/pipeline_test.rs`. Verifying a *copy* of this loop would prove
+//! `examples/pipeline_test.rs`. Verifying a *copy* of this loop would prove
 //! nothing about what actually ships, so there is only one copy and both
 //! callers use it.
 //!

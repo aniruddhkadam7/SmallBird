@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the macOS app bundle's Info.plist by Tauri. macOS refuses
+     (and kills the app on) microphone/system-audio access without these
+     purpose strings. -->
+<plist version="1.0">
+<dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Smallbird listens to your microphone when you turn Mic on, so it can transcribe what you say.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Smallbird listens to your Mac's audio output so it can transcribe the other people in your call.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Smallbird captures a screenshot when you ask it about what is on your screen.</string>
+</dict>
+</plist>

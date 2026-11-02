@@ -1,0 +1,219 @@
+# Builds the Smallbird desktop app for Windows and macOS.
+#
+# - Push a tag `v<version>` (matching src-tauri/tauri.conf.json) -> builds
+#   both platforms, signs the updater artifacts, and publishes a release on
+#   the public aniruddhkadam7/SmallBird-releases repo with a latest.json that
+#   covers every platform, so all existing installs auto-update.
+# - Pull requests touching the app, or a manual run -> build only, nothing is
+#   published. Lets you confirm the macOS build still compiles without a Mac.
+#
+# Repo secrets (Settings > Secrets and variables > Actions):
+#   TAURI_SIGNING_PRIVATE_KEY           contents of ~/.tauri/smallbird-updater.key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  contents of ~/.tauri/smallbird-updater.pw.txt
+#   RELEASES_TOKEN                      fine-grained PAT with Contents read/write on SmallBird-releases
+# Optional, for a signed + notarized macOS app (no Gatekeeper warning on first install):
+#   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+#   APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+
+name: Desktop release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "src/**"
+      - "src-tauri/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/desktop-release.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  RELEASES_REPO: aniruddhkadam7/SmallBird-releases
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            runner: windows-latest
+            args: --bundles nsis
+            rust_targets: ""
+          - name: macos
+            runner: macos-latest
+            # One universal app (Apple Silicon + Intel) — a single download
+            # and a single updater artifact serve both darwin platforms.
+            args: --target universal-apple-darwin --bundles app,dmg
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+    name: build (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag matches app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          app_version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "v$app_version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match tauri.conf.json version $app_version"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.name }}
+
+      - run: npm ci
+
+      - name: Apple signing (only when configured)
+        if: matrix.name == 'macos'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Tauri picks these up from the environment. Left unset (rather than
+          # set to empty) when absent, so the build falls back to ad-hoc signing.
+          if [ -n "$APPLE_CERTIFICATE" ]; then
+            for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+              echo "$name=${!name}" >> "$GITHUB_ENV"
+            done
+          fi
+
+      - name: Build
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          extra=()
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+              echo "::error::TAURI_SIGNING_PRIVATE_KEY is not set — a release without updater signatures would never install"
+              exit 1
+            fi
+            # Test builds without the key (forks, before secrets are added):
+            # skip the updater artifacts instead of failing.
+            extra=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
+          fi
+          npx tauri build ${{ matrix.args }} "${extra[@]}"
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p out
+          if [ "${{ matrix.name }}" = windows ]; then
+            cp src-tauri/target/release/bundle/nsis/*-setup.exe* out/
+          else
+            bundle=src-tauri/target/universal-apple-darwin/release/bundle
+            cp "$bundle"/dmg/*.dmg out/
+            cp "$bundle"/macos/*.app.tar.gz* out/ 2>/dev/null || true
+          fi
+          ls -l out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: out/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Assemble release assets and latest.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          base="https://github.com/$RELEASES_REPO/releases/download/$GITHUB_REF_NAME"
+          mkdir -p release
+
+          win_exe="Smallbird_${version}_x64-setup.exe"
+          cp "artifacts/windows/$win_exe" release/
+          # Fixed names the website's download buttons always point at.
+          cp "artifacts/windows/$win_exe" release/Smallbird-Setup.exe
+
+          mac_tar="Smallbird_${version}_universal.app.tar.gz"
+          cp artifacts/macos/*.app.tar.gz "release/$mac_tar"
+          cp artifacts/macos/*.dmg "release/Smallbird_${version}_universal.dmg"
+          cp artifacts/macos/*.dmg release/Smallbird-Mac.dmg
+
+          # Release notes = the annotated tag's message.
+          notes=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")
+          [ -n "$notes" ] || notes="Smallbird $version"
+          echo "$notes" > release/notes.md
+
+          jq -n \
+            --arg version "$version" \
+            --arg notes "$notes" \
+            --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg win_sig "$(cat artifacts/windows/$win_exe.sig)" \
+            --arg win_url "$base/$win_exe" \
+            --arg mac_sig "$(cat artifacts/macos/*.app.tar.gz.sig)" \
+            --arg mac_url "$base/$mac_tar" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pub_date,
+              platforms: {
+                "windows-x86_64": { signature: $win_sig, url: $win_url },
+                "darwin-aarch64": { signature: $mac_sig, url: $mac_url },
+                "darwin-x86_64":  { signature: $mac_sig, url: $mac_url }
+              }
+            }' > release/latest.json
+          cat release/latest.json
+          ls -l release
+
+      - name: Publish to SmallBird-releases
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          cd release
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$RELEASES_REPO" \
+            --target main \
+            --title "Smallbird ${GITHUB_REF_NAME#v}" \
+            --notes-file notes.md \
+            --latest \
+            latest.json Smallbird-Setup.exe Smallbird_*_x64-setup.exe \
+            Smallbird-Mac.dmg Smallbird_*_universal.dmg Smallbird_*_universal.app.tar.gz
+
+      - name: Verify public endpoints
+        run: |
+          sleep 10
+          base="https://github.com/$RELEASES_REPO/releases/latest/download"
+          curl -fsSL "$base/latest.json" | jq -e --arg v "${GITHUB_REF_NAME#v}" '.version == $v'
+          curl -fsSIL -o /dev/null "$base/Smallbird-Setup.exe"
+          curl -fsSIL -o /dev/null "$base/Smallbird-Mac.dmg"

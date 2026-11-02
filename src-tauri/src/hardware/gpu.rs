@@ -10,6 +10,7 @@
 //! is why it was chosen over `nvml-wrapper` (NVIDIA-only, needs `nvml.dll`
 //! present) or `wgpu` (pulls in a full graphics stack for a single query).
 
+#[cfg(windows)]
 use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIFactory1};
 
 pub struct GpuAdapter {
@@ -18,10 +19,14 @@ pub struct GpuAdapter {
     pub vram_mb: Option<u64>,
 }
 
+#[cfg(windows)]
 const VENDOR_NVIDIA: u32 = 0x10DE;
+#[cfg(windows)]
 const VENDOR_AMD: u32 = 0x1002;
+#[cfg(windows)]
 const VENDOR_INTEL: u32 = 0x8086;
 
+#[cfg(windows)]
 fn vendor_name(vendor_id: u32) -> String {
     match vendor_id {
         VENDOR_NVIDIA => "NVIDIA".to_string(),
@@ -35,6 +40,7 @@ fn vendor_name(vendor_id: u32) -> String {
 /// proxy for "the GPU that matters" on a multi-GPU laptop with integrated +
 /// discrete graphics). `None` on any enumeration failure or if no adapter
 /// reports dedicated VRAM — never panics.
+#[cfg(windows)]
 pub fn detect_primary_adapter() -> Option<GpuAdapter> {
     // SAFETY: CreateDXGIFactory1/EnumAdapters1/GetDesc1 are standard,
     // well-documented Win32 COM calls used exactly as Microsoft's own docs
@@ -78,4 +84,21 @@ pub fn detect_primary_adapter() -> Option<GpuAdapter> {
 
         best
     }
+}
+
+/// Macs this app supports have Apple's integrated GPU sharing system memory,
+/// so there is no dedicated VRAM figure to report — the name is the chip
+/// (e.g. "Apple M2") for the Performance panel's display.
+#[cfg(target_os = "macos")]
+pub fn detect_primary_adapter() -> Option<GpuAdapter> {
+    let output = std::process::Command::new("sysctl")
+        .args(["-n", "machdep.cpu.brand_string"])
+        .output()
+        .ok()?;
+    let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+    let vendor = if name.starts_with("Apple") { "Apple" } else { "Intel" };
+    Some(GpuAdapter { vendor: vendor.to_string(), name, vram_mb: None })
 }

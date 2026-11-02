@@ -28,9 +28,10 @@ use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
 
 /// Matches `identifier` in tauri.conf.json — Tauri's LogDir on Windows is
-/// `%LOCALAPPDATA%\<identifier>\logs`, and crash.log sits beside the regular
-/// log so both are found in one place.
-const APP_IDENTIFIER: &str = "com.smallbird.app";
+/// `%LOCALAPPDATA%\<identifier>\logs` (`~/Library/Logs/<identifier>` on
+/// macOS), and crash.log sits beside the regular log so both are found in one
+/// place.
+pub const APP_IDENTIFIER: &str = "com.smallbird.app";
 
 thread_local! {
     /// Set while inside [`guard`], so the hook knows the panic is about to be
@@ -53,9 +54,16 @@ impl<T: ?Sized> LockExt<T> for Mutex<T> {
     }
 }
 
+#[cfg(windows)]
 pub fn crash_log_path() -> Option<PathBuf> {
     let base = std::env::var_os("LOCALAPPDATA")?;
     Some(PathBuf::from(base).join(APP_IDENTIFIER).join("logs").join("crash.log"))
+}
+
+#[cfg(target_os = "macos")]
+pub fn crash_log_path() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    Some(PathBuf::from(home).join("Library/Logs").join(APP_IDENTIFIER).join("crash.log"))
 }
 
 fn append_crash_log(entry: &str) {

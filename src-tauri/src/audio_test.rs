@@ -8,18 +8,23 @@
 //! real Deepgram session before the check can pass, so a muted output, a wrong
 //! default device, or a broken capture path all still fail it.
 //!
-//! Synthesis uses Windows' built-in neural/OneCore voices (the same ones
-//! Narrator uses) and playback uses `PlaySoundW` on the default device, so no
-//! new dependency or child process is involved.
+//! On Windows, synthesis uses the built-in neural/OneCore voices (the same
+//! ones Narrator uses) and playback uses `PlaySoundW` on the default device,
+//! so no new dependency or child process is involved. On macOS the system's
+//! own `say` and `afplay` tools do the same job.
 
 use crate::state::AppState;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Manager, State};
+#[cfg(windows)]
 use windows::core::{HSTRING, PCWSTR};
+#[cfg(windows)]
 use windows::Media::SpeechSynthesis::SpeechSynthesizer;
+#[cfg(windows)]
 use windows::Storage::Streams::DataReader;
+#[cfg(windows)]
 use windows::Win32::Media::Audio::{PlaySoundW, SND_MEMORY, SND_NODEFAULT, SND_PURGE, SND_SYNC};
 use crate::crash_guard::LockExt;
 
@@ -68,12 +73,18 @@ pub async fn play_audio_test_phrase() -> Result<(), String> {
 pub fn stop_audio_test_phrase() {
     *PREPARED.lock_safe() = None;
     if PLAYING.load(Ordering::SeqCst) {
-        unsafe {
-            let _ = PlaySoundW(PCWSTR::null(), None, SND_PURGE);
-        }
+        stop_playback();
     }
 }
 
+#[cfg(windows)]
+fn stop_playback() {
+    unsafe {
+        let _ = PlaySoundW(PCWSTR::null(), None, SND_PURGE);
+    }
+}
+
+#[cfg(windows)]
 fn synthesize_wav(phrase: &str) -> windows::core::Result<Vec<u8>> {
     let synthesizer = SpeechSynthesizer::new()?;
     let stream = synthesizer
@@ -87,6 +98,7 @@ fn synthesize_wav(phrase: &str) -> windows::core::Result<Vec<u8>> {
     Ok(wav)
 }
 
+#[cfg(windows)]
 fn play_blocking(wav: &[u8]) -> Result<(), String> {
     log::info!("audio test: speaking test phrase ({} bytes of speech)", wav.len());
 
@@ -101,6 +113,83 @@ fn play_blocking(wav: &[u8]) -> Result<(), String> {
     } else {
         // Also what a purge returns; the caller ignores the result once cancelled.
         Err("test audio could not be played".into())
+    }
+}
+
+/// The running `afplay`, so `stop_playback` can cut it off.
+#[cfg(target_os = "macos")]
+static PLAYER: Mutex<Option<std::process::Child>> = Mutex::new(None);
+
+#[cfg(target_os = "macos")]
+fn temp_wav_path(name: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("smallbird-audio-test-{}-{name}.wav", std::process::id()))
+}
+
+#[cfg(target_os = "macos")]
+fn stop_playback() {
+    if let Some(mut child) = PLAYER.lock_safe().take() {
+        let _ = child.kill();
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn synthesize_wav(phrase: &str) -> Result<Vec<u8>, String> {
+    let path = temp_wav_path("say");
+    let status = std::process::Command::new("/usr/bin/say")
+        .arg("-o")
+        .arg(&path)
+        .args(["--file-format=WAVE", "--data-format=LEI16@22050", "--"])
+        .arg(phrase)
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err(format!("say exited with {status}"));
+    }
+    let wav = std::fs::read(&path).map_err(|e| e.to_string());
+    let _ = std::fs::remove_file(&path);
+    wav
+}
+
+#[cfg(target_os = "macos")]
+fn play_blocking(wav: &[u8]) -> Result<(), String> {
+    log::info!("audio test: speaking test phrase ({} bytes of speech)", wav.len());
+
+    let path = temp_wav_path("play");
+    std::fs::write(&path, wav).map_err(|e| e.to_string())?;
+    let child = std::process::Command::new("/usr/bin/afplay")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| format!("test audio could not be played: {e}"))?;
+    let pid = child.id();
+    *PLAYER.lock_safe() = Some(child);
+    PLAYING.store(true, Ordering::SeqCst);
+
+    // Poll rather than wait() so `stop_playback` can take and kill the child
+    // from another thread without this one holding the lock.
+    let status = loop {
+        let mut player = PLAYER.lock_safe();
+        match player.as_mut() {
+            Some(child) if child.id() == pid => match child.try_wait() {
+                Ok(Some(status)) => {
+                    player.take();
+                    break Some(status);
+                }
+                Ok(None) => {}
+                Err(_) => break None,
+            },
+            // Stopped (and killed) by `stop_playback`.
+            _ => break None,
+        }
+        drop(player);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    PLAYING.store(false, Ordering::SeqCst);
+    let _ = std::fs::remove_file(&path);
+
+    match status {
+        Some(status) if status.success() => Ok(()),
+        // Also what a stop returns; the caller ignores the result once cancelled.
+        _ => Err("test audio could not be played".into()),
     }
 }
 

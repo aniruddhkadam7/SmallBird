@@ -656,7 +656,7 @@ export default function AnalyticsPage() {
         <Section title="Browsers">
           <BarList rows={a.browsers} label={(b) => b.name} value={(b) => b.visitors} />
         </Section>
-        <Section title="Operating systems" hint="Visitors on Windows can install the app right away.">
+        <Section title="Operating systems" hint="Visitors on Windows or Mac can install the app right away.">
           <BarList rows={a.os} label={(o) => o.name} value={(o) => o.visitors} />
         </Section>
       </div>

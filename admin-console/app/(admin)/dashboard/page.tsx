@@ -71,6 +71,8 @@ interface DashboardStats {
     windowsInstaller: number;
     windowsUpdates: number;
     mac: number;
+    // Optional until the admin-dashboard-stats function with Mac update counts is deployed.
+    macUpdates?: number;
     latestVersion: string | null;
     latestVersionDownloads: number;
   } | null;
@@ -400,15 +402,28 @@ export default function DashboardPage() {
               </div>
               <div className="flex items-center gap-3">
                 <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
+                  <Download size={17} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-ink">Mac installer</p>
+                  <p className="text-xs text-muted">From the website&apos;s download button</p>
+                </div>
+                <span className="text-lg font-semibold tabular-nums text-ink">{stats.downloads.mac}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
                   <RefreshCw size={17} />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-ink">Auto-updates</p>
                   <p className="text-xs text-muted">
-                    Latest {stats.downloads.latestVersion ?? "--"}: {stats.downloads.latestVersionDownloads}
+                    Windows {stats.downloads.windowsUpdates} · Mac {stats.downloads.macUpdates ?? 0} · Latest{" "}
+                    {stats.downloads.latestVersion ?? "--"}: {stats.downloads.latestVersionDownloads}
                   </p>
                 </div>
-                <span className="text-lg font-semibold tabular-nums text-ink">{stats.downloads.windowsUpdates}</span>
+                <span className="text-lg font-semibold tabular-nums text-ink">
+                  {stats.downloads.windowsUpdates + (stats.downloads.macUpdates ?? 0)}
+                </span>
               </div>
               <p className="text-xs text-muted">Downloads are anonymous, so these are totals, not per user.</p>
             </div>

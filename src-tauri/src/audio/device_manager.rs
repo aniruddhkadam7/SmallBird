@@ -1,3 +1,4 @@
+#[cfg(windows)]
 use wasapi::{DeviceCollection, Direction};
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -12,6 +13,7 @@ pub struct AudioDeviceInfo {
 /// capture devices for microphone input) so Settings can show device pickers.
 pub struct AudioDeviceManager;
 
+#[cfg(windows)]
 impl AudioDeviceManager {
     pub fn list_output_devices() -> Result<Vec<AudioDeviceInfo>, String> {
         Self::list_devices(Direction::Render)
@@ -54,5 +56,45 @@ impl AudioDeviceManager {
             });
         }
         Ok(devices)
+    }
+}
+
+/// Core Audio devices through cpal — same shape as the Windows listing.
+#[cfg(target_os = "macos")]
+impl AudioDeviceManager {
+    pub fn list_output_devices() -> Result<Vec<AudioDeviceInfo>, String> {
+        Self::list_devices(true)
+    }
+
+    pub fn list_input_devices() -> Result<Vec<AudioDeviceInfo>, String> {
+        Self::list_devices(false)
+    }
+
+    fn list_devices(output: bool) -> Result<Vec<AudioDeviceInfo>, String> {
+        use cpal::traits::{DeviceTrait, HostTrait};
+
+        let host = cpal::default_host();
+        let default = if output { host.default_output_device() } else { host.default_input_device() }
+            .and_then(|d| d.id().ok())
+            .map(|id| id.to_string());
+        let devices: Vec<cpal::Device> = if output {
+            host.output_devices().map_err(|e| e.to_string())?.collect()
+        } else {
+            host.input_devices().map_err(|e| e.to_string())?.collect()
+        };
+
+        Ok(devices
+            .into_iter()
+            .filter_map(|device| {
+                let id = device.id().ok()?.to_string();
+                let name = device.description().map(|d| d.name().to_string()).unwrap_or_else(|_| id.clone());
+                Some(AudioDeviceInfo {
+                    is_default: default.as_deref() == Some(id.as_str()),
+                    id,
+                    name,
+                    direction: if output { "output" } else { "input" }.to_string(),
+                })
+            })
+            .collect())
     }
 }

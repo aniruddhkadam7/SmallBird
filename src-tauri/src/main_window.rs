@@ -22,7 +22,9 @@
 //! change.
 
 use tauri::{AppHandle, LogicalPosition, Manager};
+#[cfg(windows)]
 use windows::Win32::Foundation::COLORREF;
+#[cfg(windows)]
 use windows::Win32::Graphics::Dwm::{
     DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR,
 };
@@ -99,6 +101,10 @@ pub fn set_popover_content_height(_app: AppHandle, _content_height: f64) -> Resu
 /// no-op — not an error — on Windows 10, which predates this DWM API);
 /// failures are logged, never fatal, since this is a cosmetic touch, not
 /// functional.
+#[cfg(not(windows))]
+pub fn apply_light_titlebar(_app: &AppHandle) {}
+
+#[cfg(windows)]
 pub fn apply_light_titlebar(app: &AppHandle) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
         return;

@@ -8,6 +8,8 @@
 //! affects capture through the same OS compositor APIs `xcap` uses on
 //! Windows — so this full-screen grab never includes the overlay itself,
 //! without this module needing to know anything about window positions.
+//! On macOS the same holds via the NSWindow `sharingType` set by
+//! `macos_capture_protection.rs`.
 
 use base64::Engine;
 use xcap::image::codecs::jpeg::JpegEncoder;
@@ -21,7 +23,32 @@ const SHOT_MAX_SIDE: u32 = 1600;
 /// Width of the overlay's thumbnail strip images.
 const THUMB_WIDTH: u32 = 240;
 
+// Without Screen Recording permission macOS doesn't fail the capture — it
+// quietly returns just the wallpaper, which the model would then "analyze".
+// Check first: the request call shows the system prompt the first time and
+// otherwise only reports the current state.
+#[cfg(target_os = "macos")]
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGPreflightScreenCaptureAccess() -> bool;
+    fn CGRequestScreenCaptureAccess() -> bool;
+}
+
+#[cfg(target_os = "macos")]
+fn ensure_screen_capture_access() -> Result<(), String> {
+    // SAFETY: argument-less CoreGraphics queries, callable from any thread.
+    if unsafe { CGPreflightScreenCaptureAccess() } || unsafe { CGRequestScreenCaptureAccess() } {
+        return Ok(());
+    }
+    Err("Smallbird needs Screen Recording permission to see your screen. Turn it on in System Settings > \
+         Privacy & Security > Screen & System Audio Recording, then quit and reopen Smallbird."
+        .to_string())
+}
+
 fn capture_primary_rgba() -> Result<RgbaImage, String> {
+    #[cfg(target_os = "macos")]
+    ensure_screen_capture_access()?;
+
     let monitors = Monitor::all().map_err(|e| format!("failed to list monitors: {e}"))?;
     let monitor = monitors
         .iter()
