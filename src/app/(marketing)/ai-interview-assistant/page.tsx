@@ -54,7 +54,9 @@ const faqs = [
   {
     question: "How much does Smallbird cost?",
     answer:
-      "Smallbird has a free plan (10 minutes a month) and one-time passes starting at ₹299 for 60 minutes in India ($9 everywhere else). See full pricing for details.",
+      "Smallbird has a free plan (10 minutes a month) and one-time passes starting at ₹299 for 60 minutes. See full pricing for details.",
+    answerUsd:
+      "Smallbird has a free plan (10 minutes a month) and one-time passes starting at $9 for 60 minutes. See full pricing for details.",
   },
   {
     question: "Is Smallbird available for Mac?",
@@ -123,7 +125,8 @@ export default function AiInterviewAssistantPage() {
           {
             href: "/pricing",
             label: "Pricing",
-            description: "Free plan and one-time passes from ₹299 in India, $9 elsewhere.",
+            description: "Free plan and one-time passes from ₹299.",
+            descriptionUsd: "Free plan and one-time passes from $9.",
           },
         ]}
       />

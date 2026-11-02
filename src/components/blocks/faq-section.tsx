@@ -1,8 +1,12 @@
+import { LocalPrice } from "@/components/blocks/local-price"
+
 // Renders visibly as <details>/<summary> (zero client JS) AND emits matching
 // FAQPage JSON-LD — Google requires the structured data to match what's
 // actually visible on the page, so the two are built from one array here
 // rather than kept in sync by hand in two places.
-export type FaqItem = { question: string; answer: string }
+// answerUsd: shown instead of answer to visitors outside India (prices in
+// USD). The JSON-LD keeps the India answer.
+export type FaqItem = { question: string; answer: string; answerUsd?: string }
 
 export function FaqSection({ items }: { items: FaqItem[] }) {
   const jsonLd = {
@@ -27,7 +31,9 @@ export function FaqSection({ items }: { items: FaqItem[] }) {
             <summary className="cursor-pointer list-none font-medium text-foreground marker:content-none">
               {item.question}
             </summary>
-            <p className="mt-2 text-sm text-muted-foreground">{item.answer}</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {item.answerUsd ? <LocalPrice inr={item.answer} usd={item.answerUsd} /> : item.answer}
+            </p>
           </details>
         ))}
       </div>

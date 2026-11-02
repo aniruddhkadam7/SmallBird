@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { LocalPrice } from "@/components/blocks/local-price"
 import { PageHeader } from "@/components/blocks/page-header"
 import { ComparisonTable } from "@/components/blocks/comparison-table"
 import { FaqSection } from "@/components/blocks/faq-section"
@@ -16,7 +17,9 @@ const faqs = [
   {
     question: "Is Smallbird better than these alternatives?",
     answer:
-      "It depends on what you need. Smallbird's advantages are specific and verifiable: it's audio-only (nothing captures your screen or code), it's invisible on screen share, it's priced in INR with UPI and local wallet support in India (USD by card elsewhere), and it has a genuinely free tier. If you specifically need a tool that reads your code editor live, a code-reading tool from the table below may fit better — that's a real trade-off, not a reason to call one \"better\" overall.",
+      "It depends on what you need. Smallbird's advantages are specific and verifiable: it's audio-only (nothing captures your screen or code), it's invisible on screen share, it's priced in INR with UPI and local wallet support, and it has a genuinely free tier. If you specifically need a tool that reads your code editor live, a code-reading tool from the table below may fit better — that's a real trade-off, not a reason to call one \"better\" overall.",
+    answerUsd:
+      "It depends on what you need. Smallbird's advantages are specific and verifiable: it's audio-only (nothing captures your screen or code), it's invisible on screen share, it sells one-time passes instead of subscriptions, and it has a genuinely free tier. If you specifically need a tool that reads your code editor live, a code-reading tool from the table below may fit better — that's a real trade-off, not a reason to call one \"better\" overall.",
   },
   {
     question: "Where does this comparison information come from?",
@@ -31,7 +34,9 @@ const faqs = [
   {
     question: "Does Smallbird work outside India?",
     answer:
-      "Yes. The app and overlay work anywhere. Outside India, passes are priced in US dollars ($9, $15 and $25) and paid by card; in India they're priced in rupees with UPI, PhonePe, Paytm, Google Pay and cards, all via Razorpay.",
+      "Smallbird's app and overlay work anywhere; pricing and payment methods (UPI, PhonePe, Paytm, Google Pay via Razorpay) are set up for the Indian market specifically.",
+    answerUsd:
+      "Yes. The app and overlay work anywhere, and outside India passes are priced in US dollars ($9, $15 and $25) and paid by card.",
   },
 ]
 
@@ -54,7 +59,7 @@ export default function SmallbirdAlternativesPage() {
             { label: "Platform", values: ["Windows and Mac desktop app", "Desktop app", "Browser/desktop", "Browser-based"] },
             { label: "Invisible on screen share", values: ["Yes", "Stealth mode available", "Stealth mode available", "Not confirmed"] },
             { label: "Free plan", values: ["Yes — 10 min/month", "Yes, limited", "Yes, limited", "Yes, limited"] },
-            { label: "Pricing model", values: ["INR in India, USD elsewhere; one-time passes", "USD, monthly/annual subscription", "USD, monthly subscription or credits", "USD, monthly subscription"] },
+            { label: "Pricing model", values: [<LocalPrice key="sb" inr="INR, one-time passes" usd="USD, one-time passes" />, "USD, monthly/annual subscription", "USD, monthly subscription or credits", "USD, monthly subscription"] },
             { label: "India-specific payment support", values: ["UPI, PhonePe, Paytm, Google Pay", "Not confirmed", "Not confirmed", "Not confirmed"] },
           ]}
           footnote="Information on third-party tools reflects how each company publicly describes its own product as of September 2026 — we have not independently tested them, and pricing and features change. Verify current details on each vendor's own site. Smallbird's row is drawn from our own product and pricing pages."
@@ -70,8 +75,20 @@ export default function SmallbirdAlternativesPage() {
             story compared to tools that do.
           </li>
           <li>
-            <span className="font-medium text-foreground">Local pricing —</span>{" "}
-            INR with UPI, PhonePe, Paytm, and Google Pay in India, and USD by card everywhere else, as one-time passes rather than a subscription.
+            <LocalPrice
+              inr={
+                <>
+                  <span className="font-medium text-foreground">Built for India&apos;s payment rails —</span>{" "}
+                  INR pricing with UPI, PhonePe, Paytm, and Google Pay, rather than a USD-only subscription.
+                </>
+              }
+              usd={
+                <>
+                  <span className="font-medium text-foreground">One-time passes —</span> from $9, valid until used,
+                  rather than a monthly subscription.
+                </>
+              }
+            />
           </li>
           <li>
             <span className="font-medium text-foreground">A real free tier —</span>{" "}
@@ -102,7 +119,8 @@ export default function SmallbirdAlternativesPage() {
           {
             href: "/pricing",
             label: "Pricing",
-            description: "Free plan and one-time passes from ₹299 in India, $9 elsewhere.",
+            description: "Free plan and one-time passes from ₹299.",
+            descriptionUsd: "Free plan and one-time passes from $9.",
           },
         ]}
       />

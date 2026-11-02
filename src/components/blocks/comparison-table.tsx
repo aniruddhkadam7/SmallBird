@@ -1,6 +1,6 @@
 export type ComparisonRow = {
   label: string
-  values: string[]
+  values: React.ReactNode[]
 }
 
 export function ComparisonTable({

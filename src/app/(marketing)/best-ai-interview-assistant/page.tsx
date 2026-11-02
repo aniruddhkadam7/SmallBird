@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { LocalPrice } from "@/components/blocks/local-price"
 import { Check, X } from "lucide-react"
 import { PageHeader } from "@/components/blocks/page-header"
 import { FaqSection } from "@/components/blocks/faq-section"
@@ -54,7 +55,8 @@ const criteria = [
     question: "Does it have a free plan and India-friendly pricing?",
     answer: "Smallbird: yes",
     good: true,
-    detail: "10 minutes/month free, INR pricing with UPI/PhonePe/Paytm/GPay in India, and USD card payments everywhere else, via Razorpay.",
+    detail: "10 minutes/month free, INR pricing, and UPI/PhonePe/Paytm/GPay support via Razorpay.",
+    detailUsd: "10 minutes/month free, then one-time passes from $9, paid by card via Razorpay.",
   },
 ]
 
@@ -62,7 +64,9 @@ const faqs = [
   {
     question: "Is Smallbird the best AI interview assistant?",
     answer:
-      "We don't claim that, and you shouldn't take any vendor's word for it without checking against your own needs. What we can tell you honestly: Smallbird is real-time, audio-based, grounded in your CV and job description, invisible on screen share, and has a free tier, with INR pricing in India and USD pricing everywhere else. Whether that makes it the right fit depends on what you're evaluating for — the checklist above is meant to help you decide, not just for Smallbird.",
+      "We don't claim that, and you shouldn't take any vendor's word for it without checking against your own needs. What we can tell you honestly: Smallbird is real-time, audio-based, grounded in your CV and job description, invisible on screen share, and priced with a free tier for the Indian market. Whether that makes it the right fit depends on what you're evaluating for — the checklist above is meant to help you decide, not just for Smallbird.",
+    answerUsd:
+      "We don't claim that, and you shouldn't take any vendor's word for it without checking against your own needs. What we can tell you honestly: Smallbird is real-time, audio-based, grounded in your CV and job description, invisible on screen share, and has a free tier with one-time passes from $9. Whether that makes it the right fit depends on what you're evaluating for — the checklist above is meant to help you decide, not just for Smallbird.",
   },
   {
     question: "What should I check before trusting a \"best AI tool\" ranking online?",
@@ -98,7 +102,9 @@ export default function BestAiInterviewAssistantPage() {
               <div>
                 <p className="font-medium text-foreground">{item.question}</p>
                 <p className="text-sm font-medium text-muted-foreground">{item.answer}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{item.detail}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {"detailUsd" in item && item.detailUsd ? <LocalPrice inr={item.detail} usd={item.detailUsd} /> : item.detail}
+                </p>
               </div>
             </div>
           ))}
@@ -127,7 +133,8 @@ export default function BestAiInterviewAssistantPage() {
           {
             href: "/pricing",
             label: "Pricing",
-            description: "Free plan and one-time passes from ₹299 in India, $9 elsewhere.",
+            description: "Free plan and one-time passes from ₹299.",
+            descriptionUsd: "Free plan and one-time passes from $9.",
           },
         ]}
       />

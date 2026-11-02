@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { LocalPrice } from "@/components/blocks/local-price"
 import { PageHeader } from "@/components/blocks/page-header"
 import { FaqSection } from "@/components/blocks/faq-section"
 import { RelatedPages } from "@/components/blocks/related-pages"
@@ -49,7 +50,9 @@ const checklist = [
   },
   {
     title: "What does it cost, and in what currency?",
-    body: "Subscription vs. one-time pass changes the math depending on how often you're interviewing. If you're in India, check whether pricing is in INR and whether UPI or local wallets are supported — Smallbird's plans are priced in INR in India, with UPI, Google Pay, PhonePe, Paytm, and card support via Razorpay, and in US dollars by card everywhere else.",
+    body: "Subscription vs. one-time pass changes the math depending on how often you're interviewing. If you're in India, check whether pricing is in INR and whether UPI or local wallets are supported — Smallbird's plans are priced in INR with UPI, Google Pay, PhonePe, Paytm, and card support via Razorpay.",
+    bodyUsd:
+      "Subscription vs. one-time pass changes the math depending on how often you're interviewing. Smallbird sells one-time passes, not subscriptions: from $9 for 60 minutes, paid by card via Razorpay.",
   },
 ]
 
@@ -72,7 +75,9 @@ const faqs = [
   {
     question: "Where does Smallbird fit in?",
     answer:
-      "Smallbird is a real-time interview copilot: audio-based, grounded in your CV and job description, invisible on screen share, and priced in INR in India and USD everywhere else, with a free plan to start.",
+      "Smallbird is a real-time interview copilot: audio-based, grounded in your CV and job description, invisible on screen share, and priced for the Indian market with a free plan to start.",
+    answerUsd:
+      "Smallbird is a real-time interview copilot: audio-based, grounded in your CV and job description, invisible on screen share, with a free plan to start and one-time passes from $9.",
   },
 ]
 
@@ -103,7 +108,9 @@ export default function AiInterviewToolsPage() {
           {checklist.map((item) => (
             <div key={item.title}>
               <h3 className="font-medium text-foreground">{item.title}</h3>
-              <p className="mt-1 text-sm text-muted-foreground">{item.body}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {"bodyUsd" in item && item.bodyUsd ? <LocalPrice inr={item.body} usd={item.bodyUsd} /> : item.body}
+              </p>
             </div>
           ))}
         </div>

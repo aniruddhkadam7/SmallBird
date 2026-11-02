@@ -96,7 +96,8 @@ export default function AiInterviewCopilotPage() {
           {
             href: "/pricing",
             label: "Pricing",
-            description: "Free plan and one-time passes from ₹299 in India, $9 elsewhere.",
+            description: "Free plan and one-time passes from ₹299.",
+            descriptionUsd: "Free plan and one-time passes from $9.",
           },
         ]}
       />

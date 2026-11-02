@@ -1,12 +1,14 @@
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
+import { LocalPrice } from "@/components/blocks/local-price"
 
 export function RelatedPages({
   title = "Related pages",
   links,
 }: {
   title?: string
-  links: { href: string; label: string; description: string }[]
+  // descriptionUsd: shown instead to visitors outside India.
+  links: { href: string; label: string; description: string; descriptionUsd?: string }[]
 }) {
   return (
     <section className="mx-auto mt-16 max-w-3xl px-4">
@@ -22,7 +24,9 @@ export function RelatedPages({
               {link.label}
               <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
             </span>
-            <p className="mt-1 text-sm text-muted-foreground">{link.description}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {link.descriptionUsd ? <LocalPrice inr={link.description} usd={link.descriptionUsd} /> : link.description}
+            </p>
           </Link>
         ))}
       </div>
