@@ -9,6 +9,7 @@ import { PurchaseFlowDialog } from "@/components/blocks/purchase-flow-dialog";
 import { PurchaseFlowProvider } from "@/lib/purchase-flow";
 import { siteName, siteUrl } from "@/lib/site";
 import { OrganizationJsonLd, WebsiteJsonLd } from "@/components/seo/json-ld";
+import { currencyScript } from "@/lib/currency";
 
 const title = "Smallbird — AI Interview & Meeting Assistant";
 const description =
@@ -75,7 +76,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       data-theme="light"
       style={{ colorScheme: "light" }}
       className={`${geistSans.variable} ${geistMono.variable} ${playfairDisplay.variable} antialiased`}
+      // data-currency is added by currencyScript before React hydrates.
+      suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: currencyScript }} />
+      </head>
       <body>
         <OrganizationJsonLd />
         <WebsiteJsonLd />

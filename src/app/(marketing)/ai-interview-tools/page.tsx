@@ -49,7 +49,7 @@ const checklist = [
   },
   {
     title: "What does it cost, and in what currency?",
-    body: "Subscription vs. one-time pass changes the math depending on how often you're interviewing. If you're in India, check whether pricing is in INR and whether UPI or local wallets are supported — Smallbird's plans are priced in INR with UPI, Google Pay, PhonePe, Paytm, and card support via Razorpay.",
+    body: "Subscription vs. one-time pass changes the math depending on how often you're interviewing. If you're in India, check whether pricing is in INR and whether UPI or local wallets are supported — Smallbird's plans are priced in INR in India, with UPI, Google Pay, PhonePe, Paytm, and card support via Razorpay, and in US dollars by card everywhere else.",
   },
 ]
 
@@ -72,7 +72,7 @@ const faqs = [
   {
     question: "Where does Smallbird fit in?",
     answer:
-      "Smallbird is a real-time interview copilot: audio-based, grounded in your CV and job description, invisible on screen share, and priced for the Indian market with a free plan to start.",
+      "Smallbird is a real-time interview copilot: audio-based, grounded in your CV and job description, invisible on screen share, and priced in INR in India and USD everywhere else, with a free plan to start.",
   },
 ]
 

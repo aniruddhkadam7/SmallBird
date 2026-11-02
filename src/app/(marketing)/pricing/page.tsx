@@ -7,7 +7,7 @@ import { RelatedPages } from "@/components/blocks/related-pages"
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Smallbird pricing: a free plan with 10 minutes a month, and one-time passes from ₹299 for 60 minutes up to ₹999 for 240 minutes. No subscriptions.",
+    "Smallbird pricing: a free plan with 10 minutes a month, and one-time passes from ₹299 for 60 minutes up to ₹999 for 240 minutes in India ($9 to $25 everywhere else). No subscriptions.",
   alternates: { canonical: "/pricing" },
 }
 
@@ -20,7 +20,7 @@ const faqs = [
   {
     question: "What's the difference between the passes?",
     answer:
-      "All three are one-time purchases, valid until used — there are no subscriptions. Starter Pass is ₹299 for 60 minutes, Pro Pass is ₹559 for 120 minutes, and Pro+ Pass is ₹999 for 240 minutes. Bigger passes cost less per minute (₹4.98, ₹4.66 and ₹4.16).",
+      "All three are one-time purchases, valid until used — there are no subscriptions. Starter Pass is ₹299 for 60 minutes, Pro Pass is ₹559 for 120 minutes, and Pro+ Pass is ₹999 for 240 minutes. Bigger passes cost less per minute (₹4.98, ₹4.66 and ₹4.16). Outside India the same passes are $9, $15 and $25, paid by card.",
   },
   {
     question: "How is usage measured?",
@@ -40,7 +40,7 @@ export default function PricingPage() {
       <PageHeader
         eyebrow="Pricing"
         title="Simple, transparent pricing"
-        description="Priced for India. Start free, then pick a one-time pass sized to how much you're interviewing."
+        description="Priced in rupees in India and US dollars everywhere else. Start free, then pick a one-time pass sized to how much you're interviewing."
       />
 
       <Pricing />

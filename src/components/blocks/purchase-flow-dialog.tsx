@@ -14,6 +14,7 @@ import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { PLAN_LABELS, usePurchaseFlow } from "@/lib/purchase-flow"
 import { getPlan } from "@/lib/plans"
 import { DownloadNextSteps } from "@/components/blocks/download-next-steps"
+import { LocalPrice } from "@/components/blocks/local-price"
 
 // Google's official four-color "G" logomark, per their brand guidelines for
 // "Continue with Google" buttons — an inline SVG rather than an image file
@@ -61,7 +62,12 @@ export function PurchaseFlowDialog() {
 
   const plan = getPlan(activeFlow.plan)
   const planLabel = PLAN_LABELS[activeFlow.plan]
-  const priceSummary = plan.cadence ? `${plan.price} ${plan.cadence}` : `${plan.price} — no payment needed`
+  const priceSummary = (
+    <LocalPrice
+      inr={plan.cadence ? `${plan.price} ${plan.cadence}` : `${plan.price} — no payment needed`}
+      usd={plan.cadence ? `${plan.usd.price} ${plan.cadence}` : `${plan.usd.price} — no payment needed`}
+    />
+  )
 
   return (
     <Dialog open onOpenChange={(open) => !open && closeFlow()}>

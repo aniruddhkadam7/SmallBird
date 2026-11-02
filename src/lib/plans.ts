@@ -8,14 +8,19 @@ export type PlanId = "free" | "starter" | "pro" | "pro-plus";
 
 export type BillingKind = "free" | "one_time" | "monthly" | "yearly";
 
+// India pays in INR, everyone else in USD -- see lib/currency.ts for who
+// counts as which. Same minutes in both.
+export type Currency = "INR" | "USD";
+
 export interface Plan {
   id: PlanId
   name: string
   emoji: string
   price: string
   priceInPaise: number
-  cadence: string
   billingNote: string
+  usd: { price: string; cents: number; billingNote: string }
+  cadence: string
   description: string
   features: string[]
   cta: string
@@ -45,8 +50,9 @@ export const PLANS: Plan[] = [
     emoji: "🆓",
     price: "₹0",
     priceInPaise: 0,
-    cadence: "",
     billingNote: "10 minutes/month",
+    usd: { price: "$0", cents: 0, billingNote: "10 minutes/month" },
+    cadence: "",
     description: "Experience all Smallbird features.",
     features: ["10 minutes/month", "Screen Analysis", "Coding Answers", resumeFeature("free")],
     cta: "Start Free",
@@ -58,8 +64,9 @@ export const PLANS: Plan[] = [
     emoji: "🟢",
     price: "₹299",
     priceInPaise: 29900,
-    cadence: "one-time",
     billingNote: "60 minutes · ₹4.98/min",
+    usd: { price: "$9", cents: 900, billingNote: "60 minutes · $0.15/min" },
+    cadence: "one-time",
     description: "For a single upcoming interview.",
     features: ["60 minutes of AI time", "Screen Analysis", "Coding Answers", resumeFeature("starter"), "Valid until used"],
     cta: "Get Starter Pass",
@@ -71,8 +78,9 @@ export const PLANS: Plan[] = [
     emoji: "⭐",
     price: "₹559",
     priceInPaise: 55900,
-    cadence: "one-time",
     billingNote: "120 minutes · ₹4.66/min",
+    usd: { price: "$15", cents: 1500, billingNote: "120 minutes · $0.125/min" },
+    cadence: "one-time",
     description: "For a few rounds of interviews.",
     features: ["120 minutes of AI time", "Screen Analysis", "Coding Answers", resumeFeature("pro"), "Valid until used"],
     cta: "Get Pro Pass",
@@ -84,8 +92,9 @@ export const PLANS: Plan[] = [
     emoji: "🔥",
     price: "₹999",
     priceInPaise: 99900,
-    cadence: "one-time",
     billingNote: "240 minutes · ₹4.16/min",
+    usd: { price: "$25", cents: 2500, billingNote: "240 minutes · $0.10/min" },
+    cadence: "one-time",
     description: "Best value for serious interview prep.",
     features: ["240 minutes of AI time", "Screen Analysis", "Coding Answers", resumeFeature("pro-plus"), "Priority support", "Valid until used"],
     cta: "Get Pro+ Pass",
@@ -98,6 +107,13 @@ export function getPlan(id: PlanId): Plan {
   const plan = PLANS.find((p) => p.id === id);
   if (!plan) throw new Error(`Unknown plan id: ${id}`);
   return plan;
+}
+
+// Amount for a Razorpay order, in the currency's smallest unit. These must
+// match public.plans.price_inr_paise / price_usd_cents (backend migration
+// 0065) -- the webhook refuses to credit a payment that doesn't.
+export function planAmount(plan: Plan, currency: Currency): number {
+  return currency === "USD" ? plan.usd.cents : plan.priceInPaise
 }
 
 export const PAID_PLAN_IDS = new Set<PlanId>(["starter", "pro", "pro-plus"]);

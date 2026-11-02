@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils"
 import { usePurchaseFlow } from "@/lib/purchase-flow"
 import { PLANS } from "@/lib/plans"
 import { siVisa, siGooglepay, siPhonepe, siPaytm } from "simple-icons"
+import { LocalPrice } from "@/components/blocks/local-price"
 
 // Only payment methods actually supported through our Razorpay checkout --
 // Apple Pay is deliberately left out since Razorpay doesn't support it for
@@ -34,8 +35,8 @@ export function Pricing() {
             Simple, transparent pricing
           </h2>
           <p className="mt-4 text-muted-foreground">
-            Priced for India. One-time passes, no subscriptions — pick the
-            one that fits how much you're interviewing.
+            <LocalPrice inr="Priced for India." usd="Priced in US dollars." /> One-time passes, no
+            subscriptions — pick the one that fits how much you're interviewing.
           </p>
         </div>
 
@@ -67,13 +68,13 @@ export function Pricing() {
                   </CardTitle>
                   <div className="mt-2 flex items-baseline gap-1.5">
                     <span className="text-3xl font-semibold tracking-tight">
-                      {plan.price}
+                      <LocalPrice inr={plan.price} usd={plan.usd.price} />
                     </span>
                     {plan.cadence ? (
                       <span className="text-sm text-muted-foreground">{plan.cadence}</span>
                     ) : null}
                   </div>
-                  <p className="text-xs font-medium text-muted-foreground">{plan.billingNote}</p>
+                  <p className="text-xs font-medium text-muted-foreground"><LocalPrice inr={plan.billingNote} usd={plan.usd.billingNote} /></p>
                   <CardDescription>{plan.description}</CardDescription>
                 </CardHeader>
                 <CardContent className="flex-1">
@@ -101,8 +102,8 @@ export function Pricing() {
         </div>
 
         <p className="mt-8 text-center text-xs text-muted-foreground">
-          Prices are in INR and include applicable taxes. All passes are
-          one-time purchases, valid until used.
+          <LocalPrice inr="Prices are in INR and include applicable taxes." usd="Prices are in US dollars." /> All
+          passes are one-time purchases, valid until used.
         </p>
 
         <div className="mt-10 flex flex-wrap items-center justify-center gap-2.5">
@@ -129,11 +130,12 @@ export function Pricing() {
             AMEX
           </span>
 
+          {/* UPI apps and CRED only work for Indian buyers; abroad it's cards. */}
           {paymentMethods.slice(1).map((m) => (
             <span
               key={m.name}
               title={m.name}
-              className="flex h-11 w-20 items-center justify-center rounded-lg border border-border bg-card"
+              className="only-inr flex h-11 w-20 items-center justify-center rounded-lg border border-border bg-card"
             >
               <svg viewBox="0 0 24 24" className="h-7 w-7" fill={m.color} aria-hidden="true">
                 <path d={m.icon.path} />
@@ -143,12 +145,12 @@ export function Pricing() {
 
           <span
             title="CRED"
-            className="flex h-11 w-20 items-center justify-center rounded-lg bg-black text-[11px] font-bold tracking-tight text-white"
+            className="only-inr flex h-11 w-20 items-center justify-center rounded-lg bg-black text-[11px] font-bold tracking-tight text-white"
           >
             CRED
           </span>
 
-          <span className="flex h-11 w-20 items-center justify-center rounded-lg border border-border bg-card text-xs font-bold text-foreground">
+          <span className="only-inr flex h-11 w-20 items-center justify-center rounded-lg border border-border bg-card text-xs font-bold text-foreground">
             UPI
           </span>
         </div>

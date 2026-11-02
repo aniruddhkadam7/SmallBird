@@ -44,13 +44,10 @@ export function SoftwareApplicationJsonLd() {
     operatingSystem: "Windows, macOS",
     description:
       "Smallbird gives you real-time AI assistance during interviews — with context from your CV and the job description.",
-    offers: {
-      "@type": "AggregateOffer",
-      priceCurrency: "INR",
-      lowPrice: "0",
-      highPrice: "999",
-      offerCount: "4",
-    },
+    offers: [
+      { "@type": "AggregateOffer", priceCurrency: "INR", lowPrice: "0", highPrice: "999", offerCount: "4" },
+      { "@type": "AggregateOffer", priceCurrency: "USD", lowPrice: "0", highPrice: "25", offerCount: "4" },
+    ],
   }
 
   return (

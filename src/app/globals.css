@@ -257,3 +257,10 @@
     opacity: 0.14;
   }
 }
+
+/* Local prices (components/blocks/local-price.tsx): India sees INR, everyone
+   else USD. <html data-currency> is set before paint by lib/currency.ts. */
+html[data-currency="USD"] .only-inr,
+html:not([data-currency="USD"]) .only-usd {
+  display: none !important;
+}

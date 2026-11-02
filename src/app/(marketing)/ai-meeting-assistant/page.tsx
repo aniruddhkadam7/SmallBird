@@ -90,7 +90,7 @@ export default function AiMeetingAssistantPage() {
           {
             href: "/pricing",
             label: "Pricing",
-            description: "Free plan and one-time passes from ₹299.",
+            description: "Free plan and one-time passes from ₹299 in India, $9 elsewhere.",
           },
         ]}
       />

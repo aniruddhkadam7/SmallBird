@@ -54,7 +54,7 @@ const criteria = [
     question: "Does it have a free plan and India-friendly pricing?",
     answer: "Smallbird: yes",
     good: true,
-    detail: "10 minutes/month free, INR pricing, and UPI/PhonePe/Paytm/GPay support via Razorpay.",
+    detail: "10 minutes/month free, INR pricing with UPI/PhonePe/Paytm/GPay in India, and USD card payments everywhere else, via Razorpay.",
   },
 ]
 
@@ -62,7 +62,7 @@ const faqs = [
   {
     question: "Is Smallbird the best AI interview assistant?",
     answer:
-      "We don't claim that, and you shouldn't take any vendor's word for it without checking against your own needs. What we can tell you honestly: Smallbird is real-time, audio-based, grounded in your CV and job description, invisible on screen share, and priced with a free tier for the Indian market. Whether that makes it the right fit depends on what you're evaluating for — the checklist above is meant to help you decide, not just for Smallbird.",
+      "We don't claim that, and you shouldn't take any vendor's word for it without checking against your own needs. What we can tell you honestly: Smallbird is real-time, audio-based, grounded in your CV and job description, invisible on screen share, and has a free tier, with INR pricing in India and USD pricing everywhere else. Whether that makes it the right fit depends on what you're evaluating for — the checklist above is meant to help you decide, not just for Smallbird.",
   },
   {
     question: "What should I check before trusting a \"best AI tool\" ranking online?",
@@ -127,7 +127,7 @@ export default function BestAiInterviewAssistantPage() {
           {
             href: "/pricing",
             label: "Pricing",
-            description: "Free plan and one-time passes from ₹299.",
+            description: "Free plan and one-time passes from ₹299 in India, $9 elsewhere.",
           },
         ]}
       />

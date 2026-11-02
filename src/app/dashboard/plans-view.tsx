@@ -4,6 +4,7 @@ import { Check } from "lucide-react"
 import { PLANS, type PlanId } from "@/lib/plans"
 import { usePurchaseFlow } from "@/lib/purchase-flow"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
+import { LocalPrice } from "@/components/blocks/local-price"
 
 // The three real paid plans from lib/plans.ts (skips "free" -- someone
 // viewing this is already on it). startFlow() reuses the exact same
@@ -37,10 +38,10 @@ export function PlansView() {
               )}
               <div className="font-semibold text-foreground">{plan.name}</div>
               <div className="mt-1 flex items-baseline gap-1">
-                <span className="text-2xl font-semibold text-foreground">{plan.price}</span>
+                <span className="text-2xl font-semibold text-foreground"><LocalPrice inr={plan.price} usd={plan.usd.price} /></span>
                 {plan.cadence && <span className="text-sm text-muted-foreground">{plan.cadence}</span>}
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">{plan.billingNote}</p>
+              <p className="mt-1 text-xs text-muted-foreground"><LocalPrice inr={plan.billingNote} usd={plan.usd.billingNote} /></p>
             </div>
 
             <ul className="flex flex-1 flex-col gap-2">
