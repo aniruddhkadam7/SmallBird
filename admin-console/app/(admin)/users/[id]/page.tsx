@@ -13,7 +13,7 @@ import { prefetchTranscript } from "@/lib/transcript";
 import { BanUserPanel } from "@/components/BanUserPanel";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { Modal } from "@/components/Modal";
-import { avatarGradient, formatDuration, formatJoined, formatRupees } from "@/lib/format";
+import { avatarGradient, formatDuration, formatJoined, formatPayment, formatRupees } from "@/lib/format";
 import { formatAiCost, formatDeepgramCost, useUserAiCosts } from "@/lib/userAiCosts";
 import { deviceBadge, deviceLabel, userStage, type DeviceKind, type DeviceOs } from "@/lib/devices";
 import { formatIpLocation, useIpLocation } from "@/lib/ipLocation";
@@ -32,7 +32,9 @@ interface LedgerRow {
 interface PurchaseRow {
   id: number;
   plan_id: string;
-  amount_paise: number;
+  amount_paise: number | null;
+  currency?: string;
+  amount_minor?: number | null;
   razorpay_order_id: string;
   created_at: string;
 }
@@ -265,7 +267,7 @@ export default function UserDetailPage() {
   const name = [detail.profile.fullName, detail.profile.displayName, ...(contact?.cvNames ?? [])].filter(
     (n, i, all): n is string => !!n && all.indexOf(n) === i,
   );
-  const paidPaise = detail.purchases.reduce((sum, p) => sum + p.amount_paise, 0);
+  const paidPaise = detail.purchases.reduce((sum, p) => sum + (p.amount_paise ?? 0), 0);
   const lastSeen = detail.devices[0]?.lastSeenAt ?? detail.profile.lastSignInAt;
 
   const tabs: { id: Tab; label: string; count?: number }[] = [
@@ -873,7 +875,7 @@ export default function UserDetailPage() {
                   {detail.purchases.map((p) => (
                     <li key={p.id} className="border-b border-border pb-2 last:border-0 last:pb-0">
                       <p className="font-medium">
-                        {p.plan_id} &middot; ₹{(p.amount_paise / 100).toFixed(2)}
+                        {p.plan_id} &middot; {formatPayment({ currency: p.currency, amountMinor: p.amount_minor, amountPaise: p.amount_paise })}
                       </p>
                       <p className="text-xs text-muted">{new Date(p.created_at).toLocaleString()}</p>
                       <p className="font-mono text-xs text-muted">{p.razorpay_order_id}</p>

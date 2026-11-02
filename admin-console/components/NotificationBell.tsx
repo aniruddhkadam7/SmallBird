@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { Bell, UserPlus, CreditCard, type LucideIcon } from "lucide-react";
 import useSWR from "swr";
 import { createClient } from "@/lib/supabase/client";
-import { formatJoined, formatRupees } from "@/lib/format";
+import { formatJoined, formatPayment } from "@/lib/format";
 
 // The bell: who registered and who paid in the last 7 days
 // (admin_notifications). "New" means
@@ -21,7 +21,7 @@ interface Notification {
   userId: string;
   email: string;
   at: string;
-  detail: { provider?: string; planId?: string; amountPaise?: number };
+  detail: { provider?: string; planId?: string; amountPaise?: number | null; currency?: string; amountMinor?: number | null };
 }
 
 function planName(id: string): string {
@@ -40,7 +40,7 @@ function describe(n: Notification): { icon: LucideIcon; tone: string; title: str
       return {
         icon: CreditCard,
         tone: "bg-ok/15 text-ok",
-        title: `Paid ${formatRupees(n.detail.amountPaise ?? 0)}${n.detail.planId ? ` · ${planName(n.detail.planId)}` : ""}`,
+        title: `Paid ${formatPayment(n.detail)}${n.detail.planId ? ` · ${planName(n.detail.planId)}` : ""}`,
       };
   }
 }

@@ -55,6 +55,19 @@ export function formatRupees(paise: number): string {
   return `₹${rupees.toLocaleString("en-IN", { minimumFractionDigits: rupees % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
 }
 
+// One payment as charged. INR: "₹559". International (migration 0065):
+// "$15 (₹1,262)" -- the dollars charged, then the rupee value that revenue
+// totals add up (missing if Razorpay didn't send a conversion).
+export function formatPayment(p: { currency?: string | null; amountMinor?: number | null; amountPaise?: number | null }): string {
+  if (!p.currency || p.currency === "INR" || p.amountMinor == null) return p.amountPaise != null ? formatRupees(p.amountPaise) : "--";
+  const major = p.amountMinor / 100;
+  const charged =
+    p.currency === "USD"
+      ? `$${major.toLocaleString("en-US", { minimumFractionDigits: major % 1 ? 2 : 0, maximumFractionDigits: 2 })}`
+      : `${major.toFixed(2)} ${p.currency}`;
+  return p.amountPaise != null ? `${charged} (${formatRupees(p.amountPaise)})` : charged;
+}
+
 // 10 / 2.5 / 1,234 -- whole minutes stay whole, others get one decimal.
 export function formatMinutes(minutes: number): string {
   const m = Math.round(Number(minutes) * 10) / 10;

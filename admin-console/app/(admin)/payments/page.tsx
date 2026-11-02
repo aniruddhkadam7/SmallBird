@@ -6,7 +6,7 @@ import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
 import { PageLoading } from "@/components/PageLoading";
 import { FilterChip } from "@/components/FilterChip";
-import { formatRupees } from "@/lib/format";
+import { formatPayment, formatRupees } from "@/lib/format";
 import { PAYMENT_PERIODS } from "@/lib/segments";
 
 interface PaymentRow {
@@ -18,6 +18,8 @@ interface PaymentRow {
   created_at: string;
   webhook_recorded: boolean;
   amount_paise: number | null;
+  currency: string | null;
+  amount_minor: number | null;
   purchase_plan_id: string | null;
   subscription_plan: string | null;
   subscription_status: string | null;
@@ -117,10 +119,8 @@ export default function PaymentsPage() {
                     >
                       Repeat credit, no new payment
                     </span>
-                  ) : p.amount_paise != null ? (
-                    formatRupees(p.amount_paise)
                   ) : (
-                    "--"
+                    formatPayment({ currency: p.currency, amountMinor: p.amount_minor, amountPaise: p.amount_paise })
                   )}
                 </td>
                 <td>{p.purchase_plan_id ?? p.subscription_plan ?? "--"}</td>

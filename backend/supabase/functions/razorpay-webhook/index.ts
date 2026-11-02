@@ -70,7 +70,9 @@ async function savePaymentContact(userId: string, payment: any, status: string):
       vpa: payment.vpa ?? payment.upi?.vpa ?? null,
       bank: payment.bank ?? null,
       wallet: payment.wallet ?? null,
-      amount_paise: payment.amount ?? null,
+      amount_paise: amountInPaise(payment),
+      currency: payment.currency ?? "INR",
+      amount_minor: payment.amount ?? null,
       status,
     },
     { onConflict: "razorpay_payment_id" },
@@ -78,15 +80,24 @@ async function savePaymentContact(userId: string, payment: any, status: string):
   if (error) console.error("Failed to save payment contact", payment.id, error);
 }
 
-async function getPlan(planId: string): Promise<{ minutes: number; pricePaise: number }> {
+// Rupee value of a payment. International payments (migration 0065) are
+// charged in USD; Razorpay's payment entity then carries base_amount, the
+// amount converted to INR, which is what revenue totals add up.
+function amountInPaise(payment: any): number | null {
+  if (!payment) return null;
+  if ((payment.currency ?? "INR") === "INR") return payment.amount ?? null;
+  return payment.base_currency === "INR" ? (payment.base_amount ?? null) : null;
+}
+
+async function getPlan(planId: string): Promise<{ minutes: number; pricePaise: number; priceUsdCents: number | null }> {
   const { data, error } = await admin
     .from("plans")
-    .select("included_minutes, price_inr_paise, is_active")
+    .select("included_minutes, price_inr_paise, price_usd_cents, is_active")
     .eq("id", planId)
     .single();
   if (error || !data) throw new Error(`Unknown plan_id: ${planId}`);
   if (!data.is_active) throw new Error(`Plan ${planId} is inactive — refusing to credit minutes for a retired plan`);
-  return { minutes: data.included_minutes, pricePaise: data.price_inr_paise };
+  return { minutes: data.included_minutes, pricePaise: data.price_inr_paise, priceUsdCents: data.price_usd_cents };
 }
 
 // notes.plan_id only says which plan the checkout *claimed*; the amount is
@@ -95,19 +106,21 @@ async function getPlan(planId: string): Promise<{ minutes: number; pricePaise: n
 // minutes — hold it for a manual decision instead.
 async function amountMatchesPlan(
   planId: string,
-  pricePaise: number,
-  paidPaise: number,
+  plan: { pricePaise: number; priceUsdCents: number | null },
+  paid: number,
+  currency: string,
   userId: string,
   ref: string,
 ): Promise<boolean> {
-  if (paidPaise === pricePaise) return true;
-  console.error("razorpay-webhook: amount/plan mismatch", { planId, pricePaise, paidPaise, userId, ref });
+  const price = currency === "USD" ? plan.priceUsdCents : currency === "INR" ? plan.pricePaise : null;
+  if (price !== null && paid === price) return true;
+  console.error("razorpay-webhook: amount/plan mismatch", { planId, price, paid, currency, userId, ref });
   const email = await lookupUserEmail(userId);
   await notifyOwner(
-    `⚠️ Payment amount mismatch — ${formatRupees(paidPaise)} for ${planId}`,
+    `⚠️ Payment amount mismatch — ${formatMoney(paid, currency)} for ${planId}`,
     `<p>A payment did not match the plan's current price, so <strong>no minutes were credited</strong>. Credit this user manually.</p><ul>
-      <li>Plan: ${planId} (price ${formatRupees(pricePaise)})</li>
-      <li>Paid: ${formatRupees(paidPaise)}</li>
+      <li>Plan: ${planId} (price ${price === null ? `none in ${escapeHtml(currency)}` : formatMoney(price, currency)})</li>
+      <li>Paid: ${formatMoney(paid, currency)}</li>
       <li>Customer: ${email ?? userId}</li>
       <li>Reference: ${ref}</li>
     </ul>`,
@@ -154,6 +167,13 @@ function formatRupees(amountPaise: number): string {
   return `₹${(amountPaise / 100).toFixed(2)}`;
 }
 
+// amount is in the currency's smallest unit (paise, cents).
+function formatMoney(amount: number, currency: string | null | undefined): string {
+  if (!currency || currency === "INR") return formatRupees(amount);
+  if (currency === "USD") return `$${(amount / 100).toFixed(2)}`;
+  return `${(amount / 100).toFixed(2)} ${currency}`;
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -173,7 +193,7 @@ function formatMinutes(minutes: number): string {
 async function notifyCustomer(
   userId: string,
   kind: "purchase" | "renewal",
-  details: { planId: string; amountPaise: number; minutes: number; reference: string; renewsOn?: string | null },
+  details: { planId: string; amount: number; currency: string; minutes: number; reference: string; renewsOn?: string | null },
 ): Promise<void> {
   const resendKey = Deno.env.get("RESEND_API_KEY");
   if (!resendKey) return;
@@ -195,7 +215,7 @@ async function notifyCustomer(
     <p style="line-height:1.6;margin:0 0 20px">${intro}</p>
     <table style="width:100%;border-collapse:collapse;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">
       ${row("Plan", escapeHtml(planName))}
-      ${row("Amount paid", formatRupees(details.amountPaise))}
+      ${row("Amount paid", formatMoney(details.amount, details.currency))}
       ${row("Minutes added", formatMinutes(details.minutes))}
       ${details.renewsOn ? row(isRenewal ? "Next renewal" : "Renews on", formatDate(details.renewsOn)) : ""}
       ${row("Reference", escapeHtml(details.reference))}
@@ -245,7 +265,7 @@ Deno.serve(async (req) => {
         }
         await savePaymentContact(userId, body.payload.payment?.entity, "paid");
         const plan = await getPlan(planId);
-        if (!(await amountMatchesPlan(planId, plan.pricePaise, order.amount_paid, userId, order.id))) break;
+        if (!(await amountMatchesPlan(planId, plan, order.amount_paid, order.currency, userId, order.id))) break;
         if (await alreadyProcessed(eventType, order.id)) break;
 
         await admin.rpc("increment_entitlement_minutes", {
@@ -260,7 +280,9 @@ Deno.serve(async (req) => {
         await admin.from("purchases").insert({
           user_id: userId,
           plan_id: planId,
-          amount_paise: order.amount,
+          amount_paise: order.currency === "INR" ? order.amount : amountInPaise(body.payload.payment?.entity),
+          currency: order.currency,
+          amount_minor: order.amount,
           razorpay_order_id: order.id,
         });
 
@@ -275,17 +297,18 @@ Deno.serve(async (req) => {
 
         await notifyCustomer(userId, "purchase", {
           planId,
-          amountPaise: order.amount,
+          amount: order.amount,
+          currency: order.currency,
           minutes: plan.minutes,
           reference: order.id,
         });
 
         const buyerEmail = await lookupUserEmail(userId);
         await notifyOwner(
-          `💰 ${formatRupees(order.amount)} — ${planId}`,
+          `💰 ${formatMoney(order.amount, order.currency)} — ${planId}`,
           `<p>New purchase.</p><ul>
             <li>Plan: ${planId}</li>
-            <li>Amount: ${formatRupees(order.amount)}</li>
+            <li>Amount: ${formatMoney(order.amount, order.currency)}</li>
             <li>Buyer: ${buyerEmail ?? userId}</li>
             <li>Phone: ${escapeHtml(body.payload.payment?.entity?.contact || "--")}</li>
             <li>Order: ${order.id}</li>
@@ -308,7 +331,7 @@ Deno.serve(async (req) => {
         }
         await savePaymentContact(userId, payment, "paid");
         const plan = await getPlan(planId);
-        if (!(await amountMatchesPlan(planId, plan.pricePaise, payment.amount, userId, payment.id))) break;
+        if (!(await amountMatchesPlan(planId, plan, payment.amount, payment.currency, userId, payment.id))) break;
         if (await alreadyProcessed(eventType, payment.id)) break;
 
         // onConflict: "user_id" targets the unique constraint added in
@@ -335,7 +358,8 @@ Deno.serve(async (req) => {
         // paid_count is 1 on the first charge and increments on each renewal.
         await notifyCustomer(userId, Number(subscription.paid_count) > 1 ? "renewal" : "purchase", {
           planId,
-          amountPaise: payment.amount,
+          amount: payment.amount,
+          currency: payment.currency,
           minutes: plan.minutes,
           reference: payment.id,
           renewsOn: subscription.current_end ? new Date(subscription.current_end * 1000).toISOString() : null,
@@ -343,10 +367,10 @@ Deno.serve(async (req) => {
 
         const chargedEmail = await lookupUserEmail(userId);
         await notifyOwner(
-          `💰 ${formatRupees(payment.amount)} — ${planId} renewal`,
+          `💰 ${formatMoney(payment.amount, payment.currency)} — ${planId} renewal`,
           `<p>Subscription charge succeeded.</p><ul>
             <li>Plan: ${planId}</li>
-            <li>Amount: ${formatRupees(payment.amount)}</li>
+            <li>Amount: ${formatMoney(payment.amount, payment.currency)}</li>
             <li>Customer: ${chargedEmail ?? userId}</li>
             <li>Subscription: ${subscription.id}</li>
           </ul>`,
@@ -455,9 +479,9 @@ Deno.serve(async (req) => {
         if (userId) await savePaymentContact(userId, payment, "failed");
         const failedEmail = userId ? await lookupUserEmail(userId) : null;
         await notifyOwner(
-          `❌ Payment failed — ${formatRupees(payment.amount)}`,
+          `❌ Payment failed — ${formatMoney(payment.amount, payment.currency)}`,
           `<p>A payment attempt failed.</p><ul>
-            <li>Amount: ${formatRupees(payment.amount)}</li>
+            <li>Amount: ${formatMoney(payment.amount, payment.currency)}</li>
             <li>Reason: ${payment.error_description ?? payment.error_reason ?? "unknown"}</li>
             <li>Customer: ${failedEmail ?? userId ?? "unknown"}</li>
             <li>Phone: ${escapeHtml(payment.contact || "--")}</li>

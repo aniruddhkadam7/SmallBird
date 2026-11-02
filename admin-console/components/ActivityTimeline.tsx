@@ -17,7 +17,7 @@ import {
   AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
-import { formatDuration, formatMinutes, formatRupees } from "@/lib/format";
+import { formatDuration, formatMinutes, formatPayment } from "@/lib/format";
 import type { DeviceKind, DeviceOs } from "@/lib/devices";
 
 // The person's journey on one line each, oldest first: registered, free
@@ -45,7 +45,7 @@ interface TimelineInput {
     reason: string | null;
     created_at: string;
   }[];
-  purchases: { id: number; plan_id: string; amount_paise: number; razorpay_order_id: string; created_at: string }[];
+  purchases: { id: number; plan_id: string; amount_paise: number | null; currency?: string; amount_minor?: number | null; razorpay_order_id: string; created_at: string }[];
   sessions: { id: string; started_at: string; actual_duration_seconds: number | null; minutes_consumed: number | null; plan_id?: string | null }[];
 }
 
@@ -173,7 +173,7 @@ function buildEvents(d: TimelineInput): Event[] {
       order: 4,
       icon: CreditCard,
       tone: "ok",
-      title: `Bought ${planName(pu.plan_id)} · ${formatRupees(pu.amount_paise)}`,
+      title: `Bought ${planName(pu.plan_id)} · ${formatPayment({ currency: pu.currency, amountMinor: pu.amount_minor, amountPaise: pu.amount_paise })}`,
       detail: minutes ? `+${formatMinutes(Number(minutes.delta))} minutes` : undefined,
     });
   }
