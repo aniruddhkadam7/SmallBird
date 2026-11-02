@@ -17,7 +17,8 @@ const CACHE_MS = 10 * 60 * 1000;
 interface Downloads {
   windowsInstaller: number; // Smallbird-Setup.exe -- the website's download link
   windowsUpdates: number; // Smallbird_<version>_x64-setup.exe -- fetched by the auto-updater
-  mac: number;
+  mac: number; // Smallbird-Mac.dmg / Smallbird_<version>_universal.dmg -- website download
+  macUpdates: number; // Smallbird_<version>_universal.app.tar.gz -- fetched by the auto-updater
   latestVersion: string | null;
   latestVersionDownloads: number;
 }
@@ -34,20 +35,21 @@ async function fetchDownloads(): Promise<Downloads | null> {
     if (!res.ok) throw new Error(`GitHub returned ${res.status}`);
     const releases: { tag_name: string; assets: { name: string; download_count: number }[] }[] = await res.json();
 
-    const value: Downloads = { windowsInstaller: 0, windowsUpdates: 0, mac: 0, latestVersion: null, latestVersionDownloads: 0 };
+    const value: Downloads = { windowsInstaller: 0, windowsUpdates: 0, mac: 0, macUpdates: 0, latestVersion: null, latestVersionDownloads: 0 };
     for (const release of releases) {
       for (const asset of release.assets) {
         const name = asset.name.toLowerCase();
         if (name === "smallbird-setup.exe") value.windowsInstaller += asset.download_count;
         else if (name.endsWith(".exe") || name.endsWith(".msi")) value.windowsUpdates += asset.download_count;
         else if (name.endsWith(".dmg")) value.mac += asset.download_count;
+        else if (name.endsWith(".app.tar.gz")) value.macUpdates += asset.download_count;
       }
     }
     const latest = releases[0];
     if (latest) {
       value.latestVersion = latest.tag_name;
       value.latestVersionDownloads = latest.assets
-        .filter((a) => /\.(exe|msi|dmg)$/i.test(a.name))
+        .filter((a) => /\.(exe|msi|dmg|app\.tar\.gz)$/i.test(a.name))
         .reduce((sum, a) => sum + a.download_count, 0);
     }
 

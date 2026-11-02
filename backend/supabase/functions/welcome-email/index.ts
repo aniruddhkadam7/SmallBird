@@ -46,7 +46,7 @@ function emailHtml(name: string | null): string {
           Your Smallbird account is ready. Download the app and get real-time answers in your next interview.
         </td></tr>
         <tr><td align="center" style="padding-bottom:28px;">
-          <a href="${DOWNLOAD_URL}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;padding:14px 28px;border-radius:8px;">Download for Windows</a>
+          <a href="${DOWNLOAD_URL}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;padding:14px 28px;border-radius:8px;">Download for Windows or Mac</a>
         </td></tr>
         <tr><td style="font-size:15px;line-height:1.7;padding-bottom:24px;">
           1. Install and sign in with this email.<br>
@@ -67,7 +67,7 @@ function emailText(name: string | null): string {
 
 Your Smallbird account is ready. Download the app and get real-time answers in your next interview.
 
-Download for Windows: ${DOWNLOAD_URL}
+Download for Windows or Mac: ${DOWNLOAD_URL}
 
 1. Install and sign in with this email.
 2. Join your interview on Zoom, Meet or Teams.
