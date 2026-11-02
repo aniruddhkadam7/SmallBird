@@ -90,9 +90,8 @@ windows = { version = "0.61", features = [
 ] }
 keyring = { version = "3", features = ["windows-native"] }
 
-# macOS counterparts: Core Audio (via cpal) for the microphone, a Core Audio
-# process tap for system audio (see src/audio/macos_capture.rs), and the
-# login Keychain for the keyring.
+# macOS counterparts: Core Audio (via cpal) for the microphone and a Core
+# Audio process tap for system audio (see src/audio/macos_capture.rs). No
+# keyring — see src/auth/session_store.rs for why the session is a file there.
 [target.'cfg(target_os = "macos")'.dependencies]
-keyring = { version = "3", features = ["apple-native"] }
 cpal = "0.18.2"
