@@ -261,6 +261,8 @@
 /* Local prices (components/blocks/local-price.tsx): India sees INR, everyone
    else USD. <html data-currency> is set before paint by lib/currency.ts. */
 html[data-currency="USD"] .only-inr,
-html:not([data-currency="USD"]) .only-usd {
+html:not([data-currency="USD"]) .only-usd,
+html[data-home-currency="USD"] .home-inr,
+html:not([data-home-currency="USD"]) .home-usd {
   display: none !important;
 }

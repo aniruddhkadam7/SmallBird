@@ -5,6 +5,7 @@ import { PLANS, type PlanId } from "@/lib/plans"
 import { usePurchaseFlow } from "@/lib/purchase-flow"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { LocalPrice } from "@/components/blocks/local-price"
+import { CurrencyToggle } from "@/components/blocks/currency-toggle"
 
 // The three real paid plans from lib/plans.ts (skips "free" -- someone
 // viewing this is already on it). startFlow() reuses the exact same
@@ -21,6 +22,7 @@ export function PlansView() {
     <div className="mx-auto max-w-5xl px-8 py-10">
       <h1 className="text-2xl font-semibold tracking-tight text-foreground">Upgrade</h1>
       <p className="mt-1 text-sm text-muted-foreground">Choose a plan to keep going once your free minutes run out.</p>
+      <CurrencyToggle className="mt-4" />
 
       <div className="mt-8 grid gap-4 sm:grid-cols-3">
         {plans.map((plan) => (

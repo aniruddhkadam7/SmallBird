@@ -10,6 +10,7 @@ import { usePurchaseFlow } from "@/lib/purchase-flow"
 import { PLANS } from "@/lib/plans"
 import { siVisa, siGooglepay, siPhonepe, siPaytm } from "simple-icons"
 import { LocalPrice } from "@/components/blocks/local-price"
+import { CurrencyToggle } from "@/components/blocks/currency-toggle"
 
 // Only payment methods actually supported through our Razorpay checkout --
 // Apple Pay is deliberately left out since Razorpay doesn't support it for
@@ -38,6 +39,7 @@ export function Pricing() {
             <LocalPrice inr="Priced for India." usd="Priced in US dollars." /> One-time passes, no
             subscriptions — pick the one that fits how much you're interviewing.
           </p>
+          <CurrencyToggle className="mt-6" />
         </div>
 
         <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">

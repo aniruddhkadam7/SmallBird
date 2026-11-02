@@ -64,6 +64,7 @@ export function PurchaseFlowDialog() {
   const planLabel = PLAN_LABELS[activeFlow.plan]
   const priceSummary = (
     <LocalPrice
+      charged
       inr={plan.cadence ? `${plan.price} ${plan.cadence}` : `${plan.price} — no payment needed`}
       usd={plan.cadence ? `${plan.usd.price} ${plan.cadence}` : `${plan.usd.price} — no payment needed`}
     />
