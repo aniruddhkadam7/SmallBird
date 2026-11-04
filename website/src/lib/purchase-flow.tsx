@@ -5,7 +5,6 @@ import type { User } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/client"
 import { PAID_PLAN_IDS, type PlanId } from "@/lib/plans"
 import { trackEvent } from "@/lib/analytics"
-import { mustPayElsewhere } from "@/lib/payment-domain"
 
 export type { PlanId }
 
@@ -274,20 +273,6 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
     setBusy(true)
     setError(null)
     try {
-      // Razorpay blocks checkout from this domain until it's approved there,
-      // so sign in on the approved domain and pay there instead.
-      if (mustPayElsewhere()) {
-        const handoff = await fetch("/api/checkout-handoff", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ planId: plan }),
-        })
-        const handoffData = await handoff.json()
-        if (!handoff.ok) throw new Error(handoffData.error ?? "Could not start checkout")
-        window.location.assign(handoffData.url)
-        return
-      }
-
       await loadRazorpayScript()
 
       const response = await fetch("/api/razorpay/create-order", {
@@ -322,9 +307,6 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
           ondismiss: () => {
             trackEvent("checkout_closed")
             setBusy(false)
-            // /pay is only a checkout stop on the payment domain; closing
-            // the form sends them back to the main site's pricing.
-            if (window.location.pathname === "/pay") window.location.assign("https://smallbirdai.com/pricing")
           },
         },
       })
@@ -352,18 +334,6 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
       if (!data.user?.email) return
       setSignedUp(true)
       setEmail(data.user.email)
-
-      // Arrived from /api/checkout-handoff on the Razorpay-approved domain:
-      // open checkout for the plan they picked straight away.
-      const payPlan = window.location.pathname === "/pay"
-        ? (new URLSearchParams(window.location.search).get("plan") as PlanId | null)
-        : null
-      if (payPlan && PAID_PLAN_IDS.has(payPlan)) {
-        setSelectedPlan(payPlan)
-        markWelcomed(data.user)
-        void checkout(payPlan, data.user.email)
-        return
-      }
 
       const pendingPlan = sessionStorage.getItem("smallbird:pending-plan") as PlanId | null
       sessionStorage.removeItem("smallbird:pending-plan")
