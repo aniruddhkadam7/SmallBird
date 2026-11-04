@@ -14,6 +14,7 @@ Product name everywhere: **SmallBird AI**. Primary domain: **https://smallbirdai
 2. **Supabase → Auth → URL Configuration:** Site URL `https://smallbirdai.com`; add `https://smallbirdai.com/**` and `https://www.smallbirdai.com/**` to Redirect URLs (keep smallbird.in). Needed for sign-in and `/auth/handoff`.
 3. **Redeploy edge functions** (CORS + emails): `supabase functions deploy` for request-otp verify-otp stt-token session-heartbeat usage-report llm-proxy welcome-email razorpay-webhook resume-ai.
 4. **Resend:** verify `smallbirdai.com` (SPF/DKIM), create support@ and payments@ mailboxes, then `supabase secrets set MAIL_DOMAIN=smallbirdai.com`. Until then mail still sends from smallbird.in so nothing breaks.
+4b. **Razorpay → Account & Settings → Website and app details:** add `https://smallbirdai.com` and `https://www.smallbirdai.com` and get them approved *before* the Vercel redirect goes live. Razorpay blocks checkout from any unregistered domain (`payment_risk_check_failed`: "website does not match registered website(s)"), so every payment fails until this is done.
 5. **Release the desktop app** (release-update skill) so users get the new name and links.
 6. Admin console: add `admin.smallbirdai.com` in Vercel.
 
