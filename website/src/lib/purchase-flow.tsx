@@ -74,7 +74,7 @@ function markWelcomed(user: User) {
 
 function goToDownload(user: User) {
   markWelcomed(user)
-  window.location.href = "/download?welcome=1"
+  window.location.assign("/download?welcome=1")
 }
 
 /// Someone who signed up to build a resume (a template tap, "Build my resume")
@@ -111,71 +111,16 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
 
   const PENDING_REDIRECT_KEY = "smallbird:post-auth-redirect"
 
-  // Picks up an already-existing session (e.g. a returning user, one who
-  // verified their code, or one who just came back from Google OAuth) so
-  // the flow doesn't ask someone to log in twice. If a plan was mid-checkout
-  // before an OAuth redirect (see signInWithGoogle), resume it here rather
-  // than losing that context across the full-page navigation.
-  useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user?.email) return
-      setSignedUp(true)
-      setEmail(data.user.email)
-
-      // Arrived from /api/checkout-handoff on the Razorpay-approved domain:
-      // go straight to the payment step for the plan they picked.
-      const payPlan = window.location.pathname === "/pay"
-        ? (new URLSearchParams(window.location.search).get("plan") as PlanId | null)
-        : null
-      if (payPlan && PAID_PLAN_IDS.has(payPlan)) {
-        setSelectedPlan(payPlan)
-        setActiveFlow({ plan: payPlan, step: "payment", authMode: "login" })
-        markWelcomed(data.user)
-        return
-      }
-
-      const pendingPlan = sessionStorage.getItem("smallbird:pending-plan") as PlanId | null
-      sessionStorage.removeItem("smallbird:pending-plan")
-      if (pendingPlan && PAID_PLAN_IDS.has(pendingPlan)) {
-        // Paying first; the "done" step offers the download afterwards.
-        setSelectedPlan(pendingPlan)
-        setActiveFlow({ plan: pendingPlan, step: "payment", authMode: "signup" })
-        markWelcomed(data.user)
-        return
-      }
-
-      const pendingRedirect = sessionStorage.getItem(PENDING_REDIRECT_KEY)
-
-      // Just signed up (e.g. back from Google): the download page comes
-      // before wherever they were headed — unless they came for a resume.
-      if (shouldWelcome(data.user)) {
-        if (cameForResume(pendingRedirect)) {
-          markWelcomed(data.user)
-        } else {
-          sessionStorage.removeItem(PENDING_REDIRECT_KEY)
-          goToDownload(data.user)
-          return
-        }
-      }
-
-      if (pendingRedirect) {
-        sessionStorage.removeItem(PENDING_REDIRECT_KEY)
-        window.location.href = pendingRedirect
-        return
-      }
-
-      if (pendingPlan) {
-        setSelectedPlan(pendingPlan)
-        setPurchased(true)
-      }
-    })
-  }, [])
-
   const startFlow = (plan: PlanId, authMode: AuthMode = "signup") => {
     trackEvent(`buy_start_${plan}`)
     setError(null)
     setSelectedPlan(plan)
+    // Already signed in and buying: open Razorpay directly, no dialog first.
+    if (signedUp && PAID_PLAN_IDS.has(plan)) {
+      setActiveFlow(null)
+      void checkout(plan)
+      return
+    }
     const step: FlowStep = signedUp ? (PAID_PLAN_IDS.has(plan) ? "payment" : "done") : "signup"
     if (step === "done") setPurchased(true)
     setActiveFlow({ plan, step, authMode })
@@ -191,7 +136,7 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
   // whole site, and the user lands back on the page they actually asked for.
   const requestPageAccess = (path: string, authMode?: AuthMode) => {
     if (signedUp) {
-      window.location.href = path
+      window.location.assign(path)
       return
     }
     sessionStorage.setItem(PENDING_REDIRECT_KEY, path)
@@ -254,14 +199,15 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
 
       if (pendingRedirect) {
         sessionStorage.removeItem(PENDING_REDIRECT_KEY)
-        window.location.href = pendingRedirect
+        window.location.assign(pendingRedirect)
         return
       }
 
       if (!activeFlow) return
       if (paying) {
         if (user) markWelcomed(user)
-        setActiveFlow({ plan: activeFlow.plan, step: "payment", authMode: activeFlow.authMode })
+        setActiveFlow(null)
+        void checkout(activeFlow.plan, rawEmail)
       } else {
         setPurchased(true)
         setActiveFlow({ plan: activeFlow.plan, step: "done", authMode: activeFlow.authMode })
@@ -318,12 +264,13 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
     // on its own. Without this, clicking Log Out visibly did nothing:
     // the session was gone, but the already-rendered dashboard just sat
     // there until the next real page load.
-    window.location.href = "/"
+    window.location.assign("/")
   }
 
-  const completePayment = async () => {
-    if (!activeFlow) return
-    const plan = activeFlow.plan
+  // Opens Razorpay for `plan`. The dialog only comes back (at the payment
+  // step, with a retry button) if something goes wrong, or at "done" after
+  // paying.
+  const checkout = async (plan: PlanId, prefillEmail: string | null = email) => {
     setBusy(true)
     setError(null)
     try {
@@ -337,7 +284,7 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
         })
         const handoffData = await handoff.json()
         if (!handoff.ok) throw new Error(handoffData.error ?? "Could not start checkout")
-        window.location.href = handoffData.url
+        window.location.assign(handoffData.url)
         return
       }
 
@@ -351,7 +298,7 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? "Could not start checkout")
 
-      const checkout = new window.Razorpay!({
+      const razorpay = new window.Razorpay!({
         key: data.keyId,
         name: "SmallBird AI",
         image: `${window.location.origin}/smallbird-logo.png`,
@@ -359,7 +306,7 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
         order_id: data.orderId,
         amount: data.amount,
         currency: data.currency,
-        prefill: email ? { email } : undefined,
+        prefill: prefillEmail ? { email: prefillEmail } : undefined,
         handler: () => {
           // Razorpay confirms payment client-side here, but the actual
           // entitlement update happens via the razorpay-webhook Edge
@@ -368,22 +315,92 @@ export function PurchaseFlowProvider({ children }: { children: ReactNode }) {
           // as the source of truth.
           trackEvent("payment_success")
           setPurchased(true)
-          setActiveFlow((prev) => (prev ? { ...prev, step: "done" } : prev))
+          setBusy(false)
+          setActiveFlow({ plan, step: "done", authMode: "login" })
         },
         modal: {
           ondismiss: () => {
             trackEvent("checkout_closed")
             setBusy(false)
+            // /pay is only a checkout stop on the payment domain; closing
+            // the form sends them back to the main site's pricing.
+            if (window.location.pathname === "/pay") window.location.assign("https://smallbirdai.com/pricing")
           },
         },
       })
       trackEvent("checkout_open")
-      checkout.open()
+      razorpay.open()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+      setActiveFlow({ plan, step: "payment", authMode: "login" })
       setBusy(false)
     }
   }
+
+  const completePayment = async () => {
+    if (activeFlow) await checkout(activeFlow.plan)
+  }
+
+  // Picks up an already-existing session (e.g. a returning user, one who
+  // verified their code, or one who just came back from Google OAuth) so
+  // the flow doesn't ask someone to log in twice. If a plan was mid-checkout
+  // before an OAuth redirect (see signInWithGoogle), resume it here rather
+  // than losing that context across the full-page navigation.
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data.user?.email) return
+      setSignedUp(true)
+      setEmail(data.user.email)
+
+      // Arrived from /api/checkout-handoff on the Razorpay-approved domain:
+      // open checkout for the plan they picked straight away.
+      const payPlan = window.location.pathname === "/pay"
+        ? (new URLSearchParams(window.location.search).get("plan") as PlanId | null)
+        : null
+      if (payPlan && PAID_PLAN_IDS.has(payPlan)) {
+        setSelectedPlan(payPlan)
+        markWelcomed(data.user)
+        void checkout(payPlan, data.user.email)
+        return
+      }
+
+      const pendingPlan = sessionStorage.getItem("smallbird:pending-plan") as PlanId | null
+      sessionStorage.removeItem("smallbird:pending-plan")
+      if (pendingPlan && PAID_PLAN_IDS.has(pendingPlan)) {
+        // Paying first; the "done" step offers the download afterwards.
+        setSelectedPlan(pendingPlan)
+        markWelcomed(data.user)
+        void checkout(pendingPlan, data.user.email)
+        return
+      }
+
+      const pendingRedirect = sessionStorage.getItem(PENDING_REDIRECT_KEY)
+
+      // Just signed up (e.g. back from Google): the download page comes
+      // before wherever they were headed — unless they came for a resume.
+      if (shouldWelcome(data.user)) {
+        if (cameForResume(pendingRedirect)) {
+          markWelcomed(data.user)
+        } else {
+          sessionStorage.removeItem(PENDING_REDIRECT_KEY)
+          goToDownload(data.user)
+          return
+        }
+      }
+
+      if (pendingRedirect) {
+        sessionStorage.removeItem(PENDING_REDIRECT_KEY)
+        window.location.assign(pendingRedirect)
+        return
+      }
+
+      if (pendingPlan) {
+        setSelectedPlan(pendingPlan)
+        setPurchased(true)
+      }
+    })
+  }, [])
 
   const closeFlow = () => setActiveFlow(null)
 
