@@ -25,24 +25,34 @@ const paymentMethods = [
   { name: "PhonePe", color: `#${siPhonepe.hex}`, icon: siPhonepe },
 ]
 
-export function Pricing() {
+// `standalone` is the /pricing page itself: the passes come first, under one
+// short heading, instead of the home page section's fuller intro.
+export function Pricing({ standalone = false }: { standalone?: boolean }) {
   const { startFlow } = usePurchaseFlow()
+  const Heading = standalone ? "h1" : "h2"
 
   return (
-    <section id="pricing" className="border-t border-border py-14 px-4 sm:py-20">
+    <section
+      id="pricing"
+      className={standalone ? "px-4 pt-24 pb-14 sm:pt-28" : "border-t border-border py-14 px-4 sm:py-20"}
+    >
       <div className="mx-auto max-w-6xl">
         <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            Simple, transparent pricing
-          </h2>
-          <p className="mt-4 text-muted-foreground">
-            <LocalPrice inr="Priced for India." usd="Priced in US dollars." /> One-time passes, no
-            subscriptions — pick the one that fits how much you're interviewing.
-          </p>
-          <CurrencyToggle className="mt-6" />
+          <Heading className="text-3xl font-semibold tracking-tight sm:text-4xl">
+            {standalone ? "Pricing" : "Simple, transparent pricing"}
+          </Heading>
+          {standalone ? (
+            <p className="mt-2 text-muted-foreground">One-time passes. No subscriptions.</p>
+          ) : (
+            <p className="mt-4 text-muted-foreground">
+              <LocalPrice inr="Priced for India." usd="Priced in US dollars." /> One-time passes, no
+              subscriptions — pick the one that fits how much you&apos;re interviewing.
+            </p>
+          )}
+          <CurrencyToggle className={standalone ? "mt-4" : "mt-6"} />
         </div>
 
-        <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <div className={`${standalone ? "mt-8" : "mt-14"} grid gap-6 sm:grid-cols-2 lg:grid-cols-4`}>
           {PLANS.map((plan, i) => (
             <motion.div
               key={plan.id}

@@ -1,5 +1,4 @@
 import type { Metadata } from "next"
-import { PageHeader } from "@/components/blocks/page-header"
 import { Pricing } from "@/components/sections/pricing"
 import { FaqSection } from "@/components/blocks/faq-section"
 import { RelatedPages } from "@/components/blocks/related-pages"
@@ -39,14 +38,7 @@ const faqs = [
 export default function PricingPage() {
   return (
     <div className="pb-8">
-      <PageHeader
-        eyebrow="Pricing"
-        title="Simple, transparent pricing"
-        description="Priced for India. Start free, then pick a one-time pass sized to how much you're interviewing."
-        descriptionUsd="Start free, then pick a one-time pass sized to how much you're interviewing."
-      />
-
-      <Pricing />
+      <Pricing standalone />
 
       <FaqSection items={faqs} />
 
