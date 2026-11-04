@@ -14,6 +14,7 @@ import { SoftwareApplicationJsonLd } from "@/components/seo/json-ld";
 import autoAnswerMobile from "@/assets/auto-answer-mobile.webp";
 
 export const metadata: Metadata = {
+  title: { absolute: "SmallBird AI — Real-Time AI Interview Assistant & Copilot" },
   description:
     "SmallBird AI listens, understands your context, and helps you respond well — right when your interview matters most. Free to download for Windows and macOS.",
   alternates: {
@@ -26,6 +27,7 @@ export default function Home() {
     <>
       <SoftwareApplicationJsonLd />
       <HeroWithMockup
+        brand="SmallBird AI"
         title="Real-time AI assistance, right when the conversation matters."
         titleHighlight="Real-time AI assistance"
         description="SmallBird AI listens, understands your context, and helps you respond well — right when your interview matters most."

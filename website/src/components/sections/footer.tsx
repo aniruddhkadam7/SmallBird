@@ -36,6 +36,7 @@ const columns = [
   {
     title: "Company",
     links: [
+      { label: "About SmallBird AI", href: "/about" },
       { label: "Privacy by design", href: "/#privacy" },
       { label: "Security", href: "/#security" },
       { label: "Dashboard", href: "/dashboard" },

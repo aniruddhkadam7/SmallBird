@@ -1,0 +1,26 @@
+# SmallBird AI
+
+> SmallBird AI (also written SmallBird, Smallbird AI or Small Bird AI) is a real-time AI assistant for job interviews and important calls. It is a desktop app for Windows and Mac that listens to the conversation and suggests answers live, grounded in the user's CV and the job description, and stays invisible during screen sharing. Official website: https://smallbirdai.com (the former address smallbird.in redirects there). Made in India.
+
+SmallBird AI is not related to the Smallbird creature in the game Don't Starve or to the SmallBird bird-identification iOS app.
+
+Key facts:
+- Platforms: Windows and macOS desktop app, plus a phone companion in the browser
+- Free plan: 10 minutes a month, no card needed
+- Paid: one-time passes, no subscription. India: Starter ₹299 (60 min), Pro ₹559 (120 min), Pro+ ₹999 (240 min). Outside India: $9, $15, $25
+- Payments: Razorpay (UPI, cards, Google Pay, PhonePe, Paytm)
+- Also includes a free AI resume builder
+- Support: support@smallbirdai.com
+
+## Pages
+
+- [Home](https://smallbirdai.com/): what SmallBird AI does and how it works
+- [About SmallBird AI](https://smallbirdai.com/about): the company, the name, and FAQs
+- [Download](https://smallbirdai.com/download): free installers for Windows and Mac
+- [Pricing](https://smallbirdai.com/pricing): free plan and one-time passes
+- [AI Interview Assistant](https://smallbirdai.com/ai-interview-assistant): real-time help during interviews
+- [AI Interview Copilot](https://smallbirdai.com/ai-interview-copilot)
+- [AI Coding Interview Assistant](https://smallbirdai.com/ai-coding-interview-assistant)
+- [AI Meeting Assistant](https://smallbirdai.com/ai-meeting-assistant)
+- [AI Resume Builder](https://smallbirdai.com/ai-resume-builder)
+- [SmallBird AI Alternatives](https://smallbirdai.com/smallbird-alternatives): honest comparison with other interview copilots

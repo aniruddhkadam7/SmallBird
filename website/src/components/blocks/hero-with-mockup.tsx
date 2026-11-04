@@ -12,6 +12,9 @@ interface HeroWithMockupProps {
   title: string
   // Leading phrase of `title` kept on its own line on phones.
   titleHighlight?: string
+  // Brand name shown as a small line at the top of the h1, so the page's
+  // main heading carries the brand for search engines.
+  brand?: string
   description: string
   primaryCta?: {
     text: string
@@ -24,6 +27,7 @@ interface HeroWithMockupProps {
 export function HeroWithMockup({
   title,
   titleHighlight,
+  brand,
   description,
   primaryCta = { text: "Dashboard", href: "/dashboard" },
   mockup,
@@ -56,6 +60,9 @@ export function HeroWithMockup({
                 "text-foreground",
               )}
             >
+              {brand ? (
+                <span className="mb-2 block text-sm font-semibold tracking-wide text-primary sm:text-base">{brand}</span>
+              ) : null}
               {highlightAt >= 0 && titleHighlight ? (
                 <>
                   {title.slice(0, highlightAt)}
