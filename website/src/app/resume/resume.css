@@ -1,0 +1,810 @@
+/* The printed resume (components/resume/resume-preview.tsx). Always black on
+   white, whatever the editor's theme, because it is a sheet of paper. Sizes
+   are in pt/in so screen preview and PDF match. Shared rules first, then one
+   block per template (.rv-navy, .rv-classic). Fonts come from
+   lib/resume/fonts.ts. */
+
+.rv-page {
+  box-sizing: border-box;
+  width: 210mm;
+  min-height: 297mm;
+  padding: 0.6in 0.75in;
+  background: #fff;
+  color: #000;
+  font-size: 10.5pt;
+  line-height: 1.32;
+}
+
+.rv-page em {
+  font-style: italic;
+}
+
+.rv-name {
+  margin: 0;
+  text-align: center;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.rv-tagline {
+  margin: 2pt 0 0;
+  text-align: center;
+}
+
+.rv-contact {
+  text-align: center;
+}
+
+.rv-icon {
+  flex-shrink: 0;
+  width: 9pt;
+  height: 9pt;
+  fill: currentColor;
+}
+
+/* .rv-page in front so it beats each template's own `li` margins. */
+.rv-page .rv-bullets li.rv-sub {
+  margin-left: 0.22in;
+  list-style: none;
+  position: relative;
+}
+
+.rv-bullets li.rv-sub::before {
+  content: "–";
+  position: absolute;
+  left: -0.16in;
+}
+
+.rv-section h2 {
+  margin: 0;
+}
+
+.rv-entry {
+  break-inside: avoid;
+}
+
+.rv-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12pt;
+}
+
+.rv-line > :last-child:not(:first-child) {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.rv-bullets {
+  margin: 2pt 0 0;
+  list-style: disc;
+}
+
+.rv-bullets li {
+  margin: 1pt 0;
+}
+
+.rv-lines p,
+.rv-text,
+.rv-skill-lines p {
+  margin: 0;
+}
+
+.rv-italic {
+  font-style: italic;
+}
+
+/* ---- Navy Formal ------------------------------------------------------- */
+
+.rv-navy {
+  --rv-navy: rgb(0, 54, 123);
+  padding: 0.5in 0.55in;
+  font-family: var(--font-resume-serif), "Times New Roman", serif;
+}
+
+.rv-navy .rv-name {
+  margin-bottom: 8pt;
+  color: var(--rv-navy);
+  font-size: 22pt;
+  font-style: italic;
+}
+
+.rv-navy .rv-contact {
+  line-height: 1.45;
+}
+
+.rv-navy .rv-tag,
+.rv-navy .rv-sep {
+  color: var(--rv-navy);
+}
+
+.rv-navy .rv-section {
+  margin-top: 12pt;
+}
+
+.rv-navy .rv-section h2 {
+  margin-bottom: 6pt;
+  padding-bottom: 2pt;
+  border-bottom: 0.6pt solid var(--rv-navy);
+  color: var(--rv-navy);
+  font-size: 11.5pt;
+  font-weight: 700;
+  font-style: italic;
+}
+
+.rv-navy .rv-entry,
+.rv-navy .rv-text,
+.rv-navy .rv-table {
+  margin-left: 0.22in;
+}
+
+.rv-navy .rv-entry {
+  margin-bottom: 7pt;
+}
+
+.rv-navy .rv-right-top {
+  font-style: italic;
+}
+
+.rv-navy .rv-bullets {
+  padding-left: 0.28in;
+}
+
+.rv-table {
+  border-collapse: collapse;
+}
+
+.rv-table th {
+  padding: 1pt 6ex 1pt 0;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.rv-table td {
+  padding: 1pt 0;
+}
+
+/* ---- Classic Tech ------------------------------------------------------ */
+
+.rv-classic {
+  padding: 0.5in 0.55in;
+  font-family: var(--font-resume-sans), "Helvetica Neue", Arial, sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.28;
+}
+
+.rv-classic .rv-name {
+  font-size: 25pt;
+  line-height: 1.1;
+}
+
+.rv-classic .rv-contact {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2pt 14pt;
+  margin-top: 3pt;
+  font-size: 10pt;
+}
+
+.rv-contact-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4pt;
+}
+
+.rv-link {
+  text-decoration: underline;
+  text-underline-offset: 1.5pt;
+}
+
+/* Links keep the template's colour; a contact line looks as before, it is
+   just clickable (also in the printed PDF). */
+.rv-page a {
+  color: inherit;
+}
+.rv-contact-link:not(.rv-link) {
+  text-decoration: none;
+}
+
+.rv-classic .rv-section {
+  margin-top: 10pt;
+}
+
+.rv-classic .rv-section h2 {
+  margin-bottom: 4pt;
+  padding-bottom: 1pt;
+  border-bottom: 0.7pt solid #000;
+  font-size: 13pt;
+  font-weight: 400;
+}
+
+.rv-classic .rv-entry,
+.rv-classic .rv-text,
+.rv-classic .rv-skill-lines {
+  margin-left: 0.15in;
+}
+
+.rv-classic .rv-entry {
+  margin-bottom: 5pt;
+}
+
+.rv-classic .rv-line > strong {
+  font-size: 11pt;
+}
+
+.rv-classic .rv-bullets {
+  padding-left: 0.3in;
+}
+
+.rv-classic .rv-lines {
+  padding-left: 0.3in;
+}
+
+.rv-classic .rv-pipe {
+  font-weight: 400;
+}
+
+.rv-classic .rv-tagline {
+  font-size: 11pt;
+}
+
+/* ---- Modern Blue ------------------------------------------------------- */
+
+.rv-modern {
+  --rv-blue: #3e6fd8;
+  padding: 0.47in;
+  font-family: var(--font-resume-sans), "Helvetica Neue", Arial, sans-serif;
+  font-size: 10pt;
+  line-height: 1.35;
+  color: #1a1a1a;
+}
+
+.rv-modern .rv-name {
+  font-size: 17pt;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.rv-modern .rv-tagline {
+  margin-top: 1pt;
+  color: var(--rv-blue);
+  font-size: 10.5pt;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.rv-modern .rv-contact {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2pt 18pt;
+  margin-top: 9pt;
+  font-size: 8.5pt;
+  font-weight: 700;
+}
+
+.rv-modern .rv-icon {
+  fill: var(--rv-blue);
+}
+
+.rv-modern .rv-section {
+  margin-top: 16pt;
+}
+
+.rv-modern .rv-section h2 {
+  margin-bottom: 8pt;
+  padding-bottom: 4pt;
+  border-bottom: 1pt solid var(--rv-blue);
+  color: var(--rv-blue);
+  font-size: 9.5pt;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+.rv-modern .rv-entry {
+  margin-bottom: 4pt;
+}
+
+.rv-modern .rv-entry + .rv-entry {
+  margin-top: 10pt;
+  padding-top: 12pt;
+  border-top: 1pt dashed var(--rv-blue);
+}
+
+.rv-modern .rv-caps {
+  font-size: 9.5pt;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.rv-modern .rv-meta {
+  margin-top: 2pt;
+  margin-bottom: 7pt;
+}
+
+.rv-modern .rv-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6pt;
+  padding-left: 2pt;
+}
+
+.rv-modern .rv-meta .rv-icon {
+  width: 10pt;
+  height: 10pt;
+}
+
+.rv-details-inline {
+  margin: 1pt 0 0;
+}
+
+.rv-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 12pt;
+  margin-bottom: 2pt;
+}
+
+.rv-details p {
+  margin: 0;
+}
+
+.rv-details p:nth-child(even) {
+  text-align: right;
+}
+
+.rv-details p.rv-details-wide {
+  grid-column: 1 / -1;
+  text-align: left;
+}
+
+.rv-modern .rv-bullets {
+  padding-left: 0.2in;
+}
+
+.rv-modern .rv-bullets li {
+  margin: 2pt 0;
+}
+
+.rv-modern .rv-bullets li::marker,
+.rv-modern .rv-bullets li.rv-sub::before {
+  color: var(--rv-blue);
+}
+
+.rv-modern .rv-skill-lines p {
+  margin: 1pt 0;
+}
+
+/* ---- Two-column templates (Grey Sidebar, Bold Header) ------------------ */
+
+/* The side column's colour is part of the design, so print it too. */
+.rv-sidebar,
+.rv-bold {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.rv-cols {
+  flex: 1;
+  display: grid;
+}
+
+.rv-side,
+.rv-main {
+  min-width: 0;
+}
+
+.rv-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  font-weight: 700;
+}
+
+.rv-side-section h2 {
+  margin: 0;
+}
+
+.rv-side-section p {
+  margin: 0 0 2pt;
+}
+
+.rv-side-contact p {
+  display: flex;
+  align-items: center;
+  margin: 0 0 3pt;
+  overflow-wrap: anywhere;
+}
+
+.rv-bubble {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+}
+
+.rv-bubble .rv-icon {
+  fill: #fff;
+}
+
+.rv-tl {
+  display: grid;
+  break-inside: avoid;
+}
+
+.rv-tl-text .rv-bullets {
+  margin-top: 1pt;
+}
+
+/* Grey Sidebar */
+
+.rv-sidebar {
+  --rv-ink: #1f2a5c;
+  font-family: var(--font-resume-fira), "Helvetica Neue", Arial, sans-serif;
+  font-size: 9.5pt;
+  line-height: 1.32;
+}
+
+.rv-sidebar .rv-cols {
+  grid-template-columns: 2.55in 1fr;
+}
+
+.rv-sidebar .rv-side {
+  padding: 0.35in 0.22in 0.4in;
+  background: #ececec;
+}
+
+.rv-sidebar .rv-avatar {
+  width: 1.5in;
+  height: 1.5in;
+  margin: 0 auto 14pt;
+  background: #d4d4d4;
+  color: #fff;
+  font-size: 36pt;
+}
+
+.rv-sidebar .rv-name {
+  margin: 0;
+  text-align: left;
+  color: var(--rv-ink);
+  font-size: 15pt;
+  font-weight: 400;
+}
+
+.rv-sidebar .rv-tagline {
+  margin: 0 0 10pt;
+  text-align: left;
+  color: #444;
+  font-size: 12pt;
+  font-weight: 300;
+}
+
+.rv-sidebar .rv-side-contact p {
+  gap: 7pt;
+  color: var(--rv-ink);
+}
+
+.rv-sidebar .rv-bubble {
+  width: 15pt;
+  height: 15pt;
+  background: var(--rv-ink);
+}
+
+.rv-sidebar .rv-side-section {
+  margin-top: 11pt;
+}
+
+.rv-sidebar .rv-side-section h2 {
+  display: flex;
+  align-items: center;
+  gap: 4pt;
+  margin-bottom: 2pt;
+  color: var(--rv-ink);
+  font-size: 11pt;
+  font-weight: 400;
+}
+
+.rv-sidebar .rv-side-section h2::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1.2pt solid var(--rv-ink);
+}
+
+.rv-sidebar .rv-main {
+  padding: 0.3in 0.3in 0.4in 0.25in;
+}
+
+.rv-sidebar .rv-section {
+  margin-bottom: 12pt;
+}
+
+.rv-sidebar .rv-section h2 {
+  margin-bottom: 7pt;
+  padding: 2pt 4pt;
+  background: #ececec;
+  color: var(--rv-ink);
+  font-size: 11pt;
+  font-weight: 400;
+}
+
+.rv-sidebar .rv-tl {
+  grid-template-columns: 0.85in 1fr;
+  margin-bottom: 6pt;
+}
+
+.rv-sidebar .rv-tl-place {
+  font-size: 8pt;
+}
+
+.rv-sidebar .rv-tl-text {
+  color: #555;
+  text-align: justify;
+}
+
+.rv-sidebar .rv-details-inline {
+  text-align: left;
+}
+
+.rv-sidebar .rv-bullets {
+  padding-left: 0.18in;
+}
+
+/* Bold Header */
+
+.rv-bold {
+  --rv-accent: #2bb3e0;
+  --rv-pin: #e0643a;
+  font-family: var(--font-resume-raleway), "Helvetica Neue", Arial, sans-serif;
+  font-size: 9pt;
+  line-height: 1.38;
+}
+
+.rv-band {
+  padding: 0.35in 0.4in 0.3in;
+  background: #3f3f3f;
+  color: #fff;
+  text-align: center;
+}
+
+.rv-bold .rv-name {
+  font-size: 25pt;
+  font-weight: 700;
+}
+
+.rv-bold .rv-light {
+  font-weight: 300;
+}
+
+.rv-bold .rv-tagline {
+  margin-top: 4pt;
+  font-size: 10pt;
+}
+
+.rv-bold .rv-cols {
+  grid-template-columns: 2.05in 1fr;
+}
+
+.rv-bold .rv-side {
+  padding: 0.3in 0.2in 0.4in;
+  background: #e2e2e2;
+  text-align: right;
+}
+
+.rv-bold .rv-avatar {
+  width: 1.3in;
+  height: 1.3in;
+  margin: 0 auto 16pt;
+  border: 2pt solid #fff;
+  background: #b9b9b9;
+  color: #fff;
+  font-size: 30pt;
+}
+
+.rv-bold .rv-side-section {
+  margin-bottom: 12pt;
+}
+
+.rv-bold .rv-side-section h2 span {
+  display: inline-block;
+  margin-bottom: 4pt;
+  padding: 1pt 4pt;
+  background: var(--rv-accent);
+  color: #fff;
+  font-size: 9pt;
+  font-weight: 700;
+}
+
+.rv-bold .rv-side-contact-bottom {
+  margin-top: 22pt;
+  font-size: 8pt;
+}
+
+.rv-bold .rv-side-contact p {
+  justify-content: flex-end;
+  gap: 6pt;
+  text-align: right;
+}
+
+/* Bubble on the left like the original, text kept right-aligned. */
+.rv-bold .rv-side-contact p > span:last-child {
+  min-width: 0;
+}
+
+.rv-bold .rv-bubble {
+  width: 13pt;
+  height: 13pt;
+  background: var(--rv-accent);
+}
+
+.rv-bold .rv-bubble .rv-icon {
+  width: 8pt;
+  height: 8pt;
+}
+
+.rv-bold .rv-main {
+  padding: 0.25in 0.4in 0.4in 0.35in;
+}
+
+.rv-bold .rv-section {
+  margin-bottom: 16pt;
+}
+
+.rv-bold .rv-section h2 {
+  margin-bottom: 6pt;
+  padding-bottom: 1pt;
+  border-bottom: 0.8pt solid #000;
+  font-size: 14pt;
+  font-weight: 400;
+  font-variant: small-caps;
+}
+
+.rv-bold .rv-tl {
+  grid-template-columns: 0.85in 1fr;
+}
+
+.rv-bold .rv-tl-date {
+  padding: 0 9pt 0 0;
+  text-align: right;
+}
+
+.rv-bold .rv-tl-body {
+  padding: 0 0 9pt 9pt;
+  border-left: 0.8pt solid #000;
+}
+
+.rv-bold .rv-tl-title {
+  display: block;
+}
+
+.rv-bold .rv-sc {
+  font-variant: small-caps;
+}
+
+.rv-bold .rv-tl-sub {
+  display: flex;
+  align-items: center;
+  white-space: pre;
+}
+
+.rv-bold .rv-tl-sub .rv-icon {
+  margin-left: 3pt;
+  fill: var(--rv-pin);
+}
+
+.rv-bold .rv-tl-text {
+  margin-top: 2pt;
+  color: #666;
+  font-size: 8.5pt;
+}
+
+.rv-bold .rv-bullets {
+  padding-left: 0.16in;
+}
+
+/* ---- Click to edit (editor only) --------------------------------------- */
+
+@media screen {
+  .rb-editable [data-edit] {
+    cursor: text;
+    border-radius: 2px;
+  }
+
+  /* Only the innermost line under the mouse, not the entry around it. */
+  .rb-editable [data-edit]:hover:not(:has([data-edit]:hover)) {
+    outline: 1px dashed #3b82f6;
+    outline-offset: 1px;
+    background: rgba(59, 130, 246, 0.06);
+  }
+}
+
+/* ---- Print ------------------------------------------------------------- */
+
+/* Margins on the page, not padding on .rv-page, so a second page gets them too. */
+@page {
+  size: A4;
+  margin: 0.5in 0.55in;
+}
+
+@page classic {
+  size: A4;
+  margin: 0.5in 0.55in;
+}
+
+@page modern {
+  size: A4;
+  margin: 0.47in;
+}
+
+/* The two-column designs run their colours to the paper's edge. */
+@page fullbleed {
+  size: A4;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  .rb-chrome {
+    display: none !important;
+  }
+
+  .rb-root,
+  .rb-root > div:not(.rb-chrome) {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  .rb-print-area {
+    display: block !important;
+    position: static !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: none !important;
+    height: auto !important;
+  }
+
+  .rb-print-area > div {
+    max-width: none !important;
+  }
+
+  .rb-print-area .rb-scale {
+    zoom: 1 !important;
+    width: auto !important;
+    box-shadow: none !important;
+  }
+
+  .rv-page {
+    width: auto;
+    min-height: 0;
+    padding: 0;
+  }
+
+  .rv-classic {
+    page: classic;
+  }
+
+  .rv-modern {
+    page: modern;
+  }
+
+  .rv-sidebar,
+  .rv-bold {
+    page: fullbleed;
+    min-height: 297mm;
+  }
+}

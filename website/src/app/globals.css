@@ -1,0 +1,268 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.65rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  /* Was oklch(1 0 0) — identical to --background, so a card had zero visual
+     separation from the page behind it aside from the (also too-faint,
+     see --border below) outline. Dark mode doesn't have this problem: its
+     --card (0.205) is a real step above --background (0.145), which is what
+     makes cards read as raised surfaces there. Matching that same ~0.02
+     step in light mode (card slightly *darker* than the white page, since
+     light mode goes the other direction) gives cards actual visible
+     elevation instead of relying on the border line alone. */
+  --card: oklch(0.98 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(0.98 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  /* Was oklch(0.556 0 0) — the same low-contrast issue as --border above:
+     borderline-legible gray-on-white for every secondary label (dates,
+     "Ended" dot, badge text, search placeholder). Darkened for real
+     readability in light mode. */
+  --muted-foreground: oklch(0.46 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  /* Was oklch(0.922 0 0) — nearly invisible against the oklch(1 0 0) light
+     background/card (card borders, the dashboard's divider line, etc. read
+     as missing rather than subtle). Darkened for real contrast in light
+     mode; dark mode's border (white at 10% opacity over a dark card) already
+     reads fine and is untouched. */
+  --border: oklch(0.87 0 0);
+  --input: oklch(0.87 0 0);
+  --ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@theme {
+  --animate-appear: appear 0.6s ease-out forwards;
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-appear {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Glassmorphism system — frosted-glass surfaces used across nav, cards,
+   pricing, dialogs, and overlays. Needs a colorful/ambient backdrop behind
+   it (see .ambient-blobs) for the blur to read as "glass". */
+@layer utilities {
+  .glass {
+    background-color: oklch(1 0 0 / 55%);
+    border: 1px solid oklch(1 0 0 / 40%);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    box-shadow:
+      0 8px 32px -8px oklch(0 0 0 / 12%),
+      inset 0 1px 0 0 oklch(1 0 0 / 50%);
+  }
+
+  .glass-subtle {
+    background-color: oklch(1 0 0 / 35%);
+    border: 1px solid oklch(1 0 0 / 30%);
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+  }
+
+  [data-theme="dark"] .glass {
+    background-color: oklch(0.2 0 0 / 45%);
+    border-color: oklch(1 0 0 / 12%);
+    box-shadow:
+      0 8px 32px -8px oklch(0 0 0 / 40%),
+      inset 0 1px 0 0 oklch(1 0 0 / 8%);
+  }
+
+  [data-theme="dark"] .glass-subtle {
+    background-color: oklch(0.2 0 0 / 35%);
+    border-color: oklch(1 0 0 / 10%);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .glass {
+    background-color: oklch(0.2 0 0 / 45%);
+    border-color: oklch(1 0 0 / 12%);
+    box-shadow:
+      0 8px 32px -8px oklch(0 0 0 / 40%),
+      inset 0 1px 0 0 oklch(1 0 0 / 8%);
+  }
+  :root:not([data-theme="light"]) .glass-subtle {
+    background-color: oklch(0.2 0 0 / 35%);
+    border-color: oklch(1 0 0 / 10%);
+  }
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  animation: marquee 45s linear infinite;
+}
+
+/* Only pause-on-hover for devices that actually have hover (mouse/trackpad) --
+   on touch devices a tap fires :hover with no corresponding "leave" to clear
+   it, so the marquee would stay paused after a single tap and never resume. */
+@media (hover: hover) {
+  .animate-marquee:hover {
+    animation-play-state: paused;
+  }
+}
+
+@keyframes divider-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 8px 1px rgba(255, 255, 255, 0.5);
+    opacity: 0.85;
+  }
+  50% {
+    box-shadow: 0 0 20px 4px rgba(255, 255, 255, 0.9);
+    opacity: 1;
+  }
+}
+
+.animate-divider-glow {
+  animation: divider-glow 2.2s ease-in-out infinite;
+}
+
+/* Ambient color blobs placed behind glass sections so backdrop-blur has
+   something to distort. Slow, subtle drift only — no flashing motion. */
+.ambient-blobs {
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.ambient-blobs::before,
+.ambient-blobs::after {
+  content: "";
+  position: absolute;
+  width: 32rem;
+  height: 32rem;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: 0.35;
+}
+
+.ambient-blobs::before {
+  top: -8rem;
+  left: -6rem;
+  background: oklch(0.75 0.12 300);
+}
+
+.ambient-blobs::after {
+  bottom: -10rem;
+  right: -6rem;
+  background: oklch(0.8 0.1 220);
+}
+
+[data-theme="dark"] .ambient-blobs::before {
+  opacity: 0.18;
+}
+[data-theme="dark"] .ambient-blobs::after {
+  opacity: 0.14;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ambient-blobs::before {
+    opacity: 0.18;
+  }
+  :root:not([data-theme="light"]) .ambient-blobs::after {
+    opacity: 0.14;
+  }
+}
+
+/* Local prices (components/blocks/local-price.tsx): India sees INR, everyone
+   else USD. <html data-currency> is set before paint by lib/currency.ts. */
+html[data-currency="USD"] .only-inr,
+html:not([data-currency="USD"]) .only-usd,
+html[data-home-currency="USD"] .home-inr,
+html:not([data-home-currency="USD"]) .home-usd {
+  display: none !important;
+}

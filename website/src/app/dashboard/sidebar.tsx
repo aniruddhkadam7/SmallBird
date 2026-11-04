@@ -1,0 +1,277 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import Image from "next/image"
+import { AudioLines, FileText, Gift, LogOut, Menu, Moon, MonitorSmartphone, Sun, X } from "lucide-react"
+import logo from "@/assets/smallbird-logo.png"
+import { LiquidButton } from "@/components/ui/liquid-glass-button"
+import { usePurchaseFlow } from "@/lib/purchase-flow"
+import { PlansView } from "./plans-view"
+
+type Theme = "dark" | "light"
+const THEME_STORAGE_KEY = "smallbird-dashboard-theme"
+
+// Dark by default, remembered per-browser after that -- there's no
+// server-side way to know a visitor's stored preference before the first
+// paint, so this always renders dark first and flips to light in a
+// layout effect if that's what's stored, rather than trying to guess
+// right on the server.
+function useTheme(): [Theme, (t: Theme) => void] {
+  const [theme, setThemeState] = useState<Theme>("dark")
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
+    if (stored === "light" || stored === "dark") setThemeState(stored)
+  }, [])
+
+  const setTheme = (t: Theme) => {
+    setThemeState(t)
+    window.localStorage.setItem(THEME_STORAGE_KEY, t)
+  }
+
+  return [theme, setTheme]
+}
+
+function colorForUser(seed: string) {
+  let hash = 0
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash << 5) - hash + seed.charCodeAt(i)
+    hash |= 0
+  }
+  const hue = Math.abs(hash) % 360
+  return `hsl(${hue}, 65%, 45%)`
+}
+
+/// Fallback for accounts with no stored name yet (older accounts, or ones
+/// that haven't logged back in through the name-collecting flow) — splits
+/// the email's local part on the usual separators instead of showing it as
+/// one run-together capitalized word (e.g. "jane.doe" -> "Jane Doe" rather
+/// than "Jane.doe").
+function nameFromEmail(email: string): string {
+  const local = email.split("@")[0]
+  return local
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
+}
+
+interface PlanInfo {
+  displayName: string
+  remainingMinutes: number
+  isFree: boolean
+}
+
+export function DashboardSidebar({
+  email,
+  name: storedName,
+  plan,
+  resumesView,
+  children,
+}: {
+  email: string
+  name: string | null
+  plan: PlanInfo | null
+  resumesView: React.ReactNode
+  children: React.ReactNode
+}) {
+  const router = useRouter()
+  const { logout } = usePurchaseFlow()
+  const [theme, setTheme] = useTheme()
+  const [view, setView] = useState<"interviews" | "resumes" | "plans">("interviews")
+
+  // The resume editor's back button links to /dashboard?view=resumes.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("view") === "resumes") setView("resumes")
+  }, [])
+  const [confirmingLogout, setConfirmingLogout] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const name = storedName || nameFromEmail(email)
+  const initial = name.charAt(0).toUpperCase()
+  const avatarColor = colorForUser(email)
+
+  return (
+    <div className={`${theme === "dark" ? "dark" : ""} flex h-screen flex-col overflow-hidden bg-background text-foreground lg:flex-row`}>
+      <div className="flex items-center justify-between border-b border-border bg-background px-4 py-3 lg:hidden">
+        <a href="/" className="flex items-center gap-2">
+          <Image src={logo} alt="SmallBird AI" className="h-6 w-auto" />
+          <span
+            className="text-lg font-bold tracking-tight text-foreground"
+            style={{ fontFamily: "var(--font-playfair-display)" }}
+          >
+            SmallBird AI
+          </span>
+        </a>
+        <button
+          type="button"
+          onClick={() => setMobileNavOpen(true)}
+          aria-label="Open menu"
+          className="rounded-md p-2 text-foreground transition-colors hover:bg-foreground/10"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+      </div>
+
+      {mobileNavOpen && (
+        <div className="fixed inset-0 z-40 bg-black/60 lg:hidden" onClick={() => setMobileNavOpen(false)} />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 -translate-x-full flex-col gap-6 overflow-y-auto border-r border-border bg-background px-4 py-5 transition-transform duration-200 lg:static lg:translate-x-0 ${
+          mobileNavOpen ? "translate-x-0" : ""
+        }`}
+      >
+        <div className="flex items-center justify-between px-1">
+          <a href="/" className="flex items-center gap-2">
+            <Image src={logo} alt="SmallBird AI" className="h-6 w-auto" />
+            <span
+              className="text-lg font-bold tracking-tight text-foreground"
+              style={{ fontFamily: "var(--font-playfair-display)" }}
+            >
+              SmallBird AI
+            </span>
+          </a>
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(false)}
+            aria-label="Close menu"
+            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-foreground/10 lg:hidden"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <nav className="flex flex-col gap-1">
+          <div className="px-2 pb-1 text-xs font-semibold text-muted-foreground">Workspace</div>
+          <button
+            type="button"
+            onClick={() => {
+              setView("interviews")
+              setMobileNavOpen(false)
+            }}
+            className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
+              view === "interviews" ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5"
+            }`}
+          >
+            <AudioLines className="h-4 w-4" />
+            Interviews
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setView("resumes")
+              setMobileNavOpen(false)
+            }}
+            className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
+              view === "resumes" ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5"
+            }`}
+          >
+            <FileText className="h-4 w-4" />
+            Resumes
+          </button>
+        </nav>
+
+        <div className="mt-auto flex flex-col gap-3">
+          <div className="rounded-lg border border-border bg-card p-3">
+            <div className="flex items-center gap-2">
+              <Gift className="h-4 w-4 text-primary" />
+              <span className="text-sm font-semibold text-foreground">
+                {plan ? plan.displayName : "Free Plan"}
+              </span>
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {plan
+                ? `${Math.floor(plan.remainingMinutes)} minutes remaining on your plan.`
+                : "Sign in to see your plan."}
+            </p>
+            {(plan?.isFree ?? true) && (
+              <LiquidButton size="sm" className="mt-3 w-full" onClick={() => setView("plans")}>
+                Upgrade
+              </LiquidButton>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <button
+              type="button"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="flex items-center justify-between rounded-md px-3 py-2 text-sm text-foreground transition-colors hover:bg-foreground/10"
+            >
+              <span className="flex items-center gap-2.5">
+                {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                Theme
+              </span>
+              <span className="text-xs capitalize text-muted-foreground">{theme}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/download")}
+              className="flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-foreground/10"
+            >
+              <MonitorSmartphone className="h-4 w-4" />
+              Open Desktop App
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmingLogout(true)}
+              className="flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-foreground/10"
+            >
+              <LogOut className="h-4 w-4" />
+              Log Out
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2.5 border-t border-border px-1 pt-3">
+            <span
+              style={{ backgroundColor: avatarColor }}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-medium text-white"
+            >
+              {initial}
+            </span>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium text-foreground">{name}</div>
+              <div className="truncate text-xs text-muted-foreground">{email}</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <div className="flex-1 overflow-y-auto">{view === "plans" ? <PlansView /> : view === "resumes" ? resumesView : children}</div>
+
+      {confirmingLogout && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onMouseDown={(e) => e.target === e.currentTarget && setConfirmingLogout(false)}
+        >
+          <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-xl border border-border bg-card p-6 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-foreground/10">
+              <LogOut className="h-5 w-5 text-foreground" />
+            </span>
+            <div>
+              <div className="font-semibold text-foreground">Log out?</div>
+              <p className="mt-1 text-sm text-muted-foreground">You&apos;ll need to sign in again to access your dashboard.</p>
+            </div>
+            <div className="flex w-full gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmingLogout(false)}
+                className="flex-1 rounded-md border border-border py-2 text-sm font-medium text-foreground transition-colors hover:bg-foreground/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => logout()}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-foreground py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Log Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

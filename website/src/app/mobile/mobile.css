@@ -1,0 +1,815 @@
+/* SmallBird AI on your phone. Styled to match the desktop app:
+   - setup / mic test / summary use the main window's light theme (soft grey
+     page, white cards, blue accent, pill buttons, Playfair wordmark);
+   - the live interview uses the overlay's dark "island" layout.
+   Everything is scoped under .sbm so it cannot leak into (or be broken by) the
+   marketing site's own styles. */
+
+.sbm {
+  color-scheme: light;
+  --accent: #3b82f6;
+  --accent-hover: #2f6fd8;
+  --accent-soft: rgba(59, 130, 246, 0.1);
+  --success: #22a06b;
+  --danger: #e5484d;
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-alt: #f8f9fb;
+  --border: #e3e5e9;
+  --border-strong: #d3d6dc;
+  --text: #17181c;
+  --muted: #4b5563;
+  --faint: #6b7280;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-geist-sans), Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.sbm,
+.sbm * {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sbm h1,
+.sbm h2,
+.sbm p {
+  margin: 0;
+}
+
+/* The site's base styles reset headings and links, so set them explicitly. */
+.sbm .title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.sbm h2 {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.sbm .lede {
+  color: var(--muted);
+}
+
+.sbm .center {
+  text-align: center;
+}
+
+/* ---- Light screens ---- */
+
+.sbm .page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: max(12px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sbm .nav-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+}
+
+.sbm .back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.sbm .back.linklike,
+.sbm .textbtn {
+  background: none;
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.sbm .back.linklike {
+  font-size: 14px;
+}
+
+.sbm .back:disabled {
+  opacity: 0.5;
+}
+
+.sbm .textbtn {
+  padding: 8px 0;
+  color: var(--faint);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.sbm .brand-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sbm .brand-row.center {
+  justify-content: center;
+}
+
+.sbm .logo {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.sbm .wordmark {
+  font-family: var(--font-playfair-display), Georgia, serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.sbm .account {
+  margin-top: -6px;
+  color: var(--faint);
+  font-size: 13px;
+}
+
+.sbm .account strong {
+  color: var(--text);
+}
+
+.sbm .card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.sbm .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sbm .field > span {
+  color: var(--faint);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.sbm input,
+.sbm textarea {
+  width: 100%;
+  padding: 12px 13px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: 16px; /* 16px stops iOS zooming the page on focus */
+}
+
+.sbm input:focus,
+.sbm textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.sbm .actions-col {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+/* Same frosted pill the desktop app uses for its buttons. */
+.sbm .btn {
+  min-height: 46px;
+  padding: 0 22px;
+  color: var(--text);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.7) 55%, rgba(211, 214, 220, 0.7) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(16, 24, 40, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 1px rgba(0, 0, 0, 0.05);
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: transform 0.1s, opacity 0.15s, box-shadow 0.15s;
+}
+
+.sbm .btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.sbm .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sbm .btn.primary {
+  color: #fff;
+  background: linear-gradient(180deg, #5b9cf8 0%, #3b82f6 55%, #2f6fd8 100%);
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.sbm .btn.big {
+  min-height: 54px;
+  font-size: 17px;
+}
+
+/* The optional action: deliberately small and quiet next to the main button. */
+.sbm .btn.small {
+  align-self: center;
+  min-height: 38px;
+  padding: 0 16px;
+  font-size: 14px;
+}
+
+.sbm .optional {
+  color: var(--faint);
+  font-weight: 500;
+}
+
+/* Document upload slots (CV, job description) */
+
+.sbm .upload {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 10px 14px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1.5px dashed rgba(59, 130, 246, 0.5);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+
+.sbm .upload.busy {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+/* The real input covers the whole area, so a tap anywhere opens the file picker. */
+.sbm .upload input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.sbm .upload-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.sbm .doc-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.sbm .doc-icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--accent);
+}
+
+.sbm .doc-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sbm .doc-meta strong {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sbm .doc-meta small {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+/* "Transcript saved" prompt on the summary screen */
+
+.sbm .callout {
+  background: var(--accent-soft);
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+.sbm .callout-title {
+  color: var(--success);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.sbm .callout-title.saving {
+  color: var(--accent);
+}
+
+/* A link styled as a button (e.g. "View transcript on dashboard"). */
+.sbm a.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.sbm .notice {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+}
+
+.sbm .notice.error {
+  color: #b4232a;
+  background: rgba(229, 72, 77, 0.1);
+  border: 1px solid rgba(229, 72, 77, 0.25);
+}
+
+.sbm .fineprint {
+  color: var(--faint);
+  font-size: 12.5px;
+}
+
+.sbm .eyebrow {
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sbm .q-text {
+  font-weight: 600;
+}
+
+.sbm .gate-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  padding-bottom: 40px;
+}
+
+/* Mic test */
+
+.sbm .test-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sbm .test-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--accent);
+}
+
+.sbm .test-status {
+  font-weight: 600;
+}
+
+.sbm .test-status[data-heard="true"] {
+  color: var(--success);
+}
+
+.sbm .meter {
+  height: 8px;
+  overflow: hidden;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.sbm .meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--faint);
+  transition: width 90ms linear;
+}
+
+.sbm .meter-fill[data-heard="true"] {
+  background: var(--success);
+}
+
+.sbm .transcript-box {
+  min-height: 130px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.sbm .transcript-box .partial {
+  color: var(--faint);
+  font-style: italic;
+}
+
+.sbm .transcript-box .placeholder {
+  color: var(--faint);
+}
+
+/* Markdown answers (summary screen, light) */
+
+.sbm .md {
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.sbm .md p {
+  margin: 0 0 0.6em;
+}
+
+.sbm .md ul,
+.sbm .md ol {
+  margin: 0 0 0.6em;
+  padding-left: 1.3em;
+}
+
+/* The site's base styles remove list markers, so bring them back: without
+   them the answer's bullets and numbered steps vanish. */
+.sbm .md ul {
+  list-style: disc;
+}
+
+.sbm .md ol {
+  list-style: decimal;
+}
+
+.sbm .md li {
+  margin-bottom: 0.35em;
+}
+
+.sbm .md pre {
+  overflow-x: auto;
+  padding: 10px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+/* ---- Live interview: the overlay's dark, tight "islands" ---- */
+
+.sbm:has(.live),
+html:has(.sbm .live) {
+  background: #0e0e10;
+}
+
+.sbm .live {
+  color-scheme: dark;
+  --bg: #0e0e10;
+  --panel-header: #3c3c3c;
+  --panel-strip: #2d2d2d;
+  --panel: #141414;
+  --text: #f4f4f5;
+  --muted: rgba(255, 255, 255, 0.6);
+  --faint: rgba(255, 255, 255, 0.5);
+  --border: rgba(255, 255, 255, 0.1);
+  --accent: #6aa8ff;
+  --danger: #f0303a;
+
+  height: 100vh;
+  height: 100dvh;
+  max-width: 640px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: max(6px, env(safe-area-inset-top)) 6px 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, var(--font-geist-sans), "Segoe UI", system-ui, sans-serif;
+}
+
+.sbm .live.center-screen {
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+.sbm .island {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.sbm .island.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  background: var(--panel-header);
+  font-size: 13px;
+}
+
+.sbm .island.bar.problem {
+  background: #4a2226;
+  border-color: rgba(240, 48, 58, 0.5);
+}
+
+.sbm .bar .meter {
+  flex: 1;
+  min-width: 40px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 0;
+}
+
+.sbm .bar .meter-fill {
+  background: var(--accent);
+}
+
+.sbm .dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  background: var(--faint);
+  border-radius: 50%;
+}
+
+.sbm .dot[data-status="listening"] {
+  background: #4cc38a;
+  animation: sbm-pulse 1.6s ease-in-out infinite;
+}
+
+.sbm .dot[data-status="reconnecting"],
+.sbm .dot[data-status="paused"] {
+  background: var(--danger);
+}
+
+@keyframes sbm-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.sbm .clock {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sbm .clock.low {
+  color: #fbbf24;
+  font-weight: 700;
+}
+
+.sbm .banner {
+  padding: 8px 12px;
+  color: #fbbf24;
+  background: rgba(217, 119, 6, 0.22);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: 12px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.sbm .island.strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--panel-strip);
+}
+
+.sbm .strip-icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: #4cc38a;
+}
+
+.sbm .strip-text {
+  font-size: 15px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sbm .strip-text.hearing {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.sbm .island.panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: var(--panel);
+}
+
+.sbm .qa-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.sbm .qa-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin-top: 3px;
+  color: var(--accent);
+}
+
+.sbm .qa-icon.star {
+  color: #f5c542;
+}
+
+.sbm .qa-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sbm .live .md {
+  font-size: 19px;
+  line-height: 1.5;
+}
+
+.sbm .live .md strong {
+  color: #fff;
+}
+
+.sbm .live .md pre {
+  background: #0d1017;
+  border-color: var(--border);
+}
+
+.sbm .dim {
+  color: var(--muted);
+}
+
+.sbm .error-text {
+  color: #ff8a8f;
+}
+
+.sbm .actions {
+  display: grid;
+  grid-template-columns: 1.15fr 1.25fr 1fr auto;
+  gap: 6px;
+  padding: 6px 0 max(10px, env(safe-area-inset-bottom));
+}
+
+.sbm .chip {
+  min-height: 40px;
+  padding: 0 10px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* "Auto ans" on two lines: the name, and its state underneath. */
+.sbm .chip.toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  line-height: 1.1;
+}
+
+.sbm .chip-state {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  opacity: 0.8;
+}
+
+.sbm .chip:active {
+  opacity: 0.8;
+}
+
+/* Auto answer switch: filled blue outline while on. */
+.sbm .chip.toggle.on {
+  color: var(--accent);
+  background: rgba(106, 168, 255, 0.14);
+  border-color: rgba(106, 168, 255, 0.55);
+}
+
+.sbm .chip.accent {
+  color: #08101f;
+  background: linear-gradient(180deg, #86b9ff 0%, #5b98f5 100%);
+  border-color: transparent;
+}
+
+.sbm .chip.end {
+  color: #fff;
+  background: var(--danger);
+  border-color: transparent;
+}
+
+.sbm .chip.inline {
+  align-self: flex-start;
+  min-height: 30px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.sbm .chip.big {
+  min-height: 46px;
+  padding: 0 22px;
+  font-size: 15px;
+}
+
+/* "End interview?" confirmation */
+.sbm .overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.sbm .dialog {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  background: var(--panel-strip);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.sbm .dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+}
