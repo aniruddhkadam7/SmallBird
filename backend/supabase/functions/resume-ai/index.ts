@@ -1,4 +1,4 @@
-// AI for the website's resume builder (smallbird.in/resume/<id>). Unlike
+// AI for the website's resume builder (smallbirdai.com/resume/<id>). Unlike
 // llm-proxy, the prompts live here and the client only sends its data, so
 // this can't be used as a general-purpose free chat endpoint.
 //

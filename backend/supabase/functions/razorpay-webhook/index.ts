@@ -14,6 +14,7 @@
 //           subscription.halted, refund.created, payment.failed
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { MAIL_DOMAIN, NOREPLY_ADDRESS, SUPPORT_EMAIL } from "../_shared/brand.ts";
 
 const webhookSecret = Deno.env.get("RAZORPAY_WEBHOOK_SECRET")!;
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -134,8 +135,8 @@ async function lookupUserEmail(userId: string): Promise<string | null> {
   return data.user.email;
 }
 
-const OWNER_NOTIFY_EMAIL = "payments@smallbird.in";
-const FROM_ADDRESS = "SmallBird <noreply@smallbird.in>";
+const OWNER_NOTIFY_EMAIL = `payments@${MAIL_DOMAIN}`;
+const FROM_ADDRESS = NOREPLY_ADDRESS;
 
 // Best-effort operational email to the business owner — money in, money
 // stuck, or a subscription drying up. Never throws: a Resend hiccup must
@@ -202,11 +203,11 @@ async function notifyCustomer(
 
   const planName = details.planId.charAt(0).toUpperCase() + details.planId.slice(1).replace(/[_-]/g, " ");
   const isRenewal = kind === "renewal";
-  const subject = isRenewal ? `Your SmallBird ${planName} plan has been renewed` : `Welcome to SmallBird ${planName} — payment received`;
+  const subject = isRenewal ? `Your SmallBird AI ${planName} plan has been renewed` : `Welcome to SmallBird AI ${planName} — payment received`;
   const heading = isRenewal ? "Thanks for staying with us! 🎉" : "Thank you for your purchase! 🎉";
   const intro = isRenewal
     ? `Your <strong>${escapeHtml(planName)}</strong> subscription has renewed successfully and fresh minutes have been added to your account.`
-    : `Your payment was successful and your <strong>${escapeHtml(planName)}</strong> plan is now active. Open the SmallBird app and you're ready to go — your minutes are already in your account.`;
+    : `Your payment was successful and your <strong>${escapeHtml(planName)}</strong> plan is now active. Open the SmallBird AI app and you're ready to go — your minutes are already in your account.`;
   const row = (label: string, value: string) =>
     `<tr><td style="padding:8px 0;color:#6b7280">${label}</td><td style="padding:8px 0;text-align:right;font-weight:600;color:#111827">${value}</td></tr>`;
 
@@ -220,20 +221,20 @@ async function notifyCustomer(
       ${details.renewsOn ? row(isRenewal ? "Next renewal" : "Renews on", formatDate(details.renewsOn)) : ""}
       ${row("Reference", escapeHtml(details.reference))}
     </table>
-    <p style="line-height:1.6;margin:20px 0 0;color:#374151">🔒 Your payment was processed securely by Razorpay. SmallBird never sees or stores your card details.${isRenewal ? " You can cancel your subscription at any time and keep access until the end of the period you've paid for." : ""}</p>
+    <p style="line-height:1.6;margin:20px 0 0;color:#374151">🔒 Your payment was processed securely by Razorpay. SmallBird AI never sees or stores your card details.${isRenewal ? " You can cancel your subscription at any time and keep access until the end of the period you've paid for." : ""}</p>
     <div style="margin:20px 0 0;padding:16px;background:#f3f4f6;border-radius:8px">
       <p style="margin:0 0 6px;font-weight:600">Need help? We're here for you.</p>
-      <p style="margin:0;line-height:1.6;color:#374151">Questions about your plan, billing, a refund, or anything not working? Simply reply to this email or contact us at <a href="mailto:support@smallbird.in">support@smallbird.in</a> — a real person will get back to you.</p>
+      <p style="margin:0;line-height:1.6;color:#374151">Questions about your plan, billing, a refund, or anything not working? Simply reply to this email or contact us at <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a> — a real person will get back to you.</p>
     </div>
-    <p style="margin:20px 0 0;color:#374151">Thank you for trusting SmallBird.<br>— The SmallBird team</p>
-    <p style="margin:20px 0 0;font-size:12px;line-height:1.5;color:#9ca3af">This is a payment confirmation for your records. We will never ask for your password, OTP or card details by email. If you didn't make this purchase, contact support@smallbird.in right away.</p>
+    <p style="margin:20px 0 0;color:#374151">Thank you for trusting SmallBird AI.<br>— The SmallBird AI team</p>
+    <p style="margin:20px 0 0;font-size:12px;line-height:1.5;color:#9ca3af">This is a payment confirmation for your records. We will never ask for your password, OTP or card details by email. If you didn't make this purchase, contact ${SUPPORT_EMAIL} right away.</p>
   </div>`;
 
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${resendKey}`, "content-type": "application/json" },
-      body: JSON.stringify({ from: FROM_ADDRESS, to, subject, html, reply_to: "support@smallbird.in" }),
+      body: JSON.stringify({ from: FROM_ADDRESS, to, subject, html, reply_to: SUPPORT_EMAIL }),
     });
     if (!res.ok) console.error("razorpay-webhook: customer email failed", res.status, await res.text());
   } catch (err) {

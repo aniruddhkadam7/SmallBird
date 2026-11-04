@@ -10,7 +10,7 @@ import { Unauthorized } from "@/components/Unauthorized";
 import { PageLoading } from "@/components/PageLoading";
 import { formatJoined } from "@/lib/format";
 
-// How people use the website's resume builder (smallbird.in/resume): who uses
+// How people use the website's resume builder (smallbirdai.com/resume): who uses
 // it, how much, which AI actions, and per person the resumes they built and
 // the CVs / JDs they gave the AI. Reads admin_resume_builder_stats and
 // admin_user_resume_builder (migration 0052) straight from the browser; both

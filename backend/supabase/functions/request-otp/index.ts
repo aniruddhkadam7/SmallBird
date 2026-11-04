@@ -7,11 +7,12 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { withCors } from "../_shared/cors.ts";
+import { NOREPLY_ADDRESS } from "../_shared/brand.ts";
 import { allowRequest, clientIp } from "../_shared/ratelimit.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
-const FROM_ADDRESS = "SmallBird <noreply@smallbird.in>";
+const FROM_ADDRESS = NOREPLY_ADDRESS;
 
 const CODE_TTL_MS = 5 * 60 * 1000;
 const MAX_REQUESTS_PER_WINDOW = 5;
@@ -91,7 +92,7 @@ Deno.serve(withCors(async (req) => {
       from: FROM_ADDRESS,
       to: email,
       subject: "Your sign-in code",
-      html: `<p>Your Smallbird sign-in code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p><p>This code expires in 5 minutes and can only be used once.</p>`,
+      html: `<p>Your SmallBird AI sign-in code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p><p>This code expires in 5 minutes and can only be used once.</p>`,
     }),
   });
   if (!emailRes.ok) {

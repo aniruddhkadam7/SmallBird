@@ -23,7 +23,7 @@ async function network<T>(request: Promise<T>): Promise<T> {
     return await request;
   } catch (err) {
     if (err instanceof ApiError || (err instanceof DOMException && err.name === "AbortError")) throw err;
-    throw new ApiError("Couldn't reach Smallbird. Check your connection and try again.", 0);
+    throw new ApiError("Couldn't reach SmallBird AI. Check your connection and try again.", 0);
   }
 }
 
@@ -80,7 +80,7 @@ export async function getMaintenanceMessage(): Promise<string | null> {
     });
     if (!res.ok) return null;
     const body = (await res.json()) as { maintenance?: boolean; message?: string | null };
-    return body.maintenance ? (body.message ?? "SmallBird is currently under maintenance. Please check back shortly.") : null;
+    return body.maintenance ? (body.message ?? "SmallBird AI is currently under maintenance. Please check back shortly.") : null;
   } catch {
     return null;
   }

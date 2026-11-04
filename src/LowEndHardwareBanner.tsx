@@ -41,7 +41,7 @@ export function LowEndHardwareBanner() {
 
   return (
     <div className="update-banner">
-      <span>Your PC can run Smallbird, but your hardware is below our recommended configuration. Real-time transcription may be slower.</span>
+      <span>Your PC can run SmallBird AI, but your hardware is below our recommended configuration. Real-time transcription may be slower.</span>
       <div className="update-banner-actions">
         <Button variant="ghost" size="sm" onClick={dismiss}>
           Got it

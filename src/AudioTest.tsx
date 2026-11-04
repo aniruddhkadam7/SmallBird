@@ -59,7 +59,7 @@ const pick = (words: string[]) => words[Math.floor(Math.random() * words.length)
 /// but what was actually played just now.
 function makeTestPhrase() {
   const words = [pick(COLORS), pick(ANIMALS), pick(MOODS)];
-  return { sentence: `Testing Smallbird audio. The ${words[0]} ${words[1]} is ${words[2]}.`, words };
+  return { sentence: `Testing SmallBird AI audio. The ${words[0]} ${words[1]} is ${words[2]}.`, words };
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {

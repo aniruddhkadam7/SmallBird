@@ -604,7 +604,7 @@ export default function AnalyticsPage() {
             />
           ) : (
             <p className="text-sm text-muted">
-              None yet. Share links like <code className="rounded bg-subtle px-1">smallbird.in/?utm_source=instagram&amp;utm_campaign=diwali</code> to see
+              None yet. Share links like <code className="rounded bg-subtle px-1">smallbirdai.com/?utm_source=instagram&amp;utm_campaign=diwali</code> to see
               each one here.
             </p>
           )}

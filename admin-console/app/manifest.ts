@@ -5,7 +5,7 @@ import type { MetadataRoute } from "next";
 // this covers Android/Chrome.
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Smallbird Admin",
+    name: "SmallBird AI Admin",
     short_name: "SB Admin",
     id: "/",
     start_url: "/dashboard",

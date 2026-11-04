@@ -8,7 +8,7 @@ function transcriptText(result: SessionResult): string {
     .map((e, i) => `Q${i + 1}. ${e.question}\n\n${spokenAnswer(e.raw) || "(no answer)"}`)
     .join("\n\n---\n\n");
   const raw = result.turns.map((t) => t.text).join("\n");
-  return `# Smallbird interview\n\n## Questions and suggested answers\n\n${qa || "(none)"}\n\n## Full transcript\n\n${raw || "(empty)"}\n`;
+  return `# SmallBird AI interview\n\n## Questions and suggested answers\n\n${qa || "(none)"}\n\n## Full transcript\n\n${raw || "(empty)"}\n`;
 }
 
 export default function Summary({ result, onDone }: { result: SessionResult; onDone: () => void }) {

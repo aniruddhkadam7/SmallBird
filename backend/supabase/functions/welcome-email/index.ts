@@ -9,15 +9,16 @@
 // can't both send to the same person.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { BRAND, SITE_URL, SUPPORT_EMAIL } from "../_shared/brand.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 
-const FROM_ADDRESS = "Smallbird Support <support@smallbird.in>";
+const FROM_ADDRESS = `${BRAND} Support <${SUPPORT_EMAIL}>`;
 const SUBJECT = "Clear any interview with your AI interview copilot";
 // The website's download page, not the GitHub file -- tapping the button
-// should land on Smallbird, not GitHub.
-const DOWNLOAD_URL = "https://smallbird.in/download";
+// should land on SmallBird AI, not GitHub.
+const DOWNLOAD_URL = `${SITE_URL}/download`;
 const BATCH = 50;
 // Resend's default limit is 2 requests a second.
 const SEND_GAP_MS = 600;
@@ -40,10 +41,10 @@ function emailHtml(name: string | null): string {
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f7;padding:32px 16px;">
     <tr><td align="center">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:12px;padding:32px;">
-        <tr><td style="font-size:20px;font-weight:700;padding-bottom:20px;">Smallbird</td></tr>
+        <tr><td style="font-size:20px;font-weight:700;padding-bottom:20px;">SmallBird AI</td></tr>
         <tr><td style="font-size:16px;line-height:1.5;padding-bottom:8px;">${greeting}</td></tr>
         <tr><td style="font-size:16px;line-height:1.5;padding-bottom:24px;">
-          Your Smallbird account is ready. Download the app and get real-time answers in your next interview.
+          Your SmallBird AI account is ready. Download the app and get real-time answers in your next interview.
         </td></tr>
         <tr><td align="center" style="padding-bottom:28px;">
           <a href="${DOWNLOAD_URL}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;padding:14px 28px;border-radius:8px;">Download for Windows or Mac</a>
@@ -54,7 +55,7 @@ function emailHtml(name: string | null): string {
           3. See clear answers on screen in seconds. Hidden during screen share.
         </td></tr>
         <tr><td style="font-size:15px;line-height:1.5;color:#555555;padding-bottom:4px;">Need help? Just reply to this email.</td></tr>
-        <tr><td style="font-size:15px;line-height:1.5;color:#555555;">Team Smallbird</td></tr>
+        <tr><td style="font-size:15px;line-height:1.5;color:#555555;">Team SmallBird AI</td></tr>
       </table>
     </td></tr>
   </table>
@@ -65,7 +66,7 @@ function emailHtml(name: string | null): string {
 function emailText(name: string | null): string {
   return `${name ? `Hi ${name},` : "Hi there,"}
 
-Your Smallbird account is ready. Download the app and get real-time answers in your next interview.
+Your SmallBird AI account is ready. Download the app and get real-time answers in your next interview.
 
 Download for Windows or Mac: ${DOWNLOAD_URL}
 
@@ -75,7 +76,7 @@ Download for Windows or Mac: ${DOWNLOAD_URL}
 
 Need help? Just reply to this email.
 
-Team Smallbird`;
+Team SmallBird AI`;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -107,7 +108,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         from: FROM_ADDRESS,
         to: user.email,
-        reply_to: "support@smallbird.in",
+        reply_to: SUPPORT_EMAIL,
         subject: SUBJECT,
         html: emailHtml(name),
         text: emailText(name),

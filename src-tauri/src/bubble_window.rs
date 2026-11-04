@@ -120,7 +120,7 @@ pub fn restore_from_bubble(app: &AppHandle) -> Result<(), String> {
 fn build_bubble_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     let event_app = app.clone();
     WebviewWindowBuilder::new(app, BUBBLE_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
-        .title("Smallbird")
+        .title("SmallBird AI")
         .inner_size(BUBBLE_SIDE, BUBBLE_SIDE)
         .resizable(false)
         .decorations(false)

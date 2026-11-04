@@ -259,7 +259,7 @@ pub async fn restore_interview_overlay(app: AppHandle) -> Result<(), String> {
 
 /// Website origin — base for both the plain dashboard URL (signed-out
 /// fallback) and the handoff URL below.
-const WEBSITE_ORIGIN: &str = "https://smallbird.in";
+const WEBSITE_ORIGIN: &str = "https://smallbirdai.com";
 
 /// Requests a one-time magic-link token from the `dashboard-handoff`
 /// Supabase function for the signed-in user, so the browser "Open Dashboard"

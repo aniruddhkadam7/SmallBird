@@ -37,7 +37,7 @@ fn ping_all() {
     for function in WARM_FUNCTIONS {
         let result = client
             .request(reqwest::Method::OPTIONS, format!("{SUPABASE_URL}/functions/v1/{function}"))
-            .header("Origin", "https://smallbird.in")
+            .header("Origin", "https://smallbirdai.com")
             .header("Access-Control-Request-Method", "POST")
             .send();
         if let Err(err) = result {

@@ -65,7 +65,7 @@ export default function LoginPage() {
             <div aria-hidden className="absolute inset-0 rounded-2xl bg-accent/15 blur-lg" />
             <Image
               src="/smallbird-logo.png"
-              alt="Smallbird"
+              alt="SmallBird AI"
               width={56}
               height={56}
               priority
@@ -88,7 +88,7 @@ export default function LoginPage() {
               required
               autoComplete="username"
               className="input"
-              placeholder="you@smallbird.in"
+              placeholder="you@smallbirdai.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />

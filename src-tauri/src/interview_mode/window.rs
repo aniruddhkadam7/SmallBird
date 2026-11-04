@@ -9,7 +9,7 @@ use crate::overlay_window;
 pub use overlay_window::OverlayCaptureStatus;
 
 pub const OVERLAY_WINDOW_LABEL: &str = "interview-overlay";
-const OVERLAY_TITLE: &str = "Smallbird Interview — Overlay";
+const OVERLAY_TITLE: &str = "SmallBird AI Interview — Overlay";
 
 pub fn show_overlay_window(app: &AppHandle) -> Result<OverlayCaptureStatus, String> {
     overlay_window::show_overlay_window(app, OVERLAY_WINDOW_LABEL, OVERLAY_TITLE)

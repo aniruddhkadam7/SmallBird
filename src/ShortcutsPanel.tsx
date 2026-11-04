@@ -9,13 +9,13 @@ const ACTIONS: { key: ShortcutAction; label: string; description: string; defaul
   {
     key: "toggleOverlay",
     label: "Show / hide overlay",
-    description: "Opens or hides the Smallbird overlay (the answer window you use during a session).",
+    description: "Opens or hides the SmallBird AI overlay (the answer window you use during a session).",
     defaultLabel: "Ctrl + Shift + Space",
   },
   {
     key: "toggleMainWindow",
-    label: "Show / hide Smallbird",
-    description: "Brings the main Smallbird window forward, or tucks it back into the floating bubble.",
+    label: "Show / hide SmallBird AI",
+    description: "Brings the main SmallBird AI window forward, or tucks it back into the floating bubble.",
     defaultLabel: "none",
   },
   {
@@ -227,14 +227,14 @@ export function ShortcutsPanel() {
   return (
     <div className="shortcuts-panel">
       <p className="setup-hint" style={{ margin: 0 }}>
-        Keyboard shortcuts that work from anywhere, even while another app is in front. Closing Smallbird keeps
+        Keyboard shortcuts that work from anywhere, even while another app is in front. Closing SmallBird AI keeps
         it running in the system tray so these keep working — quit it from the tray icon.
       </p>
       {autostart !== null && (
         <label className="shortcut-autostart">
           <input type="checkbox" checked={autostart} onChange={(e) => toggleAutostart(e.target.checked)} />
           <span>
-            <span className="shortcut-row-label">Start Smallbird when Windows starts</span>
+            <span className="shortcut-row-label">Start SmallBird AI when Windows starts</span>
             <span className="setup-hint shortcut-row-description">
               Starts quietly in the tray, so shortcuts work right after you turn on your PC.
             </span>

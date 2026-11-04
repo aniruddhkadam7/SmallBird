@@ -89,7 +89,7 @@ pub async fn generate(access_token: &str, model: &str, messages: &[ChatMessage],
         .json(&serde_json::json!({ "provider": "anthropic", "payload": payload }))
         .send()
         .await
-        .map_err(|e| format!("failed to reach Smallbird's AI service: {e}"))?;
+        .map_err(|e| format!("failed to reach SmallBird AI's AI service: {e}"))?;
 
     let status = response.status();
     if !status.is_success() {
@@ -131,7 +131,7 @@ where
         .json(&serde_json::json!({ "provider": "anthropic", "payload": payload }))
         .send()
         .await
-        .map_err(|e| format!("failed to reach Smallbird's AI service: {e}"))?;
+        .map_err(|e| format!("failed to reach SmallBird AI's AI service: {e}"))?;
 
     let status = response.status();
     if !status.is_success() {

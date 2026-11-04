@@ -27,7 +27,7 @@ The edge functions in `backend/supabase/functions/` were wrapped with
 `_shared/cors.ts`. **They must be redeployed** (`supabase functions deploy
 request-otp verify-otp stt-token session-heartbeat usage-report llm-proxy`)
 or every browser call fails its CORS preflight. Allowed origins default to
-`smallbird.in`, `www.smallbird.in` and `localhost:5173/4173`; to test from a
+`smallbirdai.com`, `www.smallbirdai.com`, `smallbird.in`, `www.smallbird.in` and `localhost:5173/4173`; to test from a
 phone on your LAN or host the page elsewhere, set the `WEB_ALLOWED_ORIGINS`
 secret (comma-separated, e.g. `https://192.168.1.20:5173`).
 

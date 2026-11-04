@@ -22,12 +22,12 @@ const MENU_QUIT: &str = "quit";
 /// brings the main window back; "Quit Smallbird" ends any live session and
 /// actually exits.
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
-    let open_item = MenuItem::with_id(app, MENU_OPEN, "Open Smallbird", true, None::<&str>)?;
-    let quit_item = MenuItem::with_id(app, MENU_QUIT, "Quit Smallbird", true, None::<&str>)?;
+    let open_item = MenuItem::with_id(app, MENU_OPEN, "Open SmallBird AI", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, MENU_QUIT, "Quit SmallBird AI", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip("Smallbird — running in the background (shortcuts are active)")
+        .tooltip("SmallBird AI — running in the background (shortcuts are active)")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {

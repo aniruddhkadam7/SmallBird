@@ -163,7 +163,7 @@ pub fn show_fatal_error(message: &str) {
             None => message.to_string(),
         };
         unsafe {
-            MessageBoxW(None, &HSTRING::from(text), &HSTRING::from("Smallbird"), MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
+            MessageBoxW(None, &HSTRING::from(text), &HSTRING::from("SmallBird AI"), MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
         }
     }
     #[cfg(not(windows))]

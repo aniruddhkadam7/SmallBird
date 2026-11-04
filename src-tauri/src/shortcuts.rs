@@ -376,7 +376,7 @@ pub fn set_shortcut(
         let new_shortcut = parse(new)?;
         for other in Action::ALL.into_iter().filter(|a| *a != action) {
             if other.binding(&bindings).and_then(|acc| parse(acc).ok()) == Some(new_shortcut) {
-                return Err(format!("{new} is already used by another Smallbird shortcut."));
+                return Err(format!("{new} is already used by another SmallBird AI shortcut."));
             }
         }
     }

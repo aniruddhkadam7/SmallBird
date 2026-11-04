@@ -87,7 +87,7 @@ pub async fn mint(access_token: &str, force: bool) -> Result<MintedSession, Mint
         .json(&serde_json::json!({ "force": force }))
         .send()
         .await
-        .map_err(|e| MintError { message: format!("failed to reach Smallbird's transcription service: {e}"), code: None })?;
+        .map_err(|e| MintError { message: format!("failed to reach SmallBird AI's transcription service: {e}"), code: None })?;
 
     if !response.status().is_success() {
         return Err(parse_error(response).await);

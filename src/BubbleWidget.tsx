@@ -73,8 +73,8 @@ export function BubbleWidget() {
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         role="button"
-        aria-label="Restore Smallbird"
-        title="Restore Smallbird (drag to move)"
+        aria-label="Restore SmallBird AI"
+        title="Restore SmallBird AI (drag to move)"
       >
         <img src={smallbirdLogo} alt="" draggable={false} />
       </div>
@@ -88,8 +88,8 @@ export function BubbleWidget() {
             // the real exit (see tray.rs).
             invoke("hide_to_tray");
           }}
-          aria-label="Close Smallbird (keeps running in the tray)"
-          title="Close (Smallbird keeps running in the tray — quit from the tray icon)"
+          aria-label="Close SmallBird AI (keeps running in the tray)"
+          title="Close (SmallBird AI keeps running in the tray — quit from the tray icon)"
         >
           ✕
         </button>

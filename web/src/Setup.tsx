@@ -60,7 +60,7 @@ export default function Setup({ email, profile, onProfile, onContinue, onSignOut
   return (
     <main className="screen">
       <header className="row between">
-        <h1 className="brand small">Smallbird</h1>
+        <h1 className="brand small">SmallBird AI</h1>
         <button className="link" onClick={onSignOut}>
           Sign out
         </button>
@@ -71,7 +71,7 @@ export default function Setup({ email, profile, onProfile, onContinue, onSignOut
       </p>
       {maintenanceMessage && <p className="error">{maintenanceMessage}</p>}
       {entitlementError && <p className="error">{entitlementError}</p>}
-      {outOfMinutes && <p className="error">You're out of minutes. Add more at smallbird.in to start an interview.</p>}
+      {outOfMinutes && <p className="error">You're out of minutes. Add more at smallbirdai.com to start an interview.</p>}
 
       <label>
         Company

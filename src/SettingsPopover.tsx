@@ -79,20 +79,20 @@ export function SettingsPopover({ onClose, onContinueSession, sessionRunning }: 
             {section === "CONTEXT" && <AttachedDocumentsPanel />}
             {section === "PRIVACY" && (
               <p className="setup-hint">
-                Smallbird extracts text from your uploaded resume/CV and job description locally on this device.
+                SmallBird AI extracts text from your uploaded resume/CV and job description locally on this device.
                 Speech-to-text audio is sent, encrypted, directly to Deepgram (via a short-lived key issued per
                 session) for transcription — nowhere else. Interview analysis and Notes AI features route
-                through Smallbird's backend using your signed-in account, which is how usage against your plan
+                through SmallBird AI's backend using your signed-in account, which is how usage against your plan
                 is metered.
               </p>
             )}
             {section === "ABOUT" && (
               <>
                 <p className="setup-hint" style={{ margin: 0 }}>
-                  Smallbird — version {appVersion ?? "…"}
+                  SmallBird AI — version {appVersion ?? "…"}
                 </p>
                 <p className="setup-hint" style={{ margin: "6px 0 0" }}>
-                  SmallBird™ is a trademark of Smallbird. © {new Date().getFullYear()} Smallbird. All rights
+                  SmallBird AI™ is a trademark of SmallBird AI. © {new Date().getFullYear()} SmallBird AI (smallbirdai.com). All rights
                   reserved.
                 </p>
               </>

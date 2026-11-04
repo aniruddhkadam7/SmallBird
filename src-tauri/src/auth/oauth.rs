@@ -95,9 +95,9 @@ fn accept_one_callback(listener: TcpListener) -> Result<String, String> {
     });
 
     let (title, body) = if code.is_some() {
-        ("You're signed in", "You can close this tab and return to Smallbird.")
+        ("You're signed in", "You can close this tab and return to SmallBird AI.")
     } else {
-        ("Sign-in didn't complete", "You can close this tab and try again in Smallbird.")
+        ("Sign-in didn't complete", "You can close this tab and try again in SmallBird AI.")
     };
     let html = format!(
         "<html><body style=\"font-family:sans-serif;text-align:center;padding-top:80px\"><h2>{title}</h2><p>{body}</p></body></html>"

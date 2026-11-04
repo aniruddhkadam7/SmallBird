@@ -1,7 +1,7 @@
 # Smallbird Admin Console
 
 Internal-only admin app for Smallbird staff. Separate app, separate domain
-(`admin.smallbird.in`), separate authorization from the customer product.
+(`admin.smallbirdai.com`), separate authorization from the customer product.
 
 **Nothing here is trusted for authorization.** Every admin action calls a
 Supabase Edge Function (`admin-*` in `../backend/supabase/functions/`) that
@@ -44,8 +44,8 @@ There's no self-service admin signup. To grant someone access:
    project's root directory to `admin-console` if importing the whole
    monorepo).
 2. Set the two env vars above in Vercel's project settings.
-3. Add a custom domain `admin.smallbird.in` in Vercel, then add the CNAME
-   record it gives you to the existing `smallbird.in` DNS zone. No new
+3. Add a custom domain `admin.smallbirdai.com` in Vercel, then add the CNAME
+   record it gives you to the `smallbirdai.com` DNS zone. No new
    domain purchase needed -- this is a subdomain of the domain you already
    own.
 

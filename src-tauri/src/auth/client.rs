@@ -84,7 +84,7 @@ pub async fn request_otp(email: &str) -> Result<(), String> {
         .json(&serde_json::json!({ "email": email }))
         .send()
         .await
-        .map_err(|e| format!("failed to reach Smallbird's auth service: {e}"))?;
+        .map_err(|e| format!("failed to reach SmallBird AI's auth service: {e}"))?;
 
     if !response.status().is_success() {
         return Err(parse_auth_error(response).await);
@@ -104,7 +104,7 @@ pub async fn verify_otp(email: &str, code: &str, name: Option<&str>) -> Result<A
         .json(&serde_json::json!({ "email": email, "code": code, "name": name }))
         .send()
         .await
-        .map_err(|e| format!("failed to reach Smallbird's auth service: {e}"))?;
+        .map_err(|e| format!("failed to reach SmallBird AI's auth service: {e}"))?;
 
     if !response.status().is_success() {
         return Err(parse_auth_error(response).await);
@@ -129,7 +129,7 @@ pub async fn refresh_session(refresh_token: &str, email: &str) -> Result<AuthSes
         .json(&serde_json::json!({ "refresh_token": refresh_token }))
         .send()
         .await
-        .map_err(|e| format!("failed to reach Smallbird's auth service: {e}"))?;
+        .map_err(|e| format!("failed to reach SmallBird AI's auth service: {e}"))?;
 
     if !response.status().is_success() {
         // A rejected refresh token means the session is no longer valid —
@@ -176,7 +176,7 @@ pub async fn get_entitlement(access_token: &str) -> Result<super::commands::Enti
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
         .send()
         .await
-        .map_err(|e| format!("failed to reach Smallbird's account service: {e}"))?;
+        .map_err(|e| format!("failed to reach SmallBird AI's account service: {e}"))?;
 
     if !response.status().is_success() {
         return Err(parse_auth_error(response).await);

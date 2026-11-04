@@ -43,8 +43,8 @@ export default function Login({ onSignedIn }: { onSignedIn: (session: AuthSessio
 
   return (
     <main className="screen center">
-      <h1 className="brand">Smallbird</h1>
-      <p className="muted">Sign in to start. Use the same email as your Smallbird account.</p>
+      <h1 className="brand">SmallBird AI</h1>
+      <p className="muted">Sign in to start. Use the same email as your SmallBird AI account.</p>
 
       {!sent ? (
         <form onSubmit={submitEmail} className="stack">

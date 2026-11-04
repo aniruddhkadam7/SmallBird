@@ -12,6 +12,8 @@
 // (comma-separated) when the page is hosted somewhere else.
 
 const DEFAULT_ORIGINS = [
+  "https://smallbirdai.com",
+  "https://www.smallbirdai.com",
   "https://smallbird.in",
   "https://www.smallbird.in",
   "http://localhost:5173",

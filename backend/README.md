@@ -77,7 +77,7 @@ supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
 supabase secrets set DEEPGRAM_API_KEY=<a Deepgram key with project key-management scope>
 supabase secrets set DEEPGRAM_PROJECT_ID=<your Deepgram project id>
 supabase secrets set RAZORPAY_WEBHOOK_SECRET=<shown when you create the webhook in Razorpay's dashboard>
-supabase secrets set RESEND_API_KEY=<from resend.com/api-keys — must be able to send from smallbird.in>
+supabase secrets set RESEND_API_KEY=<from resend.com/api-keys — must be able to send from the MAIL_DOMAIN domain (smallbird.in until smallbirdai.com is verified in Resend, then `supabase secrets set MAIL_DOMAIN=smallbirdai.com`)>
 ```
 
 `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` are injected
@@ -120,7 +120,7 @@ supabase functions deploy verify-otp
    subscribed to `order.paid`, `subscription.charged`, `subscription.cancelled`,
    `subscription.halted`, `refund.created`, `payment.failed`.
 5. Money-in/failed/halted events also send an operational email to
-   `payments@smallbird.in` via Resend (reusing `RESEND_API_KEY`) — see
+   `payments@<MAIL_DOMAIN>` via Resend (reusing `RESEND_API_KEY`) — see
    `notifyOwner` in `razorpay-webhook/index.ts`. Refunds are issued directly
    from the Razorpay Dashboard (Payments -> find payment -> Refund); the
    `refund.created` webhook then syncs the account back to `free`

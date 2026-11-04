@@ -182,7 +182,7 @@ export function Account({ onClose, onSessionChange }: { onClose: () => void; onS
           {step === "EMAIL" && (
             <>
               <p className="setup-hint">
-                Log in with your Smallbird account to use Interview Mode and Notes. We'll email you a 6-digit
+                Log in with your SmallBird AI account to use Interview Mode and Notes. We'll email you a 6-digit
                 code — no password needed.
               </p>
               <div style={{ marginTop: "12px" }}>
@@ -304,7 +304,7 @@ export function Account({ onClose, onSessionChange }: { onClose: () => void; onS
 
           <div className="popover-footer" style={{ justifyContent: "space-between" }}>
             {appVersion && (
-              <span style={{ color: "var(--text-faint)", fontSize: "0.72rem" }}>Smallbird v{appVersion}</span>
+              <span style={{ color: "var(--text-faint)", fontSize: "0.72rem" }}>SmallBird AI v{appVersion}</span>
             )}
             <Button variant="ghost" onClick={onClose}>
               Close

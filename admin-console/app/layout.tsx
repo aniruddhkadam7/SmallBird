@@ -7,7 +7,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const playfair = Playfair_Display({ subsets: ["latin"], weight: "700", variable: "--font-brand" });
 
 export const metadata: Metadata = {
-  title: "Smallbird Admin",
+  title: "SmallBird AI Admin",
   description: "Internal admin console -- authorized staff only.",
   robots: { index: false, follow: false },
   // Added to an iPhone home screen, open full-screen like an app. The status

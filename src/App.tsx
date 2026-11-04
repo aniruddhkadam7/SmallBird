@@ -978,9 +978,9 @@ function App() {
 
       <header className="compact-header">
         <div className="compact-header-brand">
-          <img className="header-logo" src={smallbirdLogo} alt="Smallbird" />
+          <img className="header-logo" src={smallbirdLogo} alt="SmallBird AI" />
           <span className="header-product">
-            SmallBird
+            SmallBird AI
             <sup style={{ fontSize: "0.55em", fontWeight: 400, marginLeft: "1px" }}>™</sup>
           </span>
           {/* The only visible sign an update is happening — everything else
@@ -1261,7 +1261,7 @@ function App() {
                           className="audio-test-btn"
                           onClick={audioTest.start}
                           disabled={audioTest.busy || sessionState !== "IDLE"}
-                          title="Check that Smallbird can hear and transcribe your meeting audio"
+                          title="Check that SmallBird AI can hear and transcribe your meeting audio"
                         >
                           {audioTest.state.phase === "listening" || audioTest.state.phase === "connecting" ? "🔴 Listening..." : "🔊 Test Audio"}
                         </Button>
