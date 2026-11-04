@@ -1095,7 +1095,7 @@ dependencies = [
 
 [[package]]
 name = "desktop"
-version = "0.1.39"
+version = "0.1.40"
 dependencies = [
  "base64 0.23.1",
  "cpal",
