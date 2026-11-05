@@ -6,6 +6,7 @@ import { PageLoading } from "@/components/PageLoading";
 import { PricesPanel } from "@/components/pricing/PricesPanel";
 import { SalePanel } from "@/components/pricing/SalePanel";
 import { AnnouncementPanel } from "@/components/pricing/AnnouncementPanel";
+import { EmailCampaignPanel } from "@/components/pricing/EmailCampaignPanel";
 import type { PricingData } from "@/lib/pricing";
 
 // Prices, sales and the website announcement. Everything here is read live
@@ -31,6 +32,7 @@ export default function PricingPage() {
 
       <SalePanel plans={data.plans} onChanged={refresh} />
       <AnnouncementPanel promotions={data.promotions} onChanged={refresh} />
+      <EmailCampaignPanel plans={data.plans} />
       <PricesPanel plans={data.plans} onChanged={refresh} />
     </div>
   );

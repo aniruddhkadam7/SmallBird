@@ -117,3 +117,38 @@ export async function pricingAction<T = { ok: true }>(body: Record<string, unkno
   if (!session) throw new Error("Session expired — please sign in again.");
   return callAdminFunction<T>(session.access_token, "admin-pricing", body);
 }
+
+// ---- Email campaigns (admin-campaign Edge Function) ----
+
+export type Audience = "all" | "free" | "buyers" | "non_buyers";
+
+export interface CampaignRow {
+  id: string;
+  name: string;
+  subject: string;
+  audience: Audience;
+  status: "sending" | "sent";
+  recipient_count: number;
+  sent_count: number;
+  failed_count: number;
+  created_by_email: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export interface CampaignData {
+  counts: Record<Audience, number>;
+  unsubscribed: number;
+  campaigns: CampaignRow[];
+  emailConfigured: boolean;
+}
+
+/// Calls admin-campaign with the signed-in admin's session.
+export async function campaignAction<T = { ok: true }>(body: Record<string, unknown>): Promise<T> {
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) throw new Error("Session expired — please sign in again.");
+  return callAdminFunction<T>(session.access_token, "admin-campaign", body);
+}
