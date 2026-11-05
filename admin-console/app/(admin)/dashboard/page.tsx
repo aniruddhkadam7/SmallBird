@@ -20,6 +20,7 @@ import { useAdminQuery, AdminApiError } from "@/lib/useAdminQuery";
 import { Unauthorized } from "@/components/Unauthorized";
 import { PageLoading } from "@/components/PageLoading";
 import { formatRupees } from "@/lib/format";
+import { TrafficCharts } from "@/components/TrafficCharts";
 
 interface DashboardStats {
   totalUsers: number;
@@ -319,6 +320,8 @@ export default function DashboardPage() {
           />
         </div>
       </section>
+
+      <TrafficCharts />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Tile icon={UserPlus} href="/users?segment=joined_today" label="Sign-ups today" value={stats.signupsToday} sub={`${stats.signupsThisWeek} this week`} />
