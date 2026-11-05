@@ -8,22 +8,25 @@
 // Unlike the admin-* functions' open `*` (see admin.ts), these are
 // restricted to known origins: request-otp is reachable without a JWT, and
 // there's no reason for an arbitrary site to be able to drive it from a
-// visitor's browser. Override with the WEB_ALLOWED_ORIGINS secret
-// (comma-separated) when the page is hosted somewhere else.
+// visitor's browser. The WEB_ALLOWED_ORIGINS secret (comma-separated) ADDS
+// origins (a preview site, local dev); it can never remove our own domains.
+// It used to replace the whole list, so a value set before the move to
+// smallbirdai.com silently blocked the resume builder and the phone page
+// ("Couldn't reach SmallBird AI") on the new domain.
 
-const DEFAULT_ORIGINS = [
+const FIRST_PARTY_ORIGINS = [
   "https://smallbirdai.com",
   "https://www.smallbirdai.com",
   "https://smallbird.in",
   "https://www.smallbird.in",
-  "http://localhost:5173",
-  "http://localhost:4173",
 ];
+
+const DEV_ORIGINS = ["http://localhost:5173", "http://localhost:4173"];
 
 function allowedOrigins(): string[] {
   const configured = Deno.env.get("WEB_ALLOWED_ORIGINS");
-  if (!configured) return DEFAULT_ORIGINS;
-  return configured.split(",").map((o) => o.trim()).filter(Boolean);
+  const extra = configured ? configured.split(",").map((o) => o.trim()).filter(Boolean) : DEV_ORIGINS;
+  return [...FIRST_PARTY_ORIGINS, ...extra];
 }
 
 function corsHeadersFor(req: Request): Headers {
