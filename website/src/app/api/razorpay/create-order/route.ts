@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { getPlan, planAmount, PAID_PLAN_IDS, type PlanId } from "@/lib/plans"
+import { PAID_PLAN_IDS, type PlanId } from "@/lib/plans"
+import { currentAmount, getLivePricing } from "@/lib/live-pricing"
 import { currencyForCountry } from "@/lib/currency"
 
 // Creates a Razorpay Order for a one-time pass (Starter / Pro / Pro+).
@@ -20,7 +21,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unknown plan" }, { status: 400 })
   }
 
-  const plan = getPlan(planId)
+  // Today's price straight from the database (sale price while a sale is
+  // on), never a cached copy -- the webhook checks the amount against it.
+  const pricing = await getLivePricing({ fresh: true })
   // Decided here from the request's country, never by the client, so
   // nobody outside India can pick the rupee price.
   const currency = currencyForCountry(request.headers.get("x-vercel-ip-country"))
@@ -32,7 +35,7 @@ export async function POST(request: Request) {
     method: "POST",
     headers: { Authorization: `Basic ${auth}`, "content-type": "application/json" },
     body: JSON.stringify({
-      amount: planAmount(plan, currency),
+      amount: currentAmount(pricing[planId], currency),
       currency,
       // Razorpay's free-form metadata (max 15 keys) — the razorpay-webhook
       // Edge Function reads user_id/plan_id from here to credit the right

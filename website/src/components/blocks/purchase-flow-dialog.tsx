@@ -13,6 +13,7 @@ import {
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { PLAN_LABELS, usePurchaseFlow } from "@/lib/purchase-flow"
 import { getPlan } from "@/lib/plans"
+import { usePlanPrice } from "@/lib/pricing-context"
 import { DownloadNextSteps } from "@/components/blocks/download-next-steps"
 import { LocalPrice } from "@/components/blocks/local-price"
 
@@ -57,6 +58,7 @@ export function PurchaseFlowDialog() {
   const [email, setEmail] = useState("")
   const [name, setName] = useState("")
   const [code, setCode] = useState("")
+  const livePrice = usePlanPrice(activeFlow?.plan ?? "free")
 
   if (!activeFlow) return null
 
@@ -65,8 +67,8 @@ export function PurchaseFlowDialog() {
   const priceSummary = (
     <LocalPrice
       charged
-      inr={plan.cadence ? `${plan.price} ${plan.cadence}` : `${plan.price} — no payment needed`}
-      usd={plan.cadence ? `${plan.usd.price} ${plan.cadence}` : `${plan.usd.price} — no payment needed`}
+      inr={plan.cadence ? `${livePrice.inr.now} ${plan.cadence}` : `${livePrice.inr.now} — no payment needed`}
+      usd={plan.cadence ? `${livePrice.usd.now} ${plan.cadence}` : `${livePrice.usd.now} — no payment needed`}
     />
   )
 

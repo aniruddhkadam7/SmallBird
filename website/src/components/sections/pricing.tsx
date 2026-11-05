@@ -8,6 +8,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { cn } from "@/lib/utils"
 import { usePurchaseFlow } from "@/lib/purchase-flow"
 import { PLANS } from "@/lib/plans"
+import { PlanAmount, PlanNote, PlanSaleBadge } from "@/components/blocks/plan-price"
 import { siVisa, siGooglepay, siPhonepe, siPaytm } from "simple-icons"
 import { LocalPrice } from "@/components/blocks/local-price"
 import { CurrencyToggle } from "@/components/blocks/currency-toggle"
@@ -78,15 +79,16 @@ export function Pricing({ standalone = false }: { standalone?: boolean }) {
                   <CardTitle className="text-lg">
                     {plan.emoji} {plan.name}
                   </CardTitle>
+                  <PlanSaleBadge id={plan.id} />
                   <div className="mt-2 flex items-baseline gap-1.5">
                     <span className="text-3xl font-semibold tracking-tight">
-                      <LocalPrice inr={plan.price} usd={plan.usd.price} />
+                      <PlanAmount id={plan.id} />
                     </span>
                     {plan.cadence ? (
                       <span className="text-sm text-muted-foreground">{plan.cadence}</span>
                     ) : null}
                   </div>
-                  <p className="text-xs font-medium text-muted-foreground"><LocalPrice inr={plan.billingNote} usd={plan.usd.billingNote} /></p>
+                  <p className="text-xs font-medium text-muted-foreground"><PlanNote id={plan.id} /></p>
                   <CardDescription>{plan.description}</CardDescription>
                 </CardHeader>
                 <CardContent className="flex-1">

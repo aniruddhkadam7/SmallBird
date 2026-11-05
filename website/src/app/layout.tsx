@@ -7,6 +7,8 @@ import "./globals.css";
 import { GlassFilter } from "@/components/ui/liquid-glass-button";
 import { PurchaseFlowDialog } from "@/components/blocks/purchase-flow-dialog";
 import { PurchaseFlowProvider } from "@/lib/purchase-flow";
+import { PricingProvider } from "@/lib/pricing-context";
+import { getLivePricing } from "@/lib/live-pricing";
 import { siteName, siteUrl } from "@/lib/site";
 import { OrganizationJsonLd, WebsiteJsonLd } from "@/components/seo/json-ld";
 import { currencyScript } from "@/lib/currency";
@@ -72,7 +74,7 @@ export const metadata: Metadata = {
   // (square, multiples of 48px) -- Google Search ignores non-square icons.
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
@@ -88,6 +90,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body>
         <OrganizationJsonLd />
         <WebsiteJsonLd />
+        <PricingProvider pricing={await getLivePricing()}>
         <PurchaseFlowProvider>
           <div id="top" className="relative">
             <GlassFilter />
@@ -95,6 +98,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <PurchaseFlowDialog />
           </div>
         </PurchaseFlowProvider>
+        </PricingProvider>
         <Analytics />
         <Suspense fallback={null}>
           <AnalyticsTracker />

@@ -16,6 +16,7 @@ import {
   Settings,
   BarChart3,
   FileText,
+  Tag,
   type LucideIcon,
 } from "lucide-react";
 
@@ -29,6 +30,7 @@ const BUILT: { href: string; label: string; icon: LucideIcon }[] = [
   // direct links from Sessions/Users, just not linked from here.
   { href: "/sessions", label: "Sessions", icon: Video },
   { href: "/payments", label: "Payments", icon: Receipt },
+  { href: "/pricing", label: "Pricing & Offers", icon: Tag },
   { href: "/resume-builder", label: "Resume Builder", icon: FileText },
   { href: "/ai-usage", label: "AI Usage & Models", icon: Cpu },
   { href: "/abuse", label: "Abuse / Risk", icon: ShieldAlert },

@@ -115,6 +115,14 @@ async function amountMatchesPlan(
 ): Promise<boolean> {
   const price = currency === "USD" ? plan.priceUsdCents : currency === "INR" ? plan.pricePaise : null;
   if (price !== null && paid === price) return true;
+  // Sale prices, and the previous price just after a change (migration 0066).
+  const { data: accepted, error: acceptError } = await admin.rpc("plan_accepts_amount", {
+    p_plan_id: planId,
+    p_currency: currency,
+    p_amount: paid,
+  });
+  if (acceptError) console.error("razorpay-webhook: plan_accepts_amount failed", acceptError);
+  if (accepted === true) return true;
   console.error("razorpay-webhook: amount/plan mismatch", { planId, price, paid, currency, userId, ref });
   const email = await lookupUserEmail(userId);
   await notifyOwner(

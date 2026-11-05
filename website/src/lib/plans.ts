@@ -16,6 +16,9 @@ export interface Plan {
   id: PlanId
   name: string
   emoji: string
+  // Default prices. The live price (and any sale) comes from public.plans --
+  // see lib/live-pricing.ts; these are the fallback and the hand-written
+  // copy used when the live price matches.
   price: string
   priceInPaise: number
   billingNote: string
@@ -107,13 +110,6 @@ export function getPlan(id: PlanId): Plan {
   const plan = PLANS.find((p) => p.id === id);
   if (!plan) throw new Error(`Unknown plan id: ${id}`);
   return plan;
-}
-
-// Amount for a Razorpay order, in the currency's smallest unit. These must
-// match public.plans.price_inr_paise / price_usd_cents (backend migration
-// 0065) -- the webhook refuses to credit a payment that doesn't.
-export function planAmount(plan: Plan, currency: Currency): number {
-  return currency === "USD" ? plan.usd.cents : plan.priceInPaise
 }
 
 export const PAID_PLAN_IDS = new Set<PlanId>(["starter", "pro", "pro-plus"]);
