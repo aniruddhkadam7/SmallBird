@@ -36,6 +36,13 @@ export async function unsubscribeOneClickUrl(userId: string): Promise<string> {
   return `${base}/functions/v1/unsubscribe?u=${userId}&t=${await sign(userId)}`;
 }
 
+// "priya kumar" -> "Priya"; nothing when there's no usable name.
+function firstName(name: string | null): string | null {
+  const first = name?.trim().split(/\s+/)[0];
+  if (!first) return null;
+  return first.charAt(0).toUpperCase() + first.slice(1);
+}
+
 export interface CampaignContent {
   headline: string;
   body: string;
@@ -56,7 +63,8 @@ function absoluteHref(href: string): string {
 }
 
 export function campaignHtml(content: CampaignContent, name: string | null, unsubscribeUrl: string): string {
-  const greeting = name ? `Hi ${escapeHtml(name.split(/\s+/)[0])},` : "Hi there,";
+  const first = firstName(name);
+  const greeting = first ? `Hi ${escapeHtml(first)},` : "Hi there,";
   const button =
     content.ctaLabel && content.ctaHref
       ? `<tr><td align="center" style="padding:6px 0 26px;">
@@ -88,5 +96,5 @@ export function campaignHtml(content: CampaignContent, name: string | null, unsu
 
 export function campaignText(content: CampaignContent, name: string | null, unsubscribeUrl: string): string {
   const cta = content.ctaLabel && content.ctaHref ? `\n${content.ctaLabel}: ${absoluteHref(content.ctaHref)}\n` : "";
-  return `${content.headline}\n\n${name ? `Hi ${name.split(/\s+/)[0]},` : "Hi there,"}\n\n${content.body}\n${cta}\nTeam ${BRAND}\n\nUnsubscribe: ${unsubscribeUrl}\n`;
+  return `${content.headline}\n\n${firstName(name) ? `Hi ${firstName(name)},` : "Hi there,"}\n\n${content.body}\n${cta}\nTeam ${BRAND}\n\nUnsubscribe: ${unsubscribeUrl}\n`;
 }
