@@ -1,9 +1,11 @@
 "use client";
 
-// Home page graphs: website visitors per day and new sign-ups per day, with a
-// 7 / 14 / 30 / 90 day switch. Read with the same admin_web_analytics function
-// as the Analytics page (admin-only, days in India time); each bar is tappable
-// for that day's numbers. Bars are plain CSS, like the rest of the console.
+// Home page graphs, with one 7 / 14 / 30 / 90 day switch: website visitors and
+// new sign-ups per day (admin_web_analytics, the same function as the
+// Analytics page) and money received and interviews per day
+// (admin_daily_business, migration 0069). Days are in India time and each bar
+// is tappable for that day's numbers. Bars are plain CSS, like the rest of
+// the console.
 
 import { useState } from "react";
 import Link from "next/link";
@@ -19,6 +21,15 @@ interface Day {
   paid: number;
 }
 
+interface BusinessDay {
+  day: string;
+  revenuePaise: number;
+  payments: number;
+  interviews: number;
+  minutes: number;
+  activeUsers: number;
+}
+
 const RANGES = [7, 14, 30, 90] as const;
 
 async function fetchDaily(days: number): Promise<Day[]> {
@@ -26,6 +37,15 @@ async function fetchDaily(days: number): Promise<Day[]> {
   if (error) throw new Error(error.message);
   return ((data as { daily?: Day[] })?.daily ?? []) as Day[];
 }
+
+async function fetchBusiness(days: number): Promise<BusinessDay[]> {
+  const { data, error } = await createClient().rpc("admin_daily_business", { p_days: days });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as BusinessDay[];
+}
+
+const rupees = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
+const plain = (n: number) => n.toLocaleString("en-IN");
 
 const shortDay = (day: string) => new Date(`${day}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 const longDay = (day: string) =>
@@ -39,20 +59,22 @@ function axis(max: number) {
   return { top: step * 2, ticks: [0, step, step * 2] };
 }
 
-function BarChart({
+function BarChart<D extends { day: string }>({
   title,
   days,
   pick,
   unit,
   color,
   secondary,
+  format = plain,
 }: {
   title: string;
-  days: Day[];
-  pick: (d: Day) => number;
+  days: D[];
+  pick: (d: D) => number;
   unit: string;
   color: string;
-  secondary?: (d: Day) => string;
+  secondary?: (d: D) => string;
+  format?: (n: number) => string;
 }) {
   const [hover, setHover] = useState<string | null>(null);
   const max = Math.max(0, ...days.map(pick));
@@ -61,22 +83,23 @@ function BarChart({
   // The tapped day, else the latest day with anything in it, else the last day.
   const focus = days.find((d) => d.day === hover) ?? days[days.length - 1];
   const total = days.reduce((sum, d) => sum + pick(d), 0);
-  const showCounts = days.length <= 14;
+  // Numbers over the bars only while they are wide enough to fit them.
+  const showCounts = days.length <= 14 && format(max).length <= 5;
 
   return (
     <div>
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <p className="text-sm font-semibold text-ink">{title}</p>
         <p className="text-xs text-muted">
-          <b className="tabular-nums text-ink">{total.toLocaleString()}</b> in {days.length} days
+          <b className="tabular-nums text-ink">{format(total)}</b> in {days.length} days
         </p>
       </div>
 
       <div className="flex gap-2">
-        <div className="relative h-36 w-7 flex-shrink-0 text-right text-[10px] tabular-nums text-muted" aria-hidden>
+        <div className="relative h-36 w-11 flex-shrink-0 text-right text-[10px] tabular-nums text-muted" aria-hidden>
           {ticks.map((t) => (
             <span key={t} className="absolute right-0 -translate-y-1/2" style={{ bottom: `${(t / top) * 100}%` }}>
-              {t}
+              {format(t)}
             </span>
           ))}
         </div>
@@ -93,13 +116,13 @@ function BarChart({
                   <button
                     key={d.day}
                     type="button"
-                    aria-label={`${longDay(d.day)}: ${v} ${unit}`}
+                    aria-label={`${longDay(d.day)}: ${format(v)} ${unit}`}
                     onMouseEnter={() => setHover(d.day)}
                     onClick={() => setHover(d.day)}
                     className="group relative flex h-full min-w-0 flex-1 flex-col justify-end"
                   >
                     {showCounts && v > 0 && (
-                      <span className="mb-0.5 text-center text-[10px] font-medium tabular-nums text-muted">{v}</span>
+                      <span className="mb-0.5 truncate text-center text-[10px] font-medium tabular-nums text-muted">{format(v)}</span>
                     )}
                     <span
                       className={`block w-full rounded-t-[3px] transition-opacity ${color} ${active ? "opacity-100" : "opacity-60 group-hover:opacity-90"}`}
@@ -122,7 +145,7 @@ function BarChart({
 
       {focus && (
         <p className="mt-2 rounded-lg bg-subtle px-3 py-1.5 text-xs text-muted">
-          <b className="text-ink">{longDay(focus.day)}</b> — <b className="tabular-nums text-ink">{pick(focus).toLocaleString()}</b> {unit}
+          <b className="text-ink">{longDay(focus.day)}</b> — <b className="tabular-nums text-ink">{format(pick(focus))}</b> {unit}
           {secondary ? ` · ${secondary(focus)}` : ""}
         </p>
       )}
@@ -136,11 +159,17 @@ export function TrafficCharts() {
     keepPreviousData: true,
     revalidateOnFocus: true,
   });
+  // Until migration 0069 is applied this fails; the traffic graphs still show.
+  const { data: business } = useSWR(["dashboard_business", range], () => fetchBusiness(range), {
+    keepPreviousData: true,
+    revalidateOnFocus: true,
+    shouldRetryOnError: false,
+  });
 
   return (
     <section className="card space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-ink">Traffic & sign-ups</h2>
+        <h2 className="text-sm font-semibold text-ink">Trends</h2>
         <div className="flex items-center gap-2">
           <div className="flex gap-1">
             {RANGES.map((r) => (
@@ -180,6 +209,27 @@ export function TrafficCharts() {
             color="bg-emerald-500"
             secondary={(d) => `${d.paid} ${d.paid === 1 ? "payment" : "payments"}`}
           />
+          {business && (
+            <>
+              <BarChart
+                title="Money received per day"
+                days={business}
+                pick={(d) => d.revenuePaise / 100}
+                format={rupees}
+                unit="received"
+                color="bg-amber-500"
+                secondary={(d) => `${d.payments} ${d.payments === 1 ? "payment" : "payments"}`}
+              />
+              <BarChart
+                title="Interviews per day"
+                days={business}
+                pick={(d) => d.interviews}
+                unit="interviews"
+                color="bg-violet-500"
+                secondary={(d) => `${d.activeUsers} ${d.activeUsers === 1 ? "person" : "people"} · ${d.minutes} min used`}
+              />
+            </>
+          )}
         </div>
       )}
     </section>
