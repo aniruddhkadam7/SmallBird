@@ -30,7 +30,7 @@ export default function PricingPage() {
         </p>
       </div>
 
-      <SalePanel plans={data.plans} onChanged={refresh} />
+      <SalePanel plans={data.plans} promotions={data.promotions} onChanged={refresh} />
       <AnnouncementPanel promotions={data.promotions} onChanged={refresh} />
       <EmailCampaignPanel plans={data.plans} />
       <PricesPanel plans={data.plans} onChanged={refresh} />

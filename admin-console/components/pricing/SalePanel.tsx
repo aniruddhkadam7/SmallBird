@@ -10,7 +10,9 @@ import {
   rupees,
   saleStatus,
   when,
+  windowStatus,
   type PlanRow,
+  type PromotionRow,
   type Theme,
 } from "@/lib/pricing";
 import { ThemePicker } from "@/components/pricing/ThemePicker";
@@ -35,7 +37,15 @@ function errorText(err: unknown, fallback: string) {
   return err instanceof AdminApiError || err instanceof Error ? err.message : fallback;
 }
 
-export function SalePanel({ plans, onChanged }: { plans: PlanRow[]; onChanged: () => void }) {
+export function SalePanel({
+  plans,
+  promotions,
+  onChanged,
+}: {
+  plans: PlanRow[];
+  promotions: PromotionRow[];
+  onChanged: () => void;
+}) {
   const paid = plans.filter((p) => p.price_inr_paise > 0 && p.is_active);
   const onSale = paid.filter((p) => ["live", "scheduled"].includes(saleStatus(p)));
 
@@ -145,11 +155,20 @@ export function SalePanel({ plans, onChanged }: { plans: PlanRow[]; onChanged: (
     }
   }
 
+  // Announcements (banner, popup, decoration) showing on the website now.
+  // They're separate from the sale itself, so ending the sale on every plan
+  // offers to take them down too -- otherwise the site keeps advertising it.
+  const liveAnnouncements = promotions.filter((p) => windowStatus(p.starts_at, p.ends_at) !== "ended");
+  const [alsoEndAnnouncements, setAlsoEndAnnouncements] = useState(true);
+
   async function endSale(planIds?: string[]) {
     setLoading(true);
     setError(null);
     try {
       await pricingAction({ type: "end_sale", planIds });
+      if (!planIds && alsoEndAnnouncements) {
+        for (const promo of liveAnnouncements) await pricingAction({ type: "end_promotion", id: promo.id });
+      }
       onChanged();
     } catch (err) {
       setError(errorText(err, "Failed to end the sale"));
@@ -188,6 +207,20 @@ export function SalePanel({ plans, onChanged }: { plans: PlanRow[]; onChanged: (
               </li>
             ))}
           </ul>
+          {liveAnnouncements.length > 0 && (
+            <label className="mt-3 flex items-start gap-1.5 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={alsoEndAnnouncements}
+                onChange={(e) => setAlsoEndAnnouncements(e.target.checked)}
+              />
+              <span>
+                Also take down the website announcement ({liveAnnouncements.map((p) => p.title).join(", ")}) — its banner,
+                popup and festive decoration
+              </span>
+            </label>
+          )}
           <button type="button" className="btn-danger mt-3" disabled={loading} onClick={() => endSale()}>
             End sale on all plans now
           </button>
