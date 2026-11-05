@@ -6,13 +6,18 @@
 //     plans: [{ planId, inrPaise: number|null, usdCents: number|null }] }
 //   { type: "end_sale", planIds? }                 (all plans when omitted)
 //   { type: "save_promotion", title, message?, ctaLabel?, ctaHref?,
-//     showBanner, showPopup, startsAt?, endsAt? }
+//     showBanner, showPopup, theme?, startsAt?, endsAt? }
+//   { type: "update_promotion", id, ...same fields as save_promotion }
 //   { type: "end_promotion", id }
+//   { type: "delete_promotion", id }            (removes it from history)
 //
 // The website reads these tables directly (migration 0066), so changes show
 // there within about a minute. Every write is recorded in admin_audit_logs.
 
 import { adminErrorResponse, AdminError, handlePreflight, jsonResponse, requireAdmin, type AdminContext } from "../_shared/admin.ts";
+
+// Festive animation shown with an announcement (migration 0067).
+const THEMES = ["none", "diwali", "newyear", "confetti"];
 
 const PLAN_COLUMNS =
   "id, display_name, included_minutes, is_active, price_inr_paise, price_usd_cents, sale_price_inr_paise, sale_price_usd_cents, sale_label, sale_starts_at, sale_ends_at, previous_price_inr_paise, previous_price_usd_cents, price_changed_at, updated_at";
@@ -51,6 +56,25 @@ async function audit(ctx: AdminContext, action: string, previous: unknown, next:
     metadata: { ip: ctx.ip, user_agent: ctx.userAgent },
   });
   if (error) console.error("admin-pricing: audit log failed", error);
+}
+
+// Validated site_promotions row from a save/update request body.
+function promotionRow(body: Record<string, unknown>) {
+  const title = optionalText(body.title, "Headline", 120) ?? bad("Write a headline");
+  const message = optionalText(body.message, "Message", 300);
+  const ctaLabel = optionalText(body.ctaLabel, "Button text", 40);
+  const ctaHref = optionalText(body.ctaHref, "Button link", 300);
+  if (ctaHref && !ctaHref.startsWith("/") && !ctaHref.startsWith("https://")) bad("Button link must start with / or https://");
+  if (Boolean(ctaLabel) !== Boolean(ctaHref)) bad("Set both the button text and the button link, or neither");
+  const showBanner = body.showBanner === true;
+  const showPopup = body.showPopup === true;
+  if (!showBanner && !showPopup) bad("Choose banner, popup, or both");
+  const theme = (body.theme as string | undefined) ?? "none";
+  if (!THEMES.includes(theme)) bad("Unknown animation");
+  const startsAt = optionalDate(body.startsAt, "Start") ?? new Date().toISOString();
+  const endsAt = optionalDate(body.endsAt, "End");
+  if (endsAt && Date.parse(endsAt) <= Date.parse(startsAt)) bad("The announcement must end after it starts");
+  return { title, message, cta_label: ctaLabel, cta_href: ctaHref, show_banner: showBanner, show_popup: showPopup, theme, starts_at: startsAt, ends_at: endsAt };
 }
 
 async function loadPlans(ctx: AdminContext) {
@@ -183,24 +207,32 @@ Deno.serve(async (req) => {
       }
 
       case "save_promotion": {
-        const title = optionalText(body.title, "Headline", 120) ?? bad("Write a headline");
-        const message = optionalText(body.message, "Message", 300);
-        const ctaLabel = optionalText(body.ctaLabel, "Button text", 40);
-        const ctaHref = optionalText(body.ctaHref, "Button link", 300);
-        if (ctaHref && !ctaHref.startsWith("/") && !ctaHref.startsWith("https://")) bad("Button link must start with / or https://");
-        if (Boolean(ctaLabel) !== Boolean(ctaHref)) bad("Set both the button text and the button link, or neither");
-        const showBanner = body.showBanner === true;
-        const showPopup = body.showPopup === true;
-        if (!showBanner && !showPopup) bad("Choose banner, popup, or both");
-        const startsAt = optionalDate(body.startsAt, "Start") ?? new Date().toISOString();
-        const endsAt = optionalDate(body.endsAt, "End");
-        if (endsAt && Date.parse(endsAt) <= Date.parse(startsAt)) bad("The announcement must end after it starts");
-
-        const row = { title, message, cta_label: ctaLabel, cta_href: ctaHref, show_banner: showBanner, show_popup: showPopup, starts_at: startsAt, ends_at: endsAt };
+        const row = promotionRow(body);
         const { data, error } = await ctx.admin.from("site_promotions").insert(row).select("id").single();
         if (error) throw error;
-        await audit(ctx, "CREATE_PROMOTION", null, { id: data.id, ...row }, title);
+        await audit(ctx, "CREATE_PROMOTION", null, { id: data.id, ...row }, row.title);
         return jsonResponse({ ok: true, id: data.id });
+      }
+
+      case "update_promotion": {
+        const id = optionalText(body.id, "id", 64) ?? bad("id is required");
+        const { data: before, error: findError } = await ctx.admin.from("site_promotions").select("*").eq("id", id).single();
+        if (findError || !before) bad("Announcement not found");
+        const row = promotionRow(body);
+        const { error } = await ctx.admin.from("site_promotions").update(row).eq("id", id);
+        if (error) throw error;
+        await audit(ctx, "UPDATE_PROMOTION", before, { id, ...row }, row.title);
+        return jsonResponse({ ok: true });
+      }
+
+      case "delete_promotion": {
+        const id = optionalText(body.id, "id", 64) ?? bad("id is required");
+        const { data: before, error: findError } = await ctx.admin.from("site_promotions").select("*").eq("id", id).single();
+        if (findError || !before) bad("Announcement not found");
+        const { error } = await ctx.admin.from("site_promotions").delete().eq("id", id);
+        if (error) throw error;
+        await audit(ctx, "DELETE_PROMOTION", before, null, before.title);
+        return jsonResponse({ ok: true });
       }
 
       case "end_promotion": {

@@ -28,9 +28,24 @@ export interface PromotionRow {
   cta_href: string | null;
   show_banner: boolean;
   show_popup: boolean;
+  theme: Theme;
   starts_at: string;
   ends_at: string | null;
   created_at: string;
+}
+
+export type Theme = "none" | "diwali" | "newyear" | "confetti";
+
+export const THEMES: { id: Theme; label: string }[] = [
+  { id: "diwali", label: "🪔 Diwali fireworks" },
+  { id: "newyear", label: "🎆 New Year" },
+  { id: "confetti", label: "🎉 Confetti" },
+  { id: "none", label: "No animation" },
+];
+
+/// Opens the live site playing this animation, without publishing anything.
+export function themePreviewUrl(theme: Theme): string {
+  return `https://smallbirdai.com/?festive=${theme}`;
 }
 
 export interface PricingData {
@@ -78,6 +93,14 @@ export function when(iso: string | null): string {
     minute: "2-digit",
     timeZone: "Asia/Kolkata",
   });
+}
+
+/// ISO string -> <input type="datetime-local"> value in the browser's time zone.
+export function isoToLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 /// <input type="datetime-local"> value -> ISO string (the browser's own time zone).

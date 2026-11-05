@@ -63,6 +63,35 @@ function display(plan: Plan, currency: "INR" | "USD", pricing: LivePricing | nul
   }
 }
 
+export interface SaleSummary {
+  label: string
+  /// Biggest discount across plans, per currency (0 when that currency has none).
+  inrPercent: number
+  usdPercent: number
+  endsAt: string | null
+}
+
+/// The sale running now, if any: its name, best discount and end time.
+export function useLiveSale(): SaleSummary | null {
+  const pricing = useContext(PricingContext)
+  if (!pricing) return null
+  let summary: SaleSummary | null = null
+  for (const plan of Object.values(pricing)) {
+    const sale = plan.sale
+    if (!sale) continue
+    const inr = sale.inr ? Math.round((1 - sale.inr / plan.regular.inr) * 100) : 0
+    const usd = sale.usd ? Math.round((1 - sale.usd / plan.regular.usd) * 100) : 0
+    const prev = summary as SaleSummary | null
+    summary = {
+      label: sale.label ?? prev?.label ?? "Sale",
+      inrPercent: Math.max(inr, prev?.inrPercent ?? 0),
+      usdPercent: Math.max(usd, prev?.usdPercent ?? 0),
+      endsAt: sale.endsAt ?? prev?.endsAt ?? null,
+    }
+  }
+  return summary
+}
+
 /// Prices to show for a plan, in both currencies (LocalPrice picks one).
 export function usePlanPrice(id: PlanId): { inr: DisplayPrice; usd: DisplayPrice } {
   const pricing = useContext(PricingContext)

@@ -1,4 +1,5 @@
 import { PLANS, type Currency, type PlanId } from "@/lib/plans"
+import { FESTIVE_THEMES, type FestiveTheme } from "@/lib/festive"
 
 // Live prices, sales and site announcements, read from Supabase so they can
 // be changed from the admin console's Pricing & Offers page without a
@@ -13,6 +14,7 @@ export interface LiveSale {
   // Pre-formatted on the server ("Ends 10 Nov") so client and server render
   // the same text.
   endsLabel: string | null
+  endsAt: string | null
 }
 
 export interface LivePlan {
@@ -30,6 +32,8 @@ export interface SitePromotion {
   ctaHref: string | null
   showBanner: boolean
   showPopup: boolean
+  theme: FestiveTheme
+  endsAt: string | null
 }
 
 // Pages refresh their copy at most this often, so a change shows up on the
@@ -61,6 +65,8 @@ interface PromotionRow {
   cta_href: string | null
   show_banner: boolean
   show_popup: boolean
+  // Added in migration 0067; absent before it runs.
+  theme?: string | null
   starts_at: string
   ends_at: string | null
 }
@@ -106,6 +112,7 @@ export async function getLivePricing({ fresh = false }: { fresh?: boolean } = {}
               usd: row.sale_price_usd_cents,
               label: row.sale_label,
               endsLabel: endsLabel(row.sale_ends_at),
+              endsAt: row.sale_ends_at,
             }
           : null,
       }
@@ -142,6 +149,8 @@ export async function getActivePromotion(): Promise<SitePromotion | null> {
       ctaHref: row.cta_href,
       showBanner: row.show_banner,
       showPopup: row.show_popup,
+      theme: FESTIVE_THEMES.includes(row.theme as FestiveTheme) ? (row.theme as FestiveTheme) : "none",
+      endsAt: row.ends_at,
     }
   } catch {
     return null

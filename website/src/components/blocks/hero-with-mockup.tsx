@@ -7,6 +7,7 @@ import { Glow } from "@/components/ui/glow"
 import { LiquidButton } from "@/components/ui/liquid-glass-button"
 import { usePurchaseFlow } from "@/lib/purchase-flow"
 import { SocialProof } from "@/components/blocks/social-proof"
+import { HeroOffer } from "@/components/blocks/hero-offer"
 
 interface HeroWithMockupProps {
   title: string
@@ -48,6 +49,7 @@ export function HeroWithMockup({
       )}
     >
       <div className="relative mx-auto max-w-7xl">
+        <HeroOffer />
         <div className="relative z-10 grid gap-10 md:grid-cols-[1fr_1.2fr] md:items-center md:gap-8">
           <div className="flex flex-col items-center gap-5 text-center md:items-start md:gap-6 md:text-left">
             <SocialProof className="animate-appear opacity-0 [animation-delay:0ms]" />

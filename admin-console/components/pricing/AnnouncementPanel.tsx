@@ -2,74 +2,217 @@
 
 import { useState } from "react";
 import { AdminApiError } from "@/lib/adminApi";
-import { localInputToIso, pricingAction, when, windowStatus, type PromotionRow } from "@/lib/pricing";
+import {
+  isoToLocalInput,
+  localInputToIso,
+  pricingAction,
+  when,
+  windowStatus,
+  type PromotionRow,
+  type Theme,
+} from "@/lib/pricing";
+import { ThemePicker } from "@/components/pricing/ThemePicker";
 
 // Website announcement ("ad"): a strip above the top menu and/or a popup a
-// moment after a visitor lands, on the marketing pages. Each visitor can
-// close it; a new announcement shows to everyone again. The newest live one
-// wins if several overlap.
+// moment after a visitor lands, on the marketing pages, with an optional
+// festive decoration (Diwali, New Year, confetti). Each visitor can close
+// it; a new announcement shows to everyone again. The newest live one wins
+// if several overlap. Start from a template or reuse a past announcement.
+
+type ShowAs = "banner" | "popup" | "both";
+
+interface Draft {
+  title: string;
+  message: string;
+  ctaLabel: string;
+  ctaHref: string;
+  showAs: ShowAs;
+  theme: Theme;
+}
+
+const EMPTY: Draft = { title: "", message: "", ctaLabel: "See offers", ctaHref: "/pricing", showAs: "banner", theme: "none" };
+
+const TEMPLATES: { name: string; draft: Draft }[] = [
+  {
+    name: "🪔 Diwali Sale",
+    draft: {
+      title: "🪔 Diwali Sale",
+      message: "Up to 50% off all SmallBird AI passes — this Diwali only",
+      ctaLabel: "See offers",
+      ctaHref: "/pricing",
+      showAs: "both",
+      theme: "diwali",
+    },
+  },
+  {
+    name: "🎆 New Year Sale",
+    draft: {
+      title: "🎆 New Year Sale",
+      message: "Start the year with your dream job — special prices on all passes",
+      ctaLabel: "See offers",
+      ctaHref: "/pricing",
+      showAs: "both",
+      theme: "newyear",
+    },
+  },
+  {
+    name: "⚡ Flash Sale",
+    draft: {
+      title: "⚡ Flash Sale",
+      message: "Today only: extra savings on every pass",
+      ctaLabel: "Grab the deal",
+      ctaHref: "/pricing",
+      showAs: "banner",
+      theme: "confetti",
+    },
+  },
+  {
+    name: "🎓 Placement Season",
+    draft: {
+      title: "🎓 Placement Season Offer",
+      message: "Interviews coming up? Practise and ace them with SmallBird AI",
+      ctaLabel: "See passes",
+      ctaHref: "/pricing",
+      showAs: "banner",
+      theme: "none",
+    },
+  },
+  {
+    name: "📣 Product news",
+    draft: {
+      title: "📣 New in SmallBird AI",
+      message: "",
+      ctaLabel: "Download",
+      ctaHref: "/download",
+      showAs: "banner",
+      theme: "none",
+    },
+  },
+];
+
+const BANNER_PREVIEW: Record<Theme, string> = {
+  none: "bg-ink text-surface",
+  diwali: "bg-gradient-to-r from-[#7c2d12] via-[#c2410c] to-[#9d174d] text-[#FFF4D6]",
+  newyear: "bg-gradient-to-r from-[#0f172a] via-[#312e81] to-[#0f172a] text-[#FDE68A]",
+  confetti: "bg-gradient-to-r from-[#4361EE] via-[#7209B7] to-[#F72585] text-white",
+};
+
+function fromRow(p: PromotionRow): Draft {
+  return {
+    title: p.title,
+    message: p.message ?? "",
+    ctaLabel: p.cta_label ?? "",
+    ctaHref: p.cta_href ?? "",
+    showAs: p.show_banner && p.show_popup ? "both" : p.show_popup ? "popup" : "banner",
+    theme: p.theme ?? "none",
+  };
+}
+
+function errorText(err: unknown, fallback: string) {
+  return err instanceof AdminApiError || err instanceof Error ? err.message : fallback;
+}
+
 export function AnnouncementPanel({ promotions, onChanged }: { promotions: PromotionRow[]; onChanged: () => void }) {
-  const [title, setTitle] = useState("");
-  const [message, setMessage] = useState("");
-  const [ctaLabel, setCtaLabel] = useState("See offers");
-  const [ctaHref, setCtaHref] = useState("/pricing");
-  const [showAs, setShowAs] = useState<"banner" | "popup" | "both">("banner");
+  const [draft, setDraft] = useState<Draft>(EMPTY);
+  // Set while editing an existing announcement in place.
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [startNow, setStartNow] = useState(true);
   const [startsAt, setStartsAt] = useState("");
   const [noEnd, setNoEnd] = useState(false);
   const [endsAt, setEndsAt] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
   const startIso = startNow ? null : localInputToIso(startsAt);
   const endIso = noEnd ? null : localInputToIso(endsAt);
   const problems = [
-    !title.trim() && "Write a headline.",
-    Boolean(ctaLabel.trim()) !== Boolean(ctaHref.trim()) && "Set both button text and link, or clear both.",
-    ctaHref.trim() && !ctaHref.startsWith("/") && !ctaHref.startsWith("https://") && "Button link must start with / or https://",
+    !draft.title.trim() && "Write a headline.",
+    Boolean(draft.ctaLabel.trim()) !== Boolean(draft.ctaHref.trim()) && "Set both button text and link, or clear both.",
+    draft.ctaHref.trim() && !draft.ctaHref.startsWith("/") && !draft.ctaHref.startsWith("https://") && "Button link must start with / or https://",
     !startNow && !startsAt && "Pick a start time, or start now.",
     !noEnd && !endsAt && "Pick an end time, or choose 'Until I remove it'.",
   ].filter(Boolean) as string[];
 
-  const visible = promotions.filter((p) => windowStatus(p.starts_at, p.ends_at) !== "ended");
-  const past = promotions.filter((p) => windowStatus(p.starts_at, p.ends_at) === "ended").slice(0, 5);
+  const current = promotions.filter((p) => windowStatus(p.starts_at, p.ends_at) !== "ended");
+  const past = promotions.filter((p) => windowStatus(p.starts_at, p.ends_at) === "ended").slice(0, 10);
 
-  async function publish() {
+  function resetForm() {
+    setDraft(EMPTY);
+    setEditingId(null);
+    setStartNow(true);
+    setStartsAt("");
+    setNoEnd(false);
+    setEndsAt("");
+  }
+
+  function applyTemplate(d: Draft) {
+    setDraft(d);
+    setEditingId(null);
+    setNotice(null);
+  }
+
+  function reuse(p: PromotionRow) {
+    setDraft(fromRow(p));
+    setEditingId(null);
+    setStartNow(true);
+    setStartsAt("");
+    setNoEnd(false);
+    setEndsAt("");
+    setNotice(`Copied "${p.title}" — set new dates and publish.`);
+  }
+
+  function edit(p: PromotionRow) {
+    setDraft(fromRow(p));
+    setEditingId(p.id);
+    const started = Date.parse(p.starts_at) <= Date.now();
+    setStartNow(started);
+    setStartsAt(started ? "" : isoToLocalInput(p.starts_at));
+    setNoEnd(!p.ends_at);
+    setEndsAt(isoToLocalInput(p.ends_at));
+    setNotice(`Editing "${p.title}" — save to update it on the website.`);
+  }
+
+  async function run(body: Record<string, unknown>, fallback: string, after?: () => void) {
     setLoading(true);
     setError(null);
     try {
-      await pricingAction({
-        type: "save_promotion",
-        title: title.trim(),
-        message: message.trim() || null,
-        ctaLabel: ctaLabel.trim() || null,
-        ctaHref: ctaHref.trim() || null,
-        showBanner: showAs !== "popup",
-        showPopup: showAs !== "banner",
-        startsAt: startIso,
-        endsAt: endIso,
-      });
-      setTitle("");
-      setMessage("");
+      await pricingAction(body);
+      after?.();
       onChanged();
     } catch (err) {
-      setError(err instanceof AdminApiError || err instanceof Error ? err.message : "Failed to publish");
+      setError(errorText(err, fallback));
     } finally {
       setLoading(false);
     }
   }
 
-  async function end(id: string) {
-    setLoading(true);
-    setError(null);
-    try {
-      await pricingAction({ type: "end_promotion", id });
-      onChanged();
-    } catch (err) {
-      setError(err instanceof AdminApiError || err instanceof Error ? err.message : "Failed to remove");
-    } finally {
-      setLoading(false);
-    }
+  function publish() {
+    const editingRow = editingId ? promotions.find((p) => p.id === editingId) : null;
+    run(
+      {
+        type: editingId ? "update_promotion" : "save_promotion",
+        id: editingId ?? undefined,
+        title: draft.title.trim(),
+        message: draft.message.trim() || null,
+        ctaLabel: draft.ctaLabel.trim() || null,
+        ctaHref: draft.ctaHref.trim() || null,
+        showBanner: draft.showAs !== "popup",
+        showPopup: draft.showAs !== "banner",
+        theme: draft.theme,
+        // An announcement already running keeps its original start.
+        startsAt: editingRow && startNow ? editingRow.starts_at : startIso,
+        endsAt: endIso,
+      },
+      editingId ? "Failed to save" : "Failed to publish",
+      () => {
+        setNotice(editingId ? "Saved — the website updates within a minute." : "Published — it shows on the website within a minute.");
+        resetForm();
+      },
+    );
   }
 
   return (
@@ -77,53 +220,71 @@ export function AnnouncementPanel({ promotions, onChanged }: { promotions: Promo
       <div>
         <h2 className="text-sm font-semibold text-ink">Website announcement</h2>
         <p className="mt-1 text-xs text-muted">
-          A banner above the top menu and/or a popup on smallbirdai.com — for a sale, a launch, or any news. Shows within
-          about a minute.
+          A banner above the top menu and/or a popup on smallbirdai.com — for a sale, a launch, or any news — with an optional
+          festive decoration. Shows within about a minute.
         </p>
       </div>
 
-      {visible.length > 0 && (
-        <ul className="space-y-2">
-          {visible.map((p) => {
-            const status = windowStatus(p.starts_at, p.ends_at);
-            return (
-              <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border p-3 text-sm">
-                <div>
-                  <span className={`mr-2 rounded-full px-2 py-0.5 text-xs font-semibold ${status === "live" ? "bg-ok/10 text-ok" : "bg-warn/10 text-warn"}`}>
-                    {status === "live" ? "Live" : `Starts ${when(p.starts_at)}`}
-                  </span>
-                  <strong>{p.title}</strong>
-                  {p.message ? <span className="text-muted"> — {p.message}</span> : null}
-                  <span className="block text-xs text-muted">
-                    {[p.show_banner && "Banner", p.show_popup && "Popup"].filter(Boolean).join(" + ")} ·{" "}
-                    {p.ends_at ? `until ${when(p.ends_at)}` : "until removed"}
-                  </span>
-                </div>
-                <button type="button" className="btn-secondary" disabled={loading} onClick={() => end(p.id)}>
-                  {status === "live" ? "Remove now" : "Cancel"}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+      {current.length > 0 && (
+        <div>
+          <p className="mb-1.5 text-xs font-medium text-muted">On the website now</p>
+          <ul className="space-y-2">
+            {current.map((p) => (
+              <PromotionItem
+                key={p.id}
+                promo={p}
+                loading={loading}
+                editing={editingId === p.id}
+                confirmingDelete={confirmDelete === p.id}
+                onReuse={() => reuse(p)}
+                onEdit={() => edit(p)}
+                onEnd={() => run({ type: "end_promotion", id: p.id }, "Failed to end it")}
+                onDelete={() =>
+                  confirmDelete === p.id
+                    ? run({ type: "delete_promotion", id: p.id }, "Failed to delete", () => setConfirmDelete(null))
+                    : setConfirmDelete(p.id)
+                }
+              />
+            ))}
+          </ul>
+        </div>
       )}
+
+      <div>
+        <p className="mb-1.5 text-xs font-medium text-muted">{editingId ? "Editing" : "Start from a template"}</p>
+        {editingId ? (
+          <button type="button" className="btn-secondary" onClick={() => { resetForm(); setNotice(null); }}>
+            Cancel editing
+          </button>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {TEMPLATES.map((t) => (
+              <button key={t.name} type="button" className="btn-secondary" onClick={() => applyTemplate(t.draft)}>
+                {t.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {notice && <p className="rounded-lg bg-accent/10 px-3 py-2 text-sm text-ink">{notice}</p>}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <label className="mb-1 block text-xs font-medium text-muted">Headline</label>
-          <input value={title} maxLength={120} onChange={(e) => setTitle(e.target.value)} className="input" placeholder="🪔 Diwali Sale is live" />
+          <input value={draft.title} maxLength={120} onChange={(e) => set("title", e.target.value)} className="input" placeholder="🪔 Diwali Sale is live" />
         </div>
         <div className="sm:col-span-2">
           <label className="mb-1 block text-xs font-medium text-muted">Message (optional)</label>
-          <input value={message} maxLength={300} onChange={(e) => setMessage(e.target.value)} className="input" placeholder="30% off all passes until Sunday" />
+          <input value={draft.message} maxLength={300} onChange={(e) => set("message", e.target.value)} className="input" placeholder="30% off all passes until Sunday" />
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-muted">Button text (optional)</label>
-          <input value={ctaLabel} maxLength={40} onChange={(e) => setCtaLabel(e.target.value)} className="input" />
+          <input value={draft.ctaLabel} maxLength={40} onChange={(e) => set("ctaLabel", e.target.value)} className="input" />
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-muted">Button link</label>
-          <input value={ctaHref} onChange={(e) => setCtaHref(e.target.value)} className="input" placeholder="/pricing" />
+          <input value={draft.ctaHref} onChange={(e) => set("ctaHref", e.target.value)} className="input" placeholder="/pricing" />
         </div>
       </div>
 
@@ -135,17 +296,20 @@ export function AnnouncementPanel({ promotions, onChanged }: { promotions: Promo
             ["both", "Banner + popup"],
           ] as const
         ).map(([k, text]) => (
-          <button key={k} type="button" onClick={() => setShowAs(k)} className={showAs === k ? "btn-primary" : "btn-secondary"}>
+          <button key={k} type="button" onClick={() => set("showAs", k)} className={draft.showAs === k ? "btn-primary" : "btn-secondary"}>
             {text}
           </button>
         ))}
       </div>
 
+      <ThemePicker value={draft.theme} onChange={(t) => set("theme", t)} />
+
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <p className="mb-1.5 text-xs font-medium text-muted">Starts</p>
           <label className="flex items-center gap-1.5 text-sm">
-            <input type="checkbox" checked={startNow} onChange={(e) => setStartNow(e.target.checked)} /> Right now
+            <input type="checkbox" checked={startNow} onChange={(e) => setStartNow(e.target.checked)} />{" "}
+            {editingId ? "Already started / right now" : "Right now"}
           </label>
           {!startNow && <input type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} className="input mt-2" />}
         </div>
@@ -158,27 +322,32 @@ export function AnnouncementPanel({ promotions, onChanged }: { promotions: Promo
         </div>
       </div>
 
-      {title.trim() && (
+      {draft.title.trim() && (
         <div>
           <p className="mb-1.5 text-xs font-medium text-muted">Preview</p>
-          {showAs !== "popup" && (
-            <div className="rounded-md bg-ink px-4 py-2 text-center text-sm text-surface">
-              <strong>{title}</strong>
-              {message && <span className="opacity-80"> — {message}</span>}
-              {ctaLabel && <span className="ml-2 font-semibold underline">{ctaLabel}</span>}
+          {draft.showAs !== "popup" && (
+            <div className={`rounded-md px-4 py-2 text-center text-sm ${BANNER_PREVIEW[draft.theme]}`}>
+              <strong>{draft.title}</strong>
+              {draft.message && <span className="opacity-80"> — {draft.message}</span>}
+              {draft.ctaLabel && <span className="ml-2 font-semibold underline">{draft.ctaLabel}</span>}
             </div>
           )}
-          {showAs !== "banner" && (
-            <div className="mx-auto mt-3 max-w-xs rounded-xl border border-border bg-surface p-5 text-center shadow-card">
-              <p className="text-lg font-semibold text-ink">{title}</p>
-              {message && <p className="mt-1 text-sm text-muted">{message}</p>}
-              {ctaLabel && <span className="btn-primary mt-3 inline-block">{ctaLabel}</span>}
+          {draft.showAs !== "banner" && (
+            <div
+              className={`mx-auto mt-3 max-w-xs rounded-xl border p-5 text-center shadow-card ${
+                draft.theme === "diwali" ? "border-[#F59E0B]/50 bg-gradient-to-b from-[#FFF4E0] to-[#FFE3EC]" : "border-border bg-surface"
+              }`}
+            >
+              {draft.theme === "diwali" && <p className="mb-1 text-2xl">🪔</p>}
+              <p className={`text-lg font-semibold ${draft.theme === "diwali" ? "text-[#7C2D12]" : "text-ink"}`}>{draft.title}</p>
+              {draft.message && <p className="mt-1 text-sm text-muted">{draft.message}</p>}
+              {draft.ctaLabel && <span className="btn-primary mt-3 inline-block">{draft.ctaLabel}</span>}
             </div>
           )}
         </div>
       )}
 
-      {problems.length > 0 && title.trim() && (
+      {problems.length > 0 && draft.title.trim() && (
         <ul className="list-inside list-disc text-xs text-warn">
           {problems.map((p) => (
             <li key={p}>{p}</li>
@@ -188,21 +357,90 @@ export function AnnouncementPanel({ promotions, onChanged }: { promotions: Promo
       {error && <p className="text-sm text-danger">{error}</p>}
 
       <button type="button" className="btn-primary w-full sm:w-auto" disabled={loading || problems.length > 0} onClick={publish}>
-        {loading ? "Publishing..." : startNow ? "Publish now" : "Schedule"}
+        {loading ? "Saving..." : editingId ? "Save changes" : startNow ? "Publish now" : "Schedule"}
       </button>
 
       {past.length > 0 && (
         <div>
-          <p className="mb-1 text-xs font-medium text-muted">Recently ended</p>
-          <ul className="space-y-1 text-xs text-muted">
+          <p className="mb-1.5 text-xs font-medium text-muted">Past announcements — reuse any of them</p>
+          <ul className="space-y-2">
             {past.map((p) => (
-              <li key={p.id}>
-                {p.title} · ended {when(p.ends_at)}
-              </li>
+              <PromotionItem
+                key={p.id}
+                promo={p}
+                loading={loading}
+                confirmingDelete={confirmDelete === p.id}
+                onReuse={() => reuse(p)}
+                onDelete={() =>
+                  confirmDelete === p.id
+                    ? run({ type: "delete_promotion", id: p.id }, "Failed to delete", () => setConfirmDelete(null))
+                    : setConfirmDelete(p.id)
+                }
+              />
             ))}
           </ul>
         </div>
       )}
     </section>
+  );
+}
+
+function PromotionItem({
+  promo: p,
+  loading,
+  editing,
+  confirmingDelete,
+  onReuse,
+  onEdit,
+  onEnd,
+  onDelete,
+}: {
+  promo: PromotionRow;
+  loading: boolean;
+  editing?: boolean;
+  confirmingDelete: boolean;
+  onReuse: () => void;
+  onEdit?: () => void;
+  onEnd?: () => void;
+  onDelete: () => void;
+}) {
+  const status = windowStatus(p.starts_at, p.ends_at);
+  const badge =
+    status === "live"
+      ? ["Live", "bg-ok/10 text-ok"]
+      : status === "scheduled"
+        ? [`Starts ${when(p.starts_at)}`, "bg-warn/10 text-warn"]
+        : [`Ended ${when(p.ends_at)}`, "bg-ink/5 text-muted"];
+  return (
+    <li className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm ${editing ? "border-accent" : "border-border"}`}>
+      <div className="min-w-0">
+        <span className={`mr-2 rounded-full px-2 py-0.5 text-xs font-semibold ${badge[1]}`}>{badge[0]}</span>
+        <strong>{p.title}</strong>
+        {p.message ? <span className="text-muted"> — {p.message}</span> : null}
+        <span className="block text-xs text-muted">
+          {[p.show_banner && "Banner", p.show_popup && "Popup"].filter(Boolean).join(" + ")}
+          {p.theme && p.theme !== "none" ? ` · ${p.theme} decoration` : ""}
+          {status !== "ended" ? ` · ${p.ends_at ? `until ${when(p.ends_at)}` : "until removed"}` : ""}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        <button type="button" className="btn-secondary" disabled={loading} onClick={onReuse}>
+          Reuse
+        </button>
+        {onEdit && (
+          <button type="button" className="btn-secondary" disabled={loading} onClick={onEdit}>
+            Edit
+          </button>
+        )}
+        {onEnd && (
+          <button type="button" className="btn-secondary" disabled={loading} onClick={onEnd}>
+            {status === "live" ? "End now" : "Cancel"}
+          </button>
+        )}
+        <button type="button" className={confirmingDelete ? "btn-danger" : "btn-secondary"} disabled={loading} onClick={onDelete}>
+          {confirmingDelete ? "Confirm delete" : "Delete"}
+        </button>
+      </div>
+    </li>
   );
 }

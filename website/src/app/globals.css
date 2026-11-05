@@ -266,3 +266,70 @@ html[data-home-currency="USD"] .home-inr,
 html:not([data-home-currency="USD"]) .home-usd {
   display: none !important;
 }
+
+/* Festive decorations (components/blocks/festive-effects.tsx): gentle,
+   decorative motion for themed sales -- swinging lanterns, rising sparkles,
+   flickering diyas, a shimmer across the banner. Off for reduced motion. */
+@keyframes festive-swing {
+  from { transform: rotate(-4deg); }
+  to { transform: rotate(4deg); }
+}
+@keyframes festive-glow {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+@keyframes festive-rise {
+  0% { transform: translateY(0) scale(0.6); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translateY(-260px) scale(1); opacity: 0; }
+}
+@keyframes festive-twinkle {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+@keyframes festive-flicker {
+  0%, 100% { transform: scaleY(1) rotate(-3deg); opacity: 1; }
+  18% { transform: scaleY(1.2) rotate(3deg); opacity: 0.85; }
+  32% { transform: scaleY(0.88) rotate(-1deg); opacity: 1; }
+  46% { transform: scaleY(1.05) rotate(2deg); opacity: 0.45; }
+  52% { transform: scaleY(0.92) rotate(0deg); opacity: 1; }
+  74% { transform: scaleY(1.16) rotate(-2deg); opacity: 0.8; }
+}
+/* Diya glow: breathes and blinks with the flame. */
+@keyframes festive-blink {
+  0%, 100% { opacity: 0.55; transform: scale(0.95); }
+  20% { opacity: 1; transform: scale(1.12); }
+  46% { opacity: 0.3; transform: scale(0.9); }
+  60% { opacity: 0.95; transform: scale(1.05); }
+}
+@keyframes festive-shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+@keyframes festive-fall {
+  0% { transform: translateY(-20px) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: translateY(520px) rotate(540deg); opacity: 0; }
+}
+.festive-swing { animation: festive-swing 2.8s ease-in-out infinite alternate; transform-origin: top center; }
+.festive-glow { animation: festive-glow 2.4s ease-in-out infinite; }
+.festive-rise { animation: festive-rise linear infinite; }
+.festive-twinkle { animation: festive-twinkle ease-in-out infinite; }
+.festive-flicker { animation: festive-flicker 1.1s ease-in-out infinite; transform-origin: bottom center; display: inline-block; }
+.festive-blink { animation: festive-blink 1.1s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.festive-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 240, 200, 0.35) 50%, transparent 70%);
+  animation: festive-shimmer 3.5s ease-in-out infinite;
+  pointer-events: none;
+}
+.festive-fall { animation: festive-fall ease-in forwards; }
+@media (prefers-reduced-motion: reduce) {
+  .festive-swing, .festive-glow, .festive-rise, .festive-twinkle, .festive-flicker, .festive-fall, .festive-blink,
+  .festive-shimmer::after {
+    animation: none !important;
+  }
+  .festive-rise, .festive-fall { display: none; }
+}

@@ -11,7 +11,9 @@ import {
   saleStatus,
   when,
   type PlanRow,
+  type Theme,
 } from "@/lib/pricing";
+import { ThemePicker } from "@/components/pricing/ThemePicker";
 
 type DiscountKind = "percent" | "flat" | "exact";
 
@@ -53,6 +55,7 @@ export function SalePanel({ plans, onChanged }: { plans: PlanRow[]; onChanged: (
   const [endsAt, setEndsAt] = useState("");
   const [announce, setAnnounce] = useState(true);
   const [announceAs, setAnnounceAs] = useState<"banner" | "popup" | "both">("both");
+  const [theme, setTheme] = useState<Theme>("diwali");
   const [confirming, setConfirming] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +130,7 @@ export function SalePanel({ plans, onChanged }: { plans: PlanRow[]; onChanged: (
           ctaHref: "/pricing",
           showBanner: announceAs !== "popup",
           showPopup: announceAs !== "banner",
+          theme,
           startsAt: startIso,
           endsAt: endIso,
         });
@@ -327,7 +331,12 @@ export function SalePanel({ plans, onChanged }: { plans: PlanRow[]; onChanged: (
           website
         </label>
         {announce && (
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-3">
+            <ThemePicker value={theme} onChange={setTheme} />
+          </div>
+        )}
+        {announce && (
+          <div className="mt-3 flex flex-wrap gap-2">
             {(
               [
                 ["banner", "Top banner"],

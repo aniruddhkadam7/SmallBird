@@ -1,6 +1,7 @@
 import { Nav } from "@/components/sections/nav"
 import { Footer } from "@/components/sections/footer"
-import { PromoBanner, PromoPopup } from "@/components/blocks/promo"
+import { PromoBanner, PromoPopup, PromoProvider } from "@/components/blocks/promo"
+import { FestiveDecor } from "@/components/blocks/festive-effects"
 import { getActivePromotion } from "@/lib/live-pricing"
 
 // Marketing chrome (top nav + footer) lives here rather than the root
@@ -11,12 +12,13 @@ import { getActivePromotion } from "@/lib/live-pricing"
 export default async function MarketingLayout({ children }: { children: React.ReactNode }) {
   const promo = await getActivePromotion()
   return (
-    <>
+    <PromoProvider promo={promo}>
       <PromoBanner promo={promo} />
+      <FestiveDecor theme={promo?.theme ?? "none"} />
       <Nav />
       <main>{children}</main>
       <Footer />
       <PromoPopup promo={promo} />
-    </>
+    </PromoProvider>
   )
 }
