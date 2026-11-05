@@ -84,7 +84,7 @@ export function Diya({ size = 48, delay = 0, className = "" }: { size?: number; 
 function DiyaCorner({ side }: { side: "left" | "right" }) {
   return (
     <div
-      className="pointer-events-none fixed bottom-2 z-[45] hidden items-end gap-1 md:flex"
+      className="pointer-events-none fixed bottom-2 z-[45] hidden items-end gap-1 min-[1440px]:flex"
       style={{ [side]: 12, flexDirection: side === "left" ? "row" : "row-reverse" }}
       aria-hidden="true"
     >
@@ -95,9 +95,9 @@ function DiyaCorner({ side }: { side: "left" | "right" }) {
   )
 }
 
-function MarigoldSegment({ withDiya }: { withDiya: boolean }) {
+function MarigoldSegment() {
   return (
-    <svg width={SEG} height={40} viewBox={`0 0 ${SEG} 40`} className="shrink-0" aria-hidden="true">
+    <svg width={SEG} height={30} viewBox={`0 0 ${SEG} 30`} className="shrink-0" aria-hidden="true">
       {/* Mango leaf hanging at the peak. */}
       <path d="M0 3 C-5 10 -3 18 0 22 C3 18 5 10 0 3 Z" fill="#2D6A4F" />
       <path d="M0 3 L0 21" stroke="#1B4332" strokeWidth="0.8" />
@@ -112,11 +112,6 @@ function MarigoldSegment({ withDiya }: { withDiya: boolean }) {
           </g>
         )
       })}
-      {withDiya ? (
-        <g transform={`translate(${SEG / 2 - 9} 18)`}>
-          <Diya size={18} />
-        </g>
-      ) : null}
     </svg>
   )
 }
@@ -126,7 +121,7 @@ export function MarigoldStrip({ segments = 8 }: { segments?: number }) {
   return (
     <div className="flex w-full min-w-0 justify-center overflow-hidden" aria-hidden="true">
       {Array.from({ length: segments }, (_, i) => (
-        <MarigoldSegment key={i} withDiya={false} />
+        <MarigoldSegment key={i} />
       ))}
     </div>
   )
@@ -217,7 +212,8 @@ function Sparkles({ count, colors, star }: { count: number; colors: string[]; st
         const size = 3 + rand(i, 3) * 4
         const color = colors[i % colors.length]
         const style = {
-          left: `${2 + rand(i, 4) * 96}%`,
+          // Left or right margin only: 0.5%-5% from either edge.
+          [rand(i, 13) < 0.5 ? "left" : "right"]: `${0.5 + rand(i, 4) * 4.5}%`,
           animationDuration: `${(star ? 2 : 7) + rand(i, 5) * (star ? 2.5 : 6)}s`,
           animationDelay: `${rand(i, 6) * 6}s`,
           color,
@@ -273,7 +269,7 @@ export function FestiveDecor({ theme }: { theme: FestiveTheme }) {
       {active === "diwali" || active === "newyear" ? (
         <div className="flex overflow-hidden">
           {Array.from({ length: SEGMENTS }, (_, i) =>
-            active === "diwali" ? <MarigoldSegment key={i} withDiya={i % 3 === 1} /> : <FairyLightsSegment key={i} index={i} />,
+            active === "diwali" ? <MarigoldSegment key={i} /> : <FairyLightsSegment key={i} index={i} />,
           )}
         </div>
       ) : null}
@@ -293,10 +289,16 @@ export function FestiveDecor({ theme }: { theme: FestiveTheme }) {
                 <HangingLantern key={`${l.side}${l.offset}`} {...l} />
               ))}
             </div>
-            <Sparkles count={18} colors={["#FFD166", "#FFB703", "#FFE8A3"]} />
+            <div className="hidden min-[1440px]:block">
+              <Sparkles count={18} colors={["#FFD166", "#FFB703", "#FFE8A3"]} />
+            </div>
           </>
         )}
-        {active === "newyear" && <Sparkles count={22} colors={["#FFD700", "#C0C0C0", "#9BF6FF"]} star />}
+        {active === "newyear" && (
+          <div className="hidden min-[1440px]:block">
+            <Sparkles count={22} colors={["#FFD700", "#C0C0C0", "#9BF6FF"]} star />
+          </div>
+        )}
         {active === "confetti" && <Confetti />}
       </div>
     </div>
