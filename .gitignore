@@ -46,3 +46,9 @@ sidecars/
 # on whichever directory it's run from; not project source.
 **/supabase/.temp/
 /supabase/
+
+# Vercel CLI link folder, and local env files (secrets). Example files stay tracked.
+.vercel
+.env*
+!.env.example
+!.env.local.example
